@@ -3,3 +3,4 @@ _minted*
 *.pdf
 *.synctex.gz
 *.aux
+*.toc
