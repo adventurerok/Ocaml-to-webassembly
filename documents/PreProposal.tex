@@ -1,0 +1,289 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+
+\usepackage[T1]{fontenc}
+\usepackage{fancyhdr}
+\usepackage[a4paper, total={7in,9in}]{geometry}
+\usepackage{amsmath}
+\usepackage{listings}
+\usepackage{xfrac}
+
+\usepackage{graphicx}
+\usepackage{wrapfig}
+\graphicspath{ {./graphics/} }
+
+\usepackage{minted}
+%\usemintedstyle{colorful}
+\setmintedinline{breaklines}
+
+\newcommand{\textinline}{\mintinline{text}}
+\newcommand{\cinline}{\mintinline{C}}
+\newcommand{\camlinline}{\mintinline{OCaml}}
+
+% Makes all math bold in sections that should be bold
+\makeatletter
+\g@addto@macro\bfseries{\boldmath}
+\makeatother
+
+\newcommand{\thetitle}{Optimising Compiler from OCaml to WebAssembly}
+
+\title{\thetitle}
+\author{Paul Durbaba}
+
+\pagestyle{fancy}
+\fancyhead{}
+\fancyfoot{}
+
+\begin{document}
+\maketitle
+\section{100 words}
+
+I will build a compiler from a subset of OCaml to WebAssembly, starting from the OCaml compiler lexer/parser, building my own type checker and immediate representation designed to target WebAssembly (which requires more type information than the OCaml compiler gives). I will then perform some optimizations (e.g. peephole optimizations, inlining of constants and functions), and translate into WASM, outputting a WebAssembly module and convenient JavaScript code to allow it to be easily integrated with other JavaScript code (WebAssembly does not have access to Web APIs on its own). As stretch goals I might expand the subset supported, implement more optimizations or implement garbage collection.
+
+AFTER THE MEETING ALAN WANTS SUCCESS CRITERIA, EVAL CRIT AND TIMELINE
+
+\section{Questions}
+
+\subsection{OCaml Subset}
+\begin{itemize}
+\item What subset is useful and also interesting for the compiler?
+\item What programs do we want to write for the web?
+\item Do we extend OCaml to support JavaScript objects?
+      \\ \textit{I think we can probably use a special data type?}
+\end{itemize}
+
+\subsection{Type Checker and Intermediate Representation}
+\begin{itemize}
+\item How do you write a type checker to keep required WASM type information?
+      \\ \textit{Keep the type information in the intermediate representation, IR could have type data/annotations inferred by the type checker}
+\item How to we design the intermediate representation to be suited for both OCaml and WebAssembly?
+      \\ \textit{Type information, closures, control flow, remove pattern matching, remove polymorphism?}
+\end{itemize}
+
+\subsection{Optimizations}
+\begin{itemize}
+\item Should they be done to the immediate representation or to WASM output itself?
+\item Which ones are both useful and interesting to implement?
+\end{itemize}
+
+\subsection{WASM}
+\begin{itemize}
+\item What kind of additional runtime system will be needed to support closures and complex values?
+\item How will we use our code in the JavaScript environment?
+\item How do we pass objects from the JS to our code?
+\end{itemize}
+
+
+\subsection{Stretch Goals / Garbage Collection}
+\begin{itemize}
+\item How do we output code in a way that makes this easier to implement? Put everything on the heap?
+\item Can we do lifetime analysis in some simple cases?
+\end{itemize}
+
+\section{OCaml Features and how they map to WASM}
+\subsection{Basics: Int, Bool, Fun, Closures}
+\begin{minipage}{0.4\linewidth}
+\begin{minted}{OCaml}
+let myint = 12
+let mybool = false
+\end{minted}
+\end{minipage}
+\begin{minipage}{0.6\linewidth}
+\begin{minted}{text}
+valtype ::= i32 | i64 | f32 | f64
+instr ::= (many obvious ones e.g. const, add)
+\end{minted}
+\end{minipage}
+\\\\
+WebAssembly only supports 32 and 64 bit ints: i32 and i64, so booleans will have to be encoded as ints as well. In OCaml ints are usually 63 bits, so i64 will be used.
+\\\\
+\begin{minipage}{0.4\linewidth}
+\begin{minted}{OCaml}
+let double x = 2 * x
+let add x y = x + y
+let add5 = add 5
+\end{minted}
+\end{minipage}
+\begin{minipage}{0.6\linewidth}
+\begin{minted}{text}
+functype ::= [vec(valtype)] -> [vec(valtype)]
+func ::= {type typeidx, locals vec(valtype), body expr}
+expr ::= instr* end
+\end{minted}
+\end{minipage}
+\\\\
+WASM functions take a vector of valtypes (i32, i64, f32, f64), and return a vector that contains either 0 or 1 valtypes. As I will implement tuples later, this vector could be repurposed for curried arguments. But how will partial applications be dealt with? Perhaps with a closure that stores the curried arguments, we unload the arguments from the closure and call the main function? But how about when we need proper closures with values from the environment?
+\\\\
+Functions in WebAssembly have a type, a vector of locals, and then an expr as a body, where an expr is any number of instructions followed by an end marker.
+
+\subsection{Recursion}
+\begin{minipage}{0.4\linewidth}
+\begin{minted}{OCaml}
+let rec npower x n =
+    if n = 0 then 1
+    else x * npower x (n-1)
+\end{minted}
+\end{minipage}  
+\begin{minipage}{0.6\linewidth}
+\begin{minted}{text}
+resulttype ::= void | valtype
+instr ::= ... | if resulttype instr* end
+              | if resulttype instr* else instr* end
+\end{minted}
+\end{minipage}
+\\\\
+Hopefully should be simple as calling the function from inside itself. Tail recursion elimination could be done as a potential optimisation.
+
+\subsection{Pattern Matching}
+\begin{minipage}{0.4\linewidth}
+\begin{minted}{OCaml}
+let iszero x =
+    match x with
+    | 0 -> true
+    | _ -> false
+
+(* Pattern matching variables *)
+let hundredzero x =
+    match x with
+    | 0 -> 100
+    | n -> n
+\end{minted}
+\end{minipage}  
+\begin{minipage}{0.6\linewidth}
+\begin{minted}{text}
+
+\end{minted}
+\end{minipage}
+\\\\
+It should be possible to transform the matching into a series of if/else statements (in the intermediate representation). Once you know which case you have, extracting the variables from the value should be fairly easy. This might be interesting for the type checker though, as for example inside a match branch we may have a better idea of the type of x than outside.
+
+\subsection{Lists, Tuples and Types}
+\begin{minipage}{0.5\linewidth}
+\begin{minted}{OCaml}
+type intlist = Nil
+             | Cons of int * intlist
+             
+let rec sumlist = function
+    | [] -> 0
+    | (x::xs) -> x + sumlist xs
+    
+let rec append = function
+    | ([], ys) -> ys
+    | (x::xs, ys) -> x :: append (xs, ys)
+\end{minted}
+\end{minipage}  
+\begin{minipage}{0.5\linewidth}
+\begin{minted}{text}    
+memarg ::= {offset u32, align u32}
+instr ::= ...
+        | inn.load memarg | inn.store memarg
+        | inn.load8_sx memarg | inn.store8 memarg
+\end{minted}
+\end{minipage}
+\\\\
+These more complex values will need to be stored on a heap. WebAssembly provides memory areas, with size specified by page size (a page is 64kB). Thus we will need a runtime routine to allocate some memory for a complex value.
+\\\\
+A good way to represent these values might be with a tag e.g like an enum value (nil, cons), as well as a size, which would make things easier for garbage collection. We can then perform pattern matching by checking tags, and get inside values out by using a known offset as we know the type at compile time.
+\\\\
+The OCaml runtime has `unboxed ints' whereby a 64-bit value with MSB 0 is a pointer, while MSB 1 is an int (limiting ints to 63 bits). This requires extra arithmetic when dealing with ints, but avoids allocating `boxed ints' on the heap so e.g. if we have a list of ints, our Cons element doesn't have a pointer to the int, it has the int.
+\\\\
+A possible optimisation with list constants \camlinline{let mylist = [1;2;3;]} would be to allocate all this memory in a continuous block.
+
+\subsection{Polymorphism}
+\begin{minipage}{0.4\linewidth}
+\begin{minted}{OCaml}
+type 'a list = Nil
+             | Cons of 'a * 'a list
+
+let rec map f = function
+    | [] -> []
+    | (x::xs) -> (f x) :: (map f xs)
+\end{minted}
+\end{minipage}  
+\begin{minipage}{0.6\linewidth}
+\begin{minted}{text}
+
+\end{minted}
+\end{minipage}
+\\\\
+I thought that one way of doing this might be like C++ templates: whenever we have a polymorphic function call with a specific type, we have a different version of that function in the final output for each type that it is used with. Likewise we could treat the final types differently. This gives the restriction that these functions can't be called from the JavaScript environment, however it's likely that the only functions that will be able to be called will be ones that accept `JavaScript objects' as parameters.
+\\\\
+Another way might be like Java: as all our points will be 64-bit integers, it doesn't matter which type we are passing in, except with `primitives' e.g. 32-bit integers for booleans, or floats/doubles.
+
+\subsection{Exceptions}    
+\begin{minipage}{0.4\linewidth}
+\begin{minted}{OCaml}
+exception Error of int
+let error_not_zero = function
+    | 0 -> 0
+    | x -> raise Error x
+    
+let myerrorednum =
+    try 
+        error_not_zero 86
+    with Error x ->
+        x
+\end{minted}
+\end{minipage}  
+\begin{minipage}{0.6\linewidth}
+\begin{minted}{text}
+
+\end{minted}
+\end{minipage}
+\\\\
+Not yet supported by WebAssembly.
+\\\\
+https://github.com/WebAssembly/exception-handling/blob/master/proposals/Exceptions.md
+\\\\
+Could possibly implement by making functions that can throw exceptions return a special type, which would add a large overhead. But then any function that takes a function as an argument could throw an exception. Maybe the type system could deal with that though by compiling a separate version of e.g. map that takes functions that throw exceptions as an argument, and one that does not. Possible stretch goal?
+
+\subsection{Functions as Arguments / Anonymous Functions}
+\begin{minipage}{0.4\linewidth}
+\begin{minted}{OCaml}
+let rec map f = function
+    | [] -> []
+    | (x::xs) -> (f x) :: (map f xs)
+let mult3 = map (fun x -> 3 * x) [1;2;3]
+\end{minted}
+\end{minipage}  
+\begin{minipage}{0.6\linewidth}
+\begin{minted}{text}
+
+\end{minted}
+\end{minipage}
+\\\\
+Anonymous functions should hopefully be as simple as extracting the anonymous function and giving it a generated name, and then using that name.
+\\\\
+Functions as arguments will need closures, which contain a function pointer and an environment. How will closures get on with the WASM type system?
+
+\subsection{References and Loops}
+\begin{minipage}{0.4\linewidth}
+\begin{minted}{OCaml}
+(* References *)
+let myref = (ref 5);;
+myref := 10;;
+let refval = !myref;;
+
+(* Loops *)
+for i = 0 to 10 do
+    myref := !myref + i
+done;;
+
+while (!myref < 1000) do
+    myref := !myref * 2
+done;;
+\end{minted}
+\end{minipage}  
+\begin{minipage}{0.6\linewidth}
+\begin{minted}{text}
+instr ::= ...
+        | loop resulttype instr* end
+        | br labelidx
+        | br_if labelidx
+\end{minted}
+\end{minipage}
+\\\\
+References can be special types stored on the heap. Should just use the same memory operations as in the types section, but now we are modifying existing values.
+\\\\
+When we enter a loop (or a block) in WebAssembly, a label is pushed to the stack. The label at the top of the stack is 0, then 1, etc... So \textinline{br 0} would branch to the most recent label. \textinline{br_if} will pop an i32 from the top of the stack, and execute if that is non-zero.
+\end{document}
