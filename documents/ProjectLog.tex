@@ -1,4 +1,4 @@
-\documentclass{article}
+\documentclass{report}
 \usepackage[utf8]{inputenc}
 
 \usepackage[T1]{fontenc}
@@ -36,6 +36,10 @@
 
 \begin{document}
 \maketitle
+\tableofcontents
+
+\chapter{PreProposal}
+
 \section{100 words}
 
 I will build a compiler from a subset of OCaml to WebAssembly, starting from the OCaml compiler lexer/parser, building my own type checker and immediate representation designed to target WebAssembly (which requires more type information than the OCaml compiler gives). I will then perform some optimizations (e.g. peephole optimizations, inlining of constants and functions), and translate into WASM, outputting a WebAssembly module and convenient JavaScript code to allow it to be easily integrated with other JavaScript code (WebAssembly does not have access to Web APIs on its own). As stretch goals I might expand the subset supported, implement more optimizations or implement garbage collection.
@@ -286,4 +290,7 @@ instr ::= ...
 References can be special types stored on the heap. Should just use the same memory operations as in the types section, but now we are modifying existing values.
 \\\\
 When we enter a loop (or a block) in WebAssembly, a label is pushed to the stack. The label at the top of the stack is 0, then 1, etc... So \textinline{br 0} would branch to the most recent label. \textinline{br_if} will pop an i32 from the top of the stack, and execute if that is non-zero.
+
+%\chapter{Proposal}
+
 \end{document}
