@@ -4,3 +4,5 @@ _minted*
 *.synctex.gz
 *.aux
 *.toc
+_build
+.merlin
