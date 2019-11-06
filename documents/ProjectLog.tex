@@ -293,4 +293,37 @@ When we enter a loop (or a block) in WebAssembly, a label is pushed to the stack
 
 %\chapter{Proposal}
 
+\chapter{Project Setup}
+
+\section{Repository Overview}
+\begin{itemize}
+	\item \textbf{documents}: Holds important project documents such as this
+	\item \textbf{demo}: Demo project structure for experimenting with Compiler Libs and Dune
+\end{itemize}
+
+\section{Build System}
+Dune\footnote{https://github.com/ocaml/dune} is the build system I will be using. This should be able to handle building the compiler and running the tests without need for another tool (although I could add a Makefile to invoke dune).
+\\\\
+In order to use the compiler libs in Dune, the following can be used
+\begin{minted}{lisp}
+(executable
+	(name my_ml_file)
+	(libraries compiler-libs.common))
+\end{minted}
+The book \textit{Real World OCaml} recommends using \textit{Base} and \textit{Stdio} as replacements for the usual OCaml standard library, so I will be using those.
+\\\\
+Actually, it's a lot more complicated than that. At the top of the project, a \textinline{proj.opam} file is needed, although I have no idea what needs to go in this yet (mine is just the opam version), I think it's for specifying the overall build and test of the project. A \textinline{dune} file is required in every directory. At the top-level, so in one directory, we will have an executable like above, but the others will need to be libraries, like so
+\begin{minted}{lisp}
+(library
+    (name proj_inc_nums)
+    (public_name proj.inc_nums)
+    (libraries core_kernel compiler-libs.common))
+\end{minted}
+If this library is included in another library/executable, you use the public name \textinline{proj.inc_nums}, which allows you to use \textinline{Proj_inc_nums} to access all modules in the library. Thus using \camlinline{open Proj_inc_nums} is probably a good idea. The library includes all files in the directory as modules. A file called \textinline{inc_nums.ml} will be the OCaml module \textinline{Inc_nums}.
+\\\\
+It will probably be a good idea to add a \text{.mli} file for each ml file to provide a signature and hide the implementation.
+
+\section{Parsing}
+The module \camlinline{Parse} handles parsing from strings to ASTs. It has several different functions depending on what you want to parse. \camlinline{toplevel_phrase} includes things that might be typed into toplevel, which are either structures or directives (e.g. \camlinline{#require "core"}). \camlinline{implementation} is what I will use to parse structures, ignoring these directives.
+
 \end{document}
