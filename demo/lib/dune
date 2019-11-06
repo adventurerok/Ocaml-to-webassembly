@@ -1,0 +1,5 @@
+
+(library
+  (name proj_inc_nums)
+  (public_name proj.inc_nums)
+  (libraries core_kernel compiler-libs.common))

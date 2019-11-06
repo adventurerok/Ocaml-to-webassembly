@@ -1,0 +1,4 @@
+
+(test
+  (name inc_nums_test)
+  (libraries proj.inc_nums ounit2))

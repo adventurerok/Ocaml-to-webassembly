@@ -1,0 +1,5 @@
+
+(executable
+  (name demo)
+  (libraries proj.inc_nums core_kernel compiler-libs.common))
+
