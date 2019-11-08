@@ -28,6 +28,9 @@ and update_cases (args : case list) = match args with
           pc_lhs = update_pat case.pc_lhs
       }) :: (update_cases cases'))
 
+(* These are used in constucts to specify what they are. *)
+and update_loc (loc : Longident.t Asttypes.loc) = loc
+
 and update_expr_desc (desc : expression_desc) = match desc with
   | Pexp_constant(const) -> Pexp_constant(update_const const)
   | Pexp_apply(expr, lst) -> Pexp_apply(update_expr expr, update_args lst)
@@ -40,7 +43,7 @@ and update_expr_desc (desc : expression_desc) = match desc with
   | Pexp_match(expr, cases) -> Pexp_match(update_expr expr, update_cases cases)
   | Pexp_try(expr, cases) -> Pexp_try(update_expr expr, update_cases cases)
   | Pexp_array(exprs) -> Pexp_array(List.map ~f:update_expr exprs)
-  | Pexp_construct(loc, expropt) -> Pexp_construct(loc, Option.map ~f:update_expr expropt)
+  | Pexp_construct(loc, expropt) -> Pexp_construct(update_loc loc, Option.map ~f:update_expr expropt)
   | _ -> desc
 
 and update_expr (expr : expression) =

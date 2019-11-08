@@ -1,0 +1,5 @@
+
+(library
+  (name otwa_types)
+  (public_name proj.types)
+  (libraries core_kernel compiler-libs.common))
