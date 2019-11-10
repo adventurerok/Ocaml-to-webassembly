@@ -12,7 +12,8 @@ let parseexpr str =
 
 let printtype str =
   let parsed = parseexpr str in
-  let typ = Type_expr.type_expr parsed in
+  let env = Type_expr.create_env () in
+  let (_, typ) = Type_expr.type_expr env parsed Types.T_any in
   print_endline (Types.print typ)
 
 
