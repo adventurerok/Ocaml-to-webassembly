@@ -10,11 +10,17 @@ let parseexpr str =
   Parse.expression buf
 
 
+let printinfer str =
+  let parsed = parseexpr str in
+  let ctx = Type_expr.new_context () in
+  let (unip, typ) = Type_expr.infer_expr ctx parsed in
+  print_endline ((Types.string_of_uni_pair_list unip) ^ (Types.string_of_scheme_type typ))
+
 let printtype str =
   let parsed = parseexpr str in
-  let env = Type_expr.create_env () in
-  let (_, typ) = Type_expr.type_expr env parsed Types.T_any in
-  print_endline (Types.print typ)
+  let ctx = Type_expr.new_context () in
+  let typ = Type_expr.type_expr ctx parsed in
+  print_endline ((Types.string_of_scheme_type typ))
 
 
 let rec topLoop _ =
