@@ -9,6 +9,8 @@ type tvar = string
 type scheme_type =
   | T_var of tvar
   | T_val of tvalue
+  | T_tuple of scheme_type list
+  | T_constr of string * scheme_type list
   | T_func of scheme_type * scheme_type
 
 type scheme = Forall of tvar list * scheme_type
@@ -19,6 +21,8 @@ let rec substitute tv styp typ =
   match typ with
   | (T_var(tvo)) -> if (String.equal tv tvo) then styp else typ
   | (T_val(_)) -> typ
+  | (T_tuple(ls)) -> (T_tuple(List.map ls ~f:(substitute tv styp)))
+  | (T_constr(str, ls)) -> (T_constr(str, List.map ls ~f:(substitute tv styp)))
   | (T_func(a, b)) -> (T_func(substitute tv styp a, substitute tv styp b))
 
 let rec substitute_list ls typ =
@@ -34,24 +38,31 @@ let rec substitute_uni_list ls uni =
   | [] -> uni
   | ((tv,styp)::xs) -> substitute_uni_list xs (substitute_uni tv styp uni)
 
-exception UnifyFail of uni_pair
+exception UnifyFail of string * uni_pair
 
 let unify_val va vb =
   match(va, vb) with
   | (V_int, V_int) -> []
   | (V_bool, V_bool) -> []
-  | _ -> raise (UnifyFail (Uni(T_val(va), T_val(vb))))
+  | _ -> raise (UnifyFail ("Different value types", (Uni(T_val(va), T_val(vb)))))
 
 let rec find_unify (Uni(a, b)) =
   match (a, b) with
   | (T_val(va), T_val(vb)) -> unify_val va vb
+  | (T_tuple([]), T_tuple([])) -> []
+  | (T_tuple(x::xs), T_tuple(y::ys)) -> find_unify (Uni(T_func(x, T_tuple(xs)), T_func(y, T_tuple(ys))))
+  | (T_constr(s1, l1), T_constr(s2, l2)) ->
+      if String.equal s1 s2 then
+        find_unify (Uni(T_tuple(l1), T_tuple(l2)))
+      else
+        raise (UnifyFail ("Different constructs '" ^ s1 ^ "' and '" ^ s2 ^ "'", (Uni(a,b))))
   | (T_var(tv), _) -> [(tv, b)]
   | (_, T_var(tv)) -> [(tv, a)]
   | (T_func(p, q), T_func(x, y)) ->
       let upx = find_unify (Uni(p,x)) in
-      let uqy = find_unify (Uni(q,y)) in
+      let uqy = find_unify (Uni(substitute_list upx q, substitute_list upx y)) in
       (upx @ uqy)
-  | _ -> raise (UnifyFail (Uni(a, b)))
+  | _ -> raise (UnifyFail ("Unequal types", (Uni(a, b))))
 
 let rec unify_many lst =
   match lst with
@@ -65,6 +76,12 @@ let rec unify_many lst =
 let rec string_of_scheme_type typ =
   match typ with
   | T_var(vr) -> "'" ^ vr
+  | T_tuple(ls) -> "(" ^ (String.concat ~sep:" * " (List.map ls ~f:string_of_scheme_type)) ^ ")"
+  | T_constr(str, ls) ->
+      (match ls with
+      | [] -> str
+      | (x::[]) -> (string_of_scheme_type x) ^ " " ^ str
+      | _ -> (string_of_scheme_type (T_tuple(ls))) ^ " " ^ str)
   | T_val(V_int) -> "int"
   | T_val(V_bool) -> "bool"
   | T_func(a,b) -> "(" ^ (string_of_scheme_type a) ^ " -> " ^ (string_of_scheme_type b) ^ ")"
