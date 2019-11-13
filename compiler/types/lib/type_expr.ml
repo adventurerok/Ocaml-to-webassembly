@@ -90,7 +90,7 @@ and infer_pattern ctx pat =
       let varname = ident.txt in
       let tv = fresh () in
       let typ = (T_var(tv)) in
-      let ctx' = Context.extend ctx varname typ in
+      let ctx' = Context.add_var ctx varname typ in
       ([], typ, ctx')
   | Ppat_tuple(lst) ->
       let rec loop cx ls =
@@ -107,7 +107,7 @@ and infer_pattern ctx pat =
 and infer_ident ctx ident =
   match ident.txt with
   | Lident(str) ->
-      (match Context.search ctx str with
+      (match Context.find_var ctx str with
       | Some(typ) -> ([], typ)
       | None ->
           (match lookup_ident str with

@@ -1,13 +1,38 @@
 open Base
 open Types
 
-type context = (string * scheme_type) list
+type context = {
+  vars: (string * scheme_type) list;
 
-let empty : context = []
+  (* e.g. tree -> 1 if it takes 1 type argument *)
+  types: (string * int) list;
 
-let extend (ctx : context) vr typ = (vr, typ) :: ctx
+  (* e.g. Branch(x,l,r) is (Branch,('a,'a tree,'a tree), 'a tree)*)
+  constructs: (string * (scheme_type list) * scheme_type) list
+}
 
-let rec search (ctx : context) name =
-  match ctx with
-  | [] -> None
-  | ((vr, typ) :: ctx') -> if (String.equal vr name) then Some(typ) else (search ctx' name)
+let empty : context = {
+  vars = [];
+  types = [];
+  constructs = []
+}
+
+let add_var (ctx : context) vr typ =
+  {ctx with vars = ((vr, typ) :: ctx.vars)}
+
+let find_var (ctx : context) name =
+  let rec search vs =
+    match vs with
+    | [] -> None
+    | ((vr, typ) :: vs') -> if (String.equal vr name) then Some(typ) else (search vs')
+  in search ctx.vars
+
+let add_type (ctx : context) name args =
+  {ctx with types = ((name, args) :: ctx.types)}
+
+let find_type (ctx : context) name =
+  let rec search ts =
+    match ts with
+    | [] -> None
+    | ((ts,args) :: ts') -> if (String.equal ts name) then Some(args) else (search ts')
+  in search ctx.types
