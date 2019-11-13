@@ -12,13 +12,13 @@ let parseexpr str =
 
 let printinfer str =
   let parsed = parseexpr str in
-  let ctx = Type_expr.new_context () in
+  let ctx = Context.empty in
   let (unip, typ) = Type_expr.infer_expr ctx parsed in
   print_endline ((Types.string_of_uni_pair_list unip) ^ (Types.string_of_scheme_type typ))
 
 let printtype str =
   let parsed = parseexpr str in
-  let ctx = Type_expr.new_context () in
+  let ctx = Context.empty in
   let typ = Type_expr.type_expr ctx parsed in
   print_endline ((Types.string_of_scheme_type typ))
 

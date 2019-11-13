@@ -1,23 +1,9 @@
 open Base
 open Parsetree
 open Types
-open Core_types
+open Predefined
 
 exception TypeError of string
-
-type evar = string
-
-type context = (evar * scheme_type) list
-
-let new_context () : context = []
-
-let extend_context ctx vr sch =
-  (vr, sch) :: ctx
-
-let rec search_context (ctx : context) name =
-  match ctx with
-  | [] -> None
-  | ((vr, sch) :: ctx') -> if (String.equal vr name) then Some(sch) else (search_context ctx' name)
 
 
 let nexttvar = ref 0
@@ -40,7 +26,7 @@ let infer_constant (const : constant) =
   | _ -> raise (TypeError "Unknown constant type")
 
 (* context -> expression -> (uni_pair list * scheme) *)
-let rec infer_expr (ctx : context) (expr : expression) : (uni_pair list * scheme_type) =
+let rec infer_expr (ctx : Context.context) (expr : expression) : (uni_pair list * scheme_type) =
   match expr.pexp_desc with
   | Pexp_constant(const) -> infer_constant const
   | Pexp_construct(ident, expr_opt) -> infer_construct ctx ident expr_opt
@@ -104,7 +90,7 @@ and infer_pattern ctx pat =
       let varname = ident.txt in
       let tv = fresh () in
       let typ = (T_var(tv)) in
-      let ctx' = extend_context ctx varname typ in
+      let ctx' = Context.extend ctx varname typ in
       ([], typ, ctx')
   | Ppat_tuple(lst) ->
       let rec loop cx ls =
@@ -121,7 +107,7 @@ and infer_pattern ctx pat =
 and infer_ident ctx ident =
   match ident.txt with
   | Lident(str) ->
-      (match search_context ctx str with
+      (match Context.search ctx str with
       | Some(typ) -> ([], typ)
       | None ->
           (match lookup_ident str with
@@ -147,7 +133,7 @@ and infer_construct ctx ident expr_opt =
       in ((Uni(tuptyp, ttyp)) :: ccs, lsttyp)
   | _ -> raise (TypeError "Unknown construct")
 
-let type_expr (ctx : context) (expr : expression) =
+let type_expr (ctx : Context.context) (expr : expression) =
   let (ccs, typ) = infer_expr ctx expr in
   let subs = unify_many ccs in
   substitute_list subs typ
