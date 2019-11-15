@@ -6,6 +6,10 @@ type tvalue =
 
 type tvar = string
 
+type tvar_set = (string, String.comparator_witness) Set.t
+
+let empty_tvar_set = Set.empty (module String)
+
 type scheme_type =
   | T_var of tvar
   | T_val of tvalue
@@ -13,9 +17,17 @@ type scheme_type =
   | T_constr of string * scheme_type list
   | T_func of scheme_type * scheme_type
 
-type scheme = Forall of tvar list * scheme_type
+type scheme = Forall of tvar_set * scheme_type
 
 type uni_pair = Uni of scheme_type * scheme_type
+
+let rec ftv typ =
+  match typ with
+  | (T_var(tv)) -> Set.singleton (module String) tv
+  | (T_val(_)) -> empty_tvar_set
+  | (T_tuple(ls)) -> Set.union_list (module String) (List.map ls ~f:ftv)
+  | (T_constr(_, ls)) -> Set.union_list (module String) (List.map ls ~f:ftv)
+  | (T_func(a, b)) -> Set.union (ftv a) (ftv b)
 
 let rec substitute tv styp typ =
   match typ with
@@ -37,6 +49,10 @@ let rec substitute_uni_list ls uni =
   match ls with
   | [] -> uni
   | ((tv,styp)::xs) -> substitute_uni_list xs (substitute_uni tv styp uni)
+
+let instantiate fresh (Forall(s, t)) =
+  let subs = List.map (Set.to_list s) ~f:(fun old -> (old, fresh())) in
+  substitute_list subs t
 
 exception UnifyFail of string * uni_pair
 
@@ -64,6 +80,8 @@ let rec find_unify (Uni(a, b)) =
       (upx @ uqy)
   | _ -> raise (UnifyFail ("Unequal types", (Uni(a, b))))
 
+let unify a b = find_unify (Uni(a,b))
+
 let rec unify_many lst =
   match lst with
   | [] -> []
@@ -86,10 +104,11 @@ let rec string_of_scheme_type typ =
   | T_val(V_bool) -> "bool"
   | T_func(a,b) -> "(" ^ (string_of_scheme_type a) ^ " -> " ^ (string_of_scheme_type b) ^ ")"
 
-let string_of_scheme sch =
-  match sch with
-  | Forall([], typ) -> string_of_scheme_type typ
-  | Forall(vars, typ) -> "forall " ^ (String.concat ~sep:"," vars) ^ ". " ^ (string_of_scheme_type typ)
+let string_of_scheme (Forall(vars, typ)) =
+  if Set.is_empty vars then
+    string_of_scheme_type typ
+  else
+    "forall " ^ (String.concat ~sep:"," (Set.to_list vars)) ^ ". " ^ (string_of_scheme_type typ)
 
 let string_of_uni_pair (Uni(s1, s2)) =
   "uni(" ^ (string_of_scheme_type s1) ^ ", " ^ (string_of_scheme_type s2) ^ ")"

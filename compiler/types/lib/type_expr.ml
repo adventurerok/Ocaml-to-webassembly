@@ -19,6 +19,16 @@ let fresh () =
   let index = !nexttvar in
   (nexttvar := index + 1; String.of_char_list (List.rev (int_to_tvar index)))
 
+let instantiate (Forall(s, t)) =
+  let subs = List.map (Set.to_list s) ~f:(fun old -> (old, T_var(fresh()))) in
+  substitute_list subs t
+
+let context_ftv (ctx: Context.context) =
+  Set.union_list (module String) (List.map (Context.get_var_list ctx) ~f:(fun (_,t) -> ftv t))
+
+let generalize (ctx: Context.context) t =
+  let free_vars = Set.diff (ftv t) (context_ftv ctx)
+  in Forall(free_vars, t)
 
 let infer_constant (const : constant) =
   match const with

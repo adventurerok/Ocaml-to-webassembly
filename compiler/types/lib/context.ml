@@ -30,6 +30,12 @@ let find_var (ctx : context) name =
 let add_type (ctx : context) name args =
   {ctx with types = ((name, args) :: ctx.types)}
 
+let map_vars (ctx : context) f =
+  {ctx with vars = List.map ctx.vars ~f:(fun (x,y) -> (x,f y))}
+
+let get_var_list (ctx : context) =
+  ctx.vars
+
 let find_type (ctx : context) name =
   let rec search ts =
     match ts with
