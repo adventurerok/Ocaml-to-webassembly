@@ -1,6 +1,7 @@
 open Base
 
 type tvalue =
+  | V_unit
   | V_int
   | V_bool
 
@@ -29,6 +30,9 @@ let rec ftv typ =
   | (T_constr(_, ls)) -> Set.union_list (module String) (List.map ls ~f:ftv)
   | (T_func(a, b)) -> Set.union (ftv a) (ftv b)
 
+let ftv_scheme (Forall(s, t)) =
+  Set.diff (ftv t) s
+
 let rec substitute tv styp typ =
   match typ with
   | (T_var(tvo)) -> if (String.equal tv tvo) then styp else typ
@@ -50,9 +54,15 @@ let rec substitute_uni_list ls uni =
   | [] -> uni
   | ((tv,styp)::xs) -> substitute_uni_list xs (substitute_uni tv styp uni)
 
-let instantiate fresh (Forall(s, t)) =
-  let subs = List.map (Set.to_list s) ~f:(fun old -> (old, fresh())) in
-  substitute_list subs t
+let substitute_scheme tv styp (Forall(s, t)) =
+  if Set.mem s tv then
+    (Forall(s, t))
+  else
+    (Forall(s, substitute tv styp t))
+
+let substitute_scheme_list ls (Forall(s,t)) =
+  let reduced = List.filter ls ~f:(fun (a,_) -> not (Set.mem s a)) in
+  (Forall(s, substitute_list reduced t))
 
 exception UnifyFail of string * uni_pair
 
@@ -60,6 +70,7 @@ let unify_val va vb =
   match(va, vb) with
   | (V_int, V_int) -> []
   | (V_bool, V_bool) -> []
+  | (V_unit, V_unit) -> []
   | _ -> raise (UnifyFail ("Different value types", (Uni(T_val(va), T_val(vb)))))
 
 let rec find_unify (Uni(a, b)) =
@@ -102,6 +113,7 @@ let rec string_of_scheme_type typ =
       | _ -> (string_of_scheme_type (T_tuple(ls))) ^ " " ^ str)
   | T_val(V_int) -> "int"
   | T_val(V_bool) -> "bool"
+  | T_val(V_unit) -> "unit"
   | T_func(a,b) -> "(" ^ (string_of_scheme_type a) ^ " -> " ^ (string_of_scheme_type b) ^ ")"
 
 let string_of_scheme (Forall(vars, typ)) =

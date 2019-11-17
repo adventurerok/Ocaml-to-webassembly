@@ -2,7 +2,7 @@ open Base
 open Types
 
 type context = {
-  vars: (string * scheme_type) list;
+  vars: (string * scheme) list;
 
   (* e.g. tree -> 1 if it takes 1 type argument *)
   types: (string * int) list;

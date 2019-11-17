@@ -3,6 +3,7 @@ open Types
 
 let v_int = T_val(V_int)
 let v_bool = T_val(V_bool)
+let v_unit = T_val(V_unit)
 
 let f_ii = T_func(v_int, v_int)
 let f_bb = T_func(v_bool, v_bool)
