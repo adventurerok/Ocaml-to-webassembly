@@ -39,6 +39,7 @@ let rec core_to_scheme_type (ct: core_type) =
   | Ptyp_arrow(_, a, b) -> T_func(core_to_scheme_type a, core_to_scheme_type b)
   | Ptyp_tuple(ct_list) -> T_tuple(List.map ct_list ~f:core_to_scheme_type)
   | Ptyp_constr(id, ct_list) -> ct_constr_to_scheme_type id ct_list
+  | Ptyp_poly(_, ct') -> core_to_scheme_type ct' (* Not sure about this one. What does poly do? *)
   | _ -> raise (TypeError "Unsupported core type")
 
 and ct_constr_to_scheme_type id ct_list =
@@ -71,6 +72,18 @@ let rec infer_expr (ctx : Context.context) (expr : expression) : (uni_pair list 
       let (ccslst, tlst) = List.unzip ctlst in
       let ccs = List.concat ccslst in
       (ccs, T_tuple(tlst))
+  | Pexp_ifthenelse(iexpr, texpr, eexpr_opt) ->
+      let (ics, ityp) = infer_expr ctx iexpr in
+      let (tcs, ttyp) = infer_expr ctx texpr in
+      (match eexpr_opt with
+      | Some(eexpr) ->
+          let (ecs, etyp) = infer_expr ctx eexpr in
+          ((Uni(ityp, v_bool)) :: (Uni(ttyp, etyp)) :: (ics @ tcs @ ecs), ttyp)
+      | None -> ((Uni(ityp, v_bool)) :: (ics @ tcs), ttyp))
+  | Pexp_constraint(expr, ct) ->
+      let st = core_to_scheme_type ct in
+      let (ccs, typ) = infer_expr ctx expr in
+      ((Uni(typ, st)) :: ccs, typ)
   | _ -> raise (TypeError "Unsupported expression")
 
 and infer_apply ctx f args =
@@ -166,6 +179,13 @@ and infer_pattern ctx pat =
             (typ :: tlst, cx'', vars @ vars')
       in let (tlst, ctx', vars) = loop ctx lst in
       (T_tuple(tlst), ctx', vars)
+  | Ppat_constraint(pat', ct) ->
+      let st = core_to_scheme_type ct in
+      let (typ, _, vars) = infer_pattern ctx pat' in
+      let subs = unify typ st in
+      let vars' = List.map vars ~f:(fun (v, t) -> (v, substitute_list subs t)) in
+      let ctx' = List.fold vars' ~init:ctx ~f:(fun cx (v,t) -> Context.add_var cx v (Forall(empty_tvar_set, t))) in
+      (st, ctx', vars')
   | _ -> raise (TypeError "Unsupported pattern")
 
 and infer_ident ctx ident =
