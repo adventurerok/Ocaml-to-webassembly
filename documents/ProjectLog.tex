@@ -326,4 +326,42 @@ It will probably be a good idea to add a \text{.mli} file for each ml file to pr
 \section{Parsing}
 The module \camlinline{Parse} handles parsing from strings to ASTs. It has several different functions depending on what you want to parse. \camlinline{toplevel_phrase} includes things that might be typed into toplevel, which are either structures or directives (e.g. \camlinline{#require "core"}). \camlinline{implementation} is what I will use to parse structures, ignoring these directives.
 
+\section{Type Checking}
+Mostly based on the article http://dev.stephendiehl.com/fun/006\_hindley\_milner.html\#observations. Using Hindley Milner
+\\\\
+What's the difference between a \textbf{Scheme} and a \textbf{Scheme Type}? A scheme type is a type e.g. with vars and stuff, while a scheme itself is a forall over a bunch of type variables, followed by a type. Thus we can instantiate a scheme to a scheme type by substituting the variables in the set for fresh variables, and likewise we can generalize a scheme type to a scheme by finding all the type variables unique to it (not in the context), and making a Forall over those variables.
+\\\\
+HM is all about \textbf{let-polymorphism}. When we have \camlinline{let x = e1 in e2}, we generalize the resulting type of x, and every time we use x in e2, we create a fresh instantiation. Thus it will typecheck differently to \camlinline{(fun x -> e2) (e1)}.
+\\\\
+Actually in OCaml there are two types of let-binding: the non-recursive one and the recursive one. These are type-checked differently:
+\begin{itemize}
+	\item Non-recursive: We can use previous variable names, but not the current one or future ones
+	\item Recursive: We can use all the variable names in the binding
+\end{itemize}
+
+\subsection{Issues}
+\begin{itemize}
+	\item MAJOR: Once you use a polymorphic function, it gets bound to those types. Need to implement generalization and instantiation. \camlinline{let id x = x in (id 1, id true)} Possible solutions:
+	\begin{itemize}
+		\item A forall type. I like this solution better. After we make a function, all unique type variables in it are forall.
+		\item Schemes. Forall type but explicit.
+		\item Functions are implicitly forall? Then we could mark type variables as weak or not. A weak type variable cannot be unified to be a strong one, but a strong one can be unified to be weak. Instantiating functions equates to replacing all their strong type variables with fresh new strong ones. So what is weak and what is strong:
+		\begin{itemize}
+			\item Function argument: strong
+			\item Let x =: weak
+		\end{itemize}
+	\end{itemize}
+    \item MAJOR: Occurs check. \camlinline{let f x = x x in f}
+    \item MAJOR: Error messages and unification. Can this be done with unification at the end? Should unification be done at the end like it is?
+\end{itemize}
+
+\subsection{Still Needs Doing}
+\begin{itemize}
+	\item Various other expression types e.g. if, match
+	\item Let binding structures
+	\item Type structures and custom data types
+	\item Strong a tree of the partial type data. We would then do a substitution pass over this at the end with the final substitution.
+	\item Decent error messages i.e. not `UnificationFailure'
+\end{itemize}
+
 \end{document}
