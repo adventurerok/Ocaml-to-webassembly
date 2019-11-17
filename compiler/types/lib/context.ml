@@ -46,6 +46,16 @@ let find_type (ctx : context) name =
 let add_constr ctx cname args tname =
   {ctx with constructs = ((cname, args, tname) :: ctx.constructs)}
 
+let find_constr ctx name =
+  let rec search cs =
+    match cs with
+    | [] -> None
+    | ((cname, args, tname) :: cs') ->
+        if (String.equal cname name) then
+          Some((args, tname))
+        else (search cs')
+  in search ctx.constructs
+
 let print (ctx : context) =
   Stdio.print_endline "Context(";
   Stdio.print_endline "  vars:";

@@ -19,8 +19,11 @@ let fresh () =
   let index = !nexttvar in
   (nexttvar := index + 1; String.of_char_list (List.rev (int_to_tvar index)))
 
+let subs_to_fresh tvars =
+  List.map tvars ~f:(fun old -> (old, T_var(fresh())))
+
 let instantiate (Forall(s, t)) =
-  let subs = List.map (Set.to_list s) ~f:(fun old -> (old, T_var(fresh()))) in
+  let subs = subs_to_fresh (Set.to_list s) in
   substitute_list subs t
 
 let context_ftv (ctx: Context.context) =
@@ -192,7 +195,25 @@ and infer_construct ctx ident expr_opt =
         | Some(expr) -> infer_expr ctx expr
         | None -> raise (TypeError "Expecting an expression with a cons"))
       in ((Uni(tuptyp, ttyp)) :: ccs, lsttyp)
+  | Lident(str) -> infer_ctx_construct ctx str expr_opt
   | _ -> raise (TypeError "Unknown construct")
+
+and infer_ctx_construct ctx name expr_opt =
+  let constr = Context.find_constr ctx name in
+  match constr with
+  | Some(args, tname) ->
+      let (_, tvargs) = Option.value_exn (Context.find_type ctx tname) in
+      let subs = subs_to_fresh tvargs in
+      let constr_type = T_constr(tname, List.map tvargs ~f:(fun tv -> T_var(tv))) in
+      (match (expr_opt, List.is_empty args) with
+      | (None, true) -> ([], substitute_list subs constr_type)
+      | (Some(expr), false) ->
+          let (ccs, actual_type) = infer_expr ctx expr in
+          let expected_type = substitute_list subs (T_tuple(args)) in
+          ((Uni(expected_type, actual_type)) :: ccs, substitute_list subs constr_type)
+      | (_, true) -> raise (TypeError ("No arguments expected for constructor " ^ name))
+      | (_, false) -> raise (TypeError ("Arguments expected for constructor " ^ name)))
+  | _ -> raise (TypeError ("Unknown constructor " ^ name))
 
 and type_expr (ctx : Context.context) (expr : expression) =
   let (ccs, typ) = infer_expr ctx expr in
