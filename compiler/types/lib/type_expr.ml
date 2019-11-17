@@ -30,6 +30,22 @@ let generalize (ctx: Context.context) t =
   let free_vars = Set.diff (ftv t) (context_ftv ctx)
   in Forall(free_vars, t)
 
+let rec core_to_scheme_type (ct: core_type) =
+  match ct.ptyp_desc with
+  | Ptyp_var(str) -> T_var(str)
+  | Ptyp_arrow(_, a, b) -> T_func(core_to_scheme_type a, core_to_scheme_type b)
+  | Ptyp_tuple(ct_list) -> T_tuple(List.map ct_list ~f:core_to_scheme_type)
+  | Ptyp_constr(id, ct_list) -> ct_constr_to_scheme_type id ct_list
+  | _ -> raise (TypeError "Unsupported core type")
+
+and ct_constr_to_scheme_type id ct_list =
+  match id.txt with
+  | Lident("int") -> v_int
+  | Lident("bool") -> v_bool
+  | Lident("unit") -> v_unit
+  | Lident(str) -> (T_constr(str, List.map ct_list ~f:core_to_scheme_type))
+  | _ -> raise (TypeError "Unsupported core type construct")
+
 let infer_constant (const : constant) =
   match const with
   | Pconst_integer(_, _) -> ([], T_val(V_int))
@@ -183,10 +199,38 @@ and type_expr (ctx : Context.context) (expr : expression) =
   let subs = unify_many ccs in
   substitute_list subs typ
 
+let add_types_to_context (ctx : Context.context) (type_decls : type_declaration list) =
+  let map_ct_to_tvar (ct, _) =
+    match ct.ptyp_desc with
+    | Ptyp_var(str) -> str
+    | _ -> raise (TypeError "Expecting a type variable")
+  in let fold_decl cx decl =
+    let name = decl.ptype_name.txt in
+    let tvars = List.map decl.ptype_params ~f:map_ct_to_tvar in
+    Context.add_type cx name tvars
+  in List.fold type_decls ~init:ctx ~f:fold_decl
+
+let ctx_of_decls (ctx : Context.context) (type_decls : type_declaration list) =
+  let ctx' = add_types_to_context ctx type_decls in
+  let ctx_of_constr tname cx constr =
+    let name = constr.pcd_name.txt in
+    match constr.pcd_args with
+    | Pcstr_tuple(ct_list) ->
+        let st_list = List.map ct_list ~f:core_to_scheme_type
+        in Context.add_constr cx name st_list tname
+    | Pcstr_record(_) -> raise (TypeError "Records are not supported")
+  in let ctx_of_decl cx decl =
+    let name = decl.ptype_name.txt in
+    match decl.ptype_kind with
+    | Ptype_variant(constrs) -> List.fold constrs ~init:cx ~f:(ctx_of_constr name)
+    | _ -> raise (TypeError "Unsupported type kind")
+  in List.fold type_decls ~init:ctx' ~f:ctx_of_decl
+
 let type_structure_item (ctx : Context.context) (item : structure_item) =
   match item.pstr_desc with
   | Pstr_eval(expr, _) -> (ctx, type_expr ctx expr)
   | Pstr_value(recflag, bindings) -> (ctx_of_bindings ctx recflag bindings, v_unit)
+  | Pstr_type(_, type_decls) -> (ctx_of_decls ctx type_decls, v_unit)
   | _ -> raise (TypeError ("Unsupported structure"))
 
 let rec type_structure (ctx : Context.context) (struc : structure) =

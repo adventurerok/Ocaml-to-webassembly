@@ -22,23 +22,17 @@ let printtype str =
   let typ = Type_expr.type_expr ctx parsed in
   Stdio.print_endline ((Types.string_of_scheme_type typ))
 
-let structype str =
+let structype ctx str =
   let parsed = parsestring str in
-  let ctx = Context.empty in
   let nctx = Type_expr.type_structure ctx parsed in
-  let varlist = Context.get_var_list nctx in
-  let printvar (v,t) =
-    let tstr = Types.string_of_scheme t in
-    print_endline (v ^ ": " ^ tstr)
-  in (List.iter varlist ~f:printvar)
+  (Context.print nctx; nctx)
 
-let rec topLoop _ =
+let rec topLoop ctx =
   let line = In_channel.input_line In_channel.stdin in
-  begin
-  (match line with
-  | Some(str) -> structype str
-  | None -> print_endline "Oh no");
-  topLoop ()
-  end
+  let ctx' =
+    match line with
+    | Some(str) -> structype ctx str
+    | None -> (print_endline "Oh no"; ctx)
+  in topLoop ctx'
 
-let _ = topLoop ()
+let _ = topLoop Context.empty
