@@ -65,6 +65,21 @@ let substitute_scheme_list ls (Forall(s,t)) =
   (Forall(s, substitute_list reduced t))
 
 exception UnifyFail of string * uni_pair
+exception OccursFail
+
+let rec occurs_check tv typ =
+  match typ with
+  | T_val(_) -> ()
+  | T_var(ov) ->
+      if (String.equal tv ov) then
+        raise (OccursFail)
+      else
+        ()
+  | T_tuple(ls) -> List.iter ls ~f:(occurs_check tv)
+  | T_constr(_, ls) -> List.iter ls ~f:(occurs_check tv)
+  | T_func(a, b) ->
+      let () = occurs_check tv a in
+      occurs_check tv b
 
 let unify_val va vb =
   match(va, vb) with
@@ -83,8 +98,13 @@ let rec find_unify (Uni(a, b)) =
         find_unify (Uni(T_tuple(l1), T_tuple(l2)))
       else
         raise (UnifyFail ("Different constructs '" ^ s1 ^ "' and '" ^ s2 ^ "'", (Uni(a,b))))
-  | (T_var(tv), _) -> [(tv, b)]
-  | (_, T_var(tv)) -> [(tv, a)]
+  | (T_var(ta), T_var(_)) -> [(ta, b)] (* To avoid self-unification failing the occurs check *)
+  | (T_var(tv), _) ->
+      let () = occurs_check tv b in
+      [(tv, b)]
+  | (_, T_var(tv)) ->
+      let () = occurs_check tv a in
+      [(tv, a)]
   | (T_func(p, q), T_func(x, y)) ->
       let upx = find_unify (Uni(p,x)) in
       let uqy = find_unify (Uni(substitute_list upx q, substitute_list upx y)) in
