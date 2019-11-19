@@ -56,6 +56,27 @@ let find_constr ctx name =
         else (search cs')
   in search ctx.constructs
 
+exception InvalidType of scheme_type * string
+
+(* Checks if typ is valid in this context *)
+let rec check_type (ctx : context) (typ : scheme_type) =
+  match typ with
+  | T_var(_) -> ()
+  | T_val(_) -> ()
+  | T_func(a,b) ->
+      let () = check_type ctx a in
+      check_type ctx b
+  | T_tuple(ls) -> List.iter ls ~f:(check_type ctx)
+  | T_constr(str, ls) ->
+      let () = List.iter ls ~f:(check_type ctx) in
+      let ctype = find_type ctx str in
+      (match ctype with
+      | Some((ac, _)) ->
+          if (List.length ls = ac) then
+            ()
+          else raise (InvalidType (typ, "Type " ^ str ^ " has invalid number of arguments"))
+      | None -> raise (InvalidType (typ, "Unknown type " ^ str)))
+
 let print (ctx : context) =
   Stdio.print_endline "Context(";
   Stdio.print_endline "  vars:";
