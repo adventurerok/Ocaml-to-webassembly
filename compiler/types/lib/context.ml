@@ -56,6 +56,11 @@ let find_constr ctx name =
         else (search cs')
   in search ctx.constructs
 
+let empty_with_lists =
+  let list_type = add_type empty "list" ["a"] in
+  let with_nil = add_constr list_type "[]" [] "list" in
+  add_constr with_nil "::" [T_var("a"); T_constr("list", [T_var("a")])] "list"
+
 exception InvalidType of scheme_type * string
 
 (* Checks if typ is valid in this context *)

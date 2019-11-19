@@ -210,18 +210,6 @@ and infer_construct ctx ident expr_opt =
   match ident.txt with
   | Lident("true") -> ([], T_val(V_bool))
   | Lident("false") -> ([], T_val(V_bool))
-  | Lident("[]") ->
-      let ltyp = T_var(fresh ()) in
-      ([], T_constr("list", [ltyp]))
-  | Lident("::") ->
-      let ltyp = T_var(fresh ()) in
-      let lsttyp = T_constr("list", [ltyp]) in
-      let tuptyp = T_tuple([ltyp; lsttyp]) in
-      let (ccs,ttyp) =
-        (match expr_opt with
-        | Some(expr) -> infer_expr ctx expr
-        | None -> raise (TypeError "Expecting an expression with a cons"))
-      in ((Uni(tuptyp, ttyp)) :: ccs, lsttyp)
   | Lident(str) -> infer_ctx_construct ctx str expr_opt
   | _ -> raise (TypeError "Unknown construct")
 
@@ -229,20 +217,6 @@ and infer_pattern_construct ctx ident pat_opt =
   match ident.txt with
   | Lident("true") -> (v_bool, [])
   | Lident("false") -> (v_bool, [])
-  | Lident("[]") ->
-      let ltyp = T_var(fresh ()) in
-      (T_constr("list", [ltyp]), [])
-  | Lident("::") ->
-      let ltyp = T_var(fresh ()) in
-      let lsttyp = T_constr("list", [ltyp]) in
-      let tuptyp = T_tuple([ltyp; lsttyp]) in
-      let (ttyp, vars) =
-        (match pat_opt with
-        | Some(pat) -> infer_pattern ctx pat
-        | None -> raise (TypeError "Expecting a pattern with a cons"))
-      in let subs = unify tuptyp ttyp in
-      let vars' = List.map vars ~f:(fun (v,t) -> (v, substitute_list subs t)) in
-      (substitute_list subs lsttyp, vars')
   | Lident(str) -> infer_pattern_ctx_construct ctx str pat_opt
   | _ -> raise (TypeError "Unknown construct")
 

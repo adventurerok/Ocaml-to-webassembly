@@ -35,4 +35,4 @@ let rec topLoop ctx =
     | None -> (print_endline "Oh no"; ctx)
   in topLoop ctx'
 
-let _ = topLoop Context.empty
+let _ = topLoop Context.empty_with_lists
