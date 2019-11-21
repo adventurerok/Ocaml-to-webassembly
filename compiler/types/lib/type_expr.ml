@@ -2,6 +2,7 @@ open Core_kernel
 open Parsetree
 open Types
 open Predefined
+open Typed_ast
 
 exception TypeError of string
 
@@ -60,64 +61,81 @@ let type_constant (const : constant) =
   | Pconst_integer(_, _) -> (T_val(V_int))
   | _ -> raise (TypeError "Unknown constant type")
 
-(* context -> expression -> (uni_pair list * scheme) *)
-let rec infer_expr (ctx : Context.context) (expr : expression) : (uni_pair list * scheme_type) =
-  match expr.pexp_desc with
-  | Pexp_constant(const) -> ([], type_constant const)
-  | Pexp_construct(ident, expr_opt) -> infer_construct ctx ident expr_opt
-  | Pexp_apply(f, args) -> infer_apply ctx f args
-  | Pexp_ident(ident) -> infer_ident ctx ident
-  | Pexp_fun(_, _, pat, body) -> infer_fun ctx pat body
-  | Pexp_let(recflag, bindings, body) ->
-      let (ctx') = ctx_of_bindings ctx recflag bindings in
-      let (ecs, typ) = infer_expr ctx' body in
-      (ecs, typ)
-  | Pexp_tuple(lst) ->
-      let ctlst = List.map lst ~f:(infer_expr ctx) in
-      let (ccslst, tlst) = List.unzip ctlst in
-      let ccs = List.concat ccslst in
-      (ccs, T_tuple(tlst))
-  | Pexp_ifthenelse(iexpr, texpr, eexpr_opt) ->
-      let (ics, ityp) = infer_expr ctx iexpr in
-      let (tcs, ttyp) = infer_expr ctx texpr in
-      (match eexpr_opt with
-      | Some(eexpr) ->
-          let (ecs, etyp) = infer_expr ctx eexpr in
-          ((Uni(ityp, v_bool)) :: (Uni(ttyp, etyp)) :: (ics @ tcs @ ecs), ttyp)
-      | None -> ((Uni(ityp, v_bool)) :: (ics @ tcs), ttyp))
-  | Pexp_constraint(expr, ct) ->
-      let st = ct_to_st_with_check ctx ct in
-      let (ccs, typ) = infer_expr ctx expr in
-      ((Uni(typ, st)) :: ccs, typ)
-  | Pexp_match(expr, cases) -> infer_match ctx expr cases
-  | _ -> raise (TypeError "Unsupported expression")
+(* context -> expression -> (uni_pair list * texpression) *)
+let rec infer_expr (ctx : Context.context) (expr : expression) : (uni_pair list * texpression) =
+  let (ccs, etyp, desc) =
+    match expr.pexp_desc with
+    | Pexp_constant(const) -> ([], type_constant const, Texp_constant(const))
+    | Pexp_construct(ident, expr_opt) -> infer_construct ctx ident expr_opt
+    | Pexp_apply(f, args) -> infer_apply ctx f args
+    | Pexp_ident(ident) -> infer_ident ctx ident
+    | Pexp_fun(_, _, pat, body) -> infer_fun ctx pat body
+    | Pexp_let(recflag, bindings, body) ->
+        let (ctx', tvb_lst) = ctx_of_bindings ctx recflag bindings in
+        let (ecs, ast) = infer_expr ctx' body in
+        let typ = ast.texp_type in
+        (ecs, typ, Texp_let(recflag, tvb_lst, ast))
+    | Pexp_tuple(lst) ->
+        let ctlst = List.map lst ~f:(infer_expr ctx) in
+        let (ccslst, astlst) = List.unzip ctlst in
+        let tlst = List.map astlst ~f:(fun e -> e.texp_type) in
+        let ccs = List.concat ccslst in
+        (ccs, T_tuple(tlst), Texp_tuple(astlst))
+    | Pexp_ifthenelse(iexpr, texpr, eexpr_opt) ->
+        let (ics, i_ast) = infer_expr ctx iexpr in
+        let ityp = i_ast.texp_type in
+        let (tcs, t_ast) = infer_expr ctx texpr in
+        let ttyp = t_ast.texp_type in
+        (match eexpr_opt with
+        | Some(eexpr) ->
+            let (ecs, e_ast) = infer_expr ctx eexpr in
+            let etyp = e_ast.texp_type in
+            let ccs = (Uni(ityp, v_bool)) :: (Uni(ttyp, etyp)) :: (ics @ tcs @ ecs) in
+            (ccs, ttyp, Texp_ifthenelse(i_ast, t_ast, Some(e_ast)))
+        | None -> ((Uni(ityp, v_bool)) :: (ics @ tcs), ttyp, Texp_ifthenelse(i_ast, t_ast, None)))
+    | Pexp_constraint(expr, ct) ->
+        let st = ct_to_st_with_check ctx ct in
+        let (ccs, ast) = infer_expr ctx expr in
+        ((Uni(ast.texp_type, st)) :: ccs, ast.texp_type, ast.texp_desc)
+    | Pexp_match(expr, cases) -> infer_match ctx expr cases
+    | _ -> raise (TypeError "Unsupported expression")
+  in (ccs, {
+    texp_loc = expr.pexp_loc;
+    texp_desc = desc;
+    texp_type = etyp
+  })
 
 and infer_apply ctx f args =
-  let (fcs, ftype) = infer_expr ctx f in
+  let (fcs, f_ast) = infer_expr ctx f in
+  let ftype = f_ast.texp_type in
   let rec partial fc args =
     match args with
-    | [] -> ([], fc)
+    | [] -> ([], fc, [])
     | ((_, expr) :: args') ->
-        let (acs, atyp) = infer_expr ctx expr in
+        let (acs, a_ast) = infer_expr ctx expr in
+        let atyp = a_ast.texp_type in
         (match fc with
         | T_func(a, b) ->
-            let (bcs, btyp) = partial b args' in
-            (((Uni(a, atyp)) :: acs) @ bcs, btyp)
+            let (bcs, btyp, ast_lst) = partial b args' in
+            (((Uni(a, atyp)) :: acs) @ bcs, btyp, a_ast :: ast_lst)
         | T_var(_) ->
             let a = T_var(fresh ()) in
             let b = T_var(fresh ()) in
-            let (bcs, btyp) = partial b args' in
+            let (bcs, btyp, ast_lst) = partial b args' in
             let ccs = ((Uni(fc, T_func(a, b))) :: (Uni(a, atyp)) :: (Uni(b, btyp)) :: acs) @ bcs in
-            (ccs, btyp)
+            (ccs, btyp, a_ast :: ast_lst)
         | _ -> raise (TypeError "Cannot apply a non_function"))
-  in let (argcs, typ) = partial ftype args in
-  (fcs @ argcs, typ)
+  in let (argcs, typ, ast_lst) = partial ftype args in
+  (fcs @ argcs, typ, Texp_apply(f_ast, ast_lst))
 
 and infer_fun ctx pat body =
-  let (atyp, vars) = infer_pattern ctx pat in
+  let a_ast = infer_pattern ctx pat in
+  let atyp = a_ast.tpat_type in
+  let vars = a_ast.tpat_vars in
   let ctx' = List.fold vars ~init:ctx ~f:(fun cx (v,t) -> Context.add_var cx v (Forall(empty_tvar_set, t))) in
-  let (bcs, btyp) = infer_expr ctx' body in
-  (bcs, T_func(atyp, btyp))
+  let (bcs, b_ast) = infer_expr ctx' body in
+  let btyp = b_ast.texp_type in
+  (bcs, T_func(atyp, btyp), Texp_fun(a_ast, b_ast))
 
 and ctx_of_bindings ctx recflag bindings =
   match recflag with
@@ -126,97 +144,132 @@ and ctx_of_bindings ctx recflag bindings =
 
 and ctx_of_nonrec_bindings ctx bindings =
   match bindings with
-  | [] -> (ctx)
+  | [] -> (ctx, [])
   | (binding :: bindings') ->
-      let (ctx') = ctx_of_nonrec_binding ctx binding in
-      let (ctx'') = ctx_of_nonrec_bindings ctx' bindings' in
-      (ctx'')
+      let (ctx', tvb) = ctx_of_nonrec_binding ctx binding in
+      let (ctx'', tvb_lst) = ctx_of_nonrec_bindings ctx' bindings' in
+      (ctx'', tvb :: tvb_lst)
 
 and ctx_of_nonrec_binding ctx binding =
-  let typ = type_expr ctx binding.pvb_expr in
-  let (ptyp, vars) = infer_pattern ctx binding.pvb_pat in
+  let e_ast = type_expr ctx binding.pvb_expr in
+  let typ = e_ast.texp_type in
+  let p_ast = infer_pattern ctx binding.pvb_pat in
+  let ptyp = p_ast.tpat_type in
+  let vars = p_ast.tpat_vars in
   let subs = unify ptyp typ in
-  (addvars subs ctx ctx vars)
+  let (ctx', svars) = addvars subs ctx ctx vars in
+  (ctx', {
+    tvb_pat = p_ast;
+    tvb_expr = e_ast;
+    tvb_vars = svars
+  })
 
 and addvars subs ctx cx vlist =
   match vlist with
-  | [] -> cx
+  | [] -> (cx, [])
   | ((v,t)::vlist') ->
       let truetype = substitute_list subs t in
       let genscheme = generalize ctx truetype in
       let cx' = Context.add_var cx v genscheme in
       Stdio.print_endline ("Bind " ^ v ^ " to " ^ (string_of_scheme genscheme));
-      addvars subs ctx cx' vlist'
+      let (cx'', svars) = addvars subs ctx cx' vlist' in
+      (cx'', (v,genscheme) :: svars)
 
 and ctx_of_rec_bindings ctx bindings =
   let pe_list = List.map bindings ~f:(fun vb -> (vb.pvb_pat, vb.pvb_expr)) in
   let (pat_list, expr_list) = List.unzip pe_list in
-  let pinfer_list = List.map pat_list ~f:(infer_pattern ctx) in
-  let (ptyp_ls, pvar_ls) = List.unzip pinfer_list in
+  let p_ast_lst = List.map pat_list ~f:(infer_pattern ctx) in
+  let (ptyp_ls, pvar_ls) = List.unzip (List.map p_ast_lst ~f:(fun p -> (p.tpat_type, p.tpat_vars))) in
   let allvars = List.concat pvar_ls in
   let ctx' = List.fold allvars ~init:ctx ~f:(fun cx (v,t) -> Context.add_var cx v (Forall(empty_tvar_set, t))) in
-  let rec handle plist elist =
-    match (plist, elist) with
-    | ([], []) -> ([], [])
-    | ((ptyp :: plist'), (expr :: elist')) ->
-        let (ccs, etyp) = infer_expr ctx' expr in
-        let (ecs, typs) = handle plist' elist' in
-        (ccs @ [(Uni(ptyp, etyp))] @ ecs, etyp :: typs)
+  let rec handle pa_lst pt_lst e_lst =
+    match (pa_lst, pt_lst, e_lst) with
+    | ([], [], []) -> ([], [], [])
+    | ((p_ast :: pa_lst'), (ptyp :: pt_lst'), (expr :: e_lst')) ->
+        let (ccs, e_ast) = infer_expr ctx' expr in
+        let etyp = e_ast.texp_type in
+        let (ecs, typs, tvb_lst) = handle pa_lst' pt_lst' e_lst' in
+        let tvb = {
+          tvb_pat = p_ast;
+          tvb_expr = e_ast;
+          tvb_vars = [] (* Compute this later *)
+        } in
+        (ccs @ [(Uni(ptyp, etyp))] @ ecs, etyp :: typs, tvb :: tvb_lst)
     | _ -> raise (TypeError "Unequal number of pattern types and expression types. Impossible?")
-  in let (ccs, _) = handle ptyp_ls expr_list in
+  in let (ccs, _, tvb_lst) = handle p_ast_lst ptyp_ls expr_list in
   let subs = unify_many ccs in
-  (addvars subs ctx ctx allvars)
+  let (fctx, svars) = addvars subs ctx ctx allvars in
+  let rec fixvars tlst svars =
+    match tlst with
+    | [] -> []
+    | (tvb :: tlst') ->
+        let var_count = List.length tvb.tvb_pat.tpat_vars in
+        let (ourvars, othervars) = List.split_n svars var_count in
+        let tvb' = {tvb with tvb_vars = ourvars} in
+        let fixedlst = fixvars tlst' othervars in
+        (tvb' :: fixedlst)
+  in
+  (fctx, fixvars tvb_lst svars)
 
-(* context -> pattern -> (type * new_ctx * new_vars) *)
+(* context -> pattern -> tpattern *)
 and infer_pattern ctx pat =
-  match pat.ppat_desc with
-  | Ppat_var(ident) ->
-      let varname = ident.txt in
-      let tv = fresh () in
-      let typ = (T_var(tv)) in
-      (typ, [(varname, typ)])
-  | Ppat_tuple(lst) ->
-      let rec loop ls =
-        match ls with
-        | [] -> ([], [])
-        | (pat::ls') ->
-            let (typ, vars) = infer_pattern ctx pat in
-            let (tlst, vars') = loop ls' in
-            (typ :: tlst, vars @ vars')
-      in let (tlst, vars) = loop lst in
-      (T_tuple(tlst), vars)
-  | Ppat_constraint(pat', ct) ->
-      let st = ct_to_st_with_check ctx ct in
-      let (typ, vars) = infer_pattern ctx pat' in
-      let subs = unify typ st in
-      let vars' = List.map vars ~f:(fun (v, t) -> (v, substitute_list subs t)) in
-      (st, vars')
-  | Ppat_constant(const) -> (type_constant const, [])
-  | Ppat_construct(id, pat_opt) -> infer_pattern_construct ctx id pat_opt
-  | _ -> raise (TypeError "Unsupported pattern")
+  let(ptyp, pvars, pdesc) =
+    match pat.ppat_desc with
+    | Ppat_var(ident) ->
+        let varname = ident.txt in
+        let tv = fresh () in
+        let typ = (T_var(tv)) in
+        (typ, [(varname, typ)], Tpat_var(varname))
+    | Ppat_tuple(lst) ->
+        let rec loop ls =
+          match ls with
+          | [] -> ([], [], [])
+          | (pat::ls') ->
+              let (p_ast) = infer_pattern ctx pat in
+              let typ = p_ast.tpat_type in
+              let vars = p_ast.tpat_vars in
+              let (tlst, vars', ast_lst) = loop ls' in
+              (typ :: tlst, vars @ vars', p_ast :: ast_lst)
+        in let (tlst, vars, ast_lst) = loop lst in
+        (T_tuple(tlst), vars, Tpat_tuple(ast_lst))
+    | Ppat_constraint(pat', ct) ->
+        let st = ct_to_st_with_check ctx ct in
+        let p_ast = infer_pattern ctx pat' in
+        let subs = unify p_ast.tpat_type st in
+        let vars' = List.map p_ast.tpat_vars ~f:(fun (v, t) -> (v, substitute_list subs t)) in
+        (st, vars', p_ast.tpat_desc)
+    | Ppat_constant(const) -> (type_constant const, [], Tpat_constant(const))
+    | Ppat_construct(id, pat_opt) -> infer_pattern_construct ctx id pat_opt
+    | _ -> raise (TypeError "Unsupported pattern")
+  in {
+    tpat_desc = pdesc;
+    tpat_loc = pat.ppat_loc;
+    tpat_type = ptyp;
+    tpat_vars = pvars
+  }
 
 and infer_ident ctx ident =
   match ident.txt with
   | Lident(str) ->
       (match Context.find_var ctx str with
-      | Some(typ) -> ([], instantiate typ)
+      | Some(typ) -> ([], instantiate typ, Texp_ident(str))
       | None ->
           (match lookup_ident str with
-          | Some(t2) -> ([], t2)
+          | Some(t2) -> ([], t2, Texp_ident(str))
           | None -> raise (TypeError ("Unknown identifer '" ^ str ^ "'"))))
   | _ -> raise (TypeError ("Unknown strange identifer"))
 
 and infer_construct ctx ident expr_opt =
   match ident.txt with
-  | Lident("true") -> ([], T_val(V_bool))
-  | Lident("false") -> ([], T_val(V_bool))
+  | Lident("true") -> ([], T_val(V_bool), Texp_construct("true", None))
+  | Lident("false") -> ([], T_val(V_bool), Texp_construct("false", None))
   | Lident(str) -> infer_ctx_construct ctx str expr_opt
   | _ -> raise (TypeError "Unknown construct")
 
 and infer_pattern_construct ctx ident pat_opt =
   match ident.txt with
-  | Lident("true") -> (v_bool, [])
-  | Lident("false") -> (v_bool, [])
+  | Lident("true") -> (v_bool, [], Tpat_construct("true", None))
+  | Lident("false") -> (v_bool, [], Tpat_construct("false", None))
   | Lident(str) -> infer_pattern_ctx_construct ctx str pat_opt
   | _ -> raise (TypeError "Unknown construct")
 
@@ -228,11 +281,14 @@ and infer_ctx_construct ctx name expr_opt =
       let subs = subs_to_fresh tvargs in
       let constr_type = T_constr(tname, List.map tvargs ~f:(fun tv -> T_var(tv))) in
       (match (expr_opt, List.is_empty args) with
-      | (None, true) -> ([], substitute_list subs constr_type)
+      | (None, true) -> ([], substitute_list subs constr_type, Texp_construct(name, None))
       | (Some(expr), false) ->
-          let (ccs, actual_type) = infer_expr ctx expr in
+          let (ccs, actual_ast) = infer_expr ctx expr in
+          let actual_type = actual_ast.texp_type in
           let expected_type = substitute_list subs (T_tuple(args)) in
-          ((Uni(expected_type, actual_type)) :: ccs, substitute_list subs constr_type)
+          let ccs' = (Uni(expected_type, actual_type)) :: ccs in
+          let subs_type = substitute_list subs constr_type in
+          (ccs', subs_type, Texp_construct(name, Some(actual_ast)))
       | (_, true) -> raise (TypeError ("No arguments expected for constructor " ^ name))
       | (_, false) -> raise (TypeError ("Arguments expected for constructor " ^ name)))
   | _ -> raise (TypeError ("Unknown constructor " ^ name))
@@ -245,37 +301,48 @@ and infer_pattern_ctx_construct ctx name pat_opt =
       let subs = subs_to_fresh tvargs in
       let constr_type = T_constr(tname, List.map tvargs ~f:(fun tv -> T_var(tv))) in
       (match (pat_opt, List.is_empty args) with
-      | (None, true) -> (substitute_list subs constr_type, [])
+      | (None, true) -> (substitute_list subs constr_type, [], Tpat_construct(name, None))
       | (Some(pat), false) ->
-          let (actual_type, vars) = infer_pattern ctx pat in
+          let p_ast = infer_pattern ctx pat in
+          let actual_type = p_ast.tpat_type in
+          let vars = p_ast.tpat_vars in
           let expected_type = substitute_list subs (T_tuple(args)) in
           let subs' = unify expected_type actual_type in
           let vars' = List.map vars ~f:(fun (v,t) -> (v, substitute_list subs' t)) in
-          (substitute_list subs constr_type, vars')
+          (substitute_list subs constr_type, vars', Tpat_construct(name, Some(p_ast)))
       | (_, true) -> raise (TypeError ("No arguments expected for constructor " ^ name))
       | (_, false) -> raise (TypeError ("Arguments expected for constructor " ^ name)))
   | _ -> raise (TypeError ("Unknown constructor " ^ name))
 
 and infer_match ctx expr cases =
-  let (ecs, etyp) = infer_expr ctx expr in
+  let (ecs, e_ast) = infer_expr ctx expr in
+  let etyp = e_ast.texp_type in
   let rec handle_cases cs ityp =
     match cs with
-    | [] -> []
+    | [] -> ([], [])
     | (case :: cs') ->
-        let (ptyp, vars) = infer_pattern ctx case.pc_lhs in
+        let (p_ast) = infer_pattern ctx case.pc_lhs in
+        let ptyp = p_ast.tpat_type in
+        let vars = p_ast.tpat_vars in
         let ctx' = List.fold vars ~init:ctx ~f:(fun cx (v,t) -> Context.add_var cx v (Forall(empty_tvar_set, t))) in
-        let (ccs, ctyp) = infer_expr ctx' case.pc_rhs in
-        let ccs' = handle_cases cs' ctyp in
-        ((Uni(ptyp, etyp)) :: (Uni(ityp, ctyp)) :: (ccs @ ccs'))
+        let (ccs, c_ast) = infer_expr ctx' case.pc_rhs in
+        let ctyp = c_ast.texp_type in
+        let (ccs', tc_lst) = handle_cases cs' ctyp in
+        let tcase = {
+          tc_lhs = p_ast;
+          tc_rhs = c_ast
+        } in
+        ((Uni(ptyp, etyp)) :: (Uni(ityp, ctyp)) :: (ccs @ ccs'), tcase :: tc_lst)
   in let restyp = (T_var(fresh())) in
-  let ccs = handle_cases cases restyp in
-  (ecs @ ccs, restyp)
+  let (ccs, tc_lst) = handle_cases cases restyp in
+  (ecs @ ccs, restyp, Texp_match(e_ast, tc_lst))
 
 
 and type_expr (ctx : Context.context) (expr : expression) =
-  let (ccs, typ) = infer_expr ctx expr in
+  let (ccs, t_ast) = infer_expr ctx expr in
   let subs = unify_many ccs in
-  substitute_list subs typ
+  let fixed_tree = texpression_map_types (substitute_scheme_list subs) (substitute_list subs) t_ast in
+  fixed_tree
 
 let add_types_to_context (ctx : Context.context) (type_decls : type_declaration list) =
   let map_ct_to_tvar (ct, _) =
@@ -305,15 +372,26 @@ let ctx_of_decls (ctx : Context.context) (type_decls : type_declaration list) =
   in List.fold type_decls ~init:ctx' ~f:ctx_of_decl
 
 let type_structure_item (ctx : Context.context) (item : structure_item) =
-  match item.pstr_desc with
-  | Pstr_eval(expr, _) -> (ctx, type_expr ctx expr)
-  | Pstr_value(recflag, bindings) -> (ctx_of_bindings ctx recflag bindings, v_unit)
-  | Pstr_type(_, type_decls) -> (ctx_of_decls ctx type_decls, v_unit)
-  | _ -> raise (TypeError ("Unsupported structure"))
+  let (nctx, typ, desc) =
+    match item.pstr_desc with
+    | Pstr_eval(expr, _) ->
+        let e_ast = type_expr ctx expr in
+        (ctx, e_ast.texp_type, Tstr_eval(e_ast))
+    | Pstr_value(recflag, bindings) ->
+        let (ctx', tvb_lst) = ctx_of_bindings ctx recflag bindings in
+        (ctx', v_unit, Tstr_value(recflag, tvb_lst))
+    | Pstr_type(_, type_decls) -> (ctx_of_decls ctx type_decls, v_unit, Tstr_type)
+    | _ -> raise (TypeError ("Unsupported structure"))
+  in (nctx, {
+    tstr_desc = desc;
+    tstr_loc = item.pstr_loc;
+    tstr_type = typ
+  })
 
 let rec type_structure (ctx : Context.context) (struc : structure) =
   match struc with
-  | [] -> ctx
+  | [] -> (ctx, [])
   | (struc_item :: struc') ->
-      let (ctx', _) = type_structure_item ctx struc_item in
-      type_structure ctx' struc'
+      let (ctx', si_ast) = type_structure_item ctx struc_item in
+      let (ctx'', si_ast_lst) = type_structure ctx' struc' in
+      (ctx'', si_ast :: si_ast_lst)
