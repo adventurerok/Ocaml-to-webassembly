@@ -191,7 +191,7 @@ and ctx_of_rec_bindings ctx bindings =
         let (ecs, typs, tvb_lst) = handle pa_lst' pt_lst' e_lst' in
         let tvb = {
           tvb_pat = p_ast;
-          tvb_expr = e_ast;
+          tvb_expr = e_ast; (* Need to substitute later *)
           tvb_vars = [] (* Compute this later *)
         } in
         (ccs @ [(Uni(ptyp, etyp))] @ ecs, etyp :: typs, tvb :: tvb_lst)
@@ -199,17 +199,21 @@ and ctx_of_rec_bindings ctx bindings =
   in let (ccs, _, tvb_lst) = handle p_ast_lst ptyp_ls expr_list in
   let subs = unify_many ccs in
   let (fctx, svars) = addvars subs ctx ctx allvars in
-  let rec fixvars tlst svars =
+  let rec fixup tlst svars =
     match tlst with
     | [] -> []
     | (tvb :: tlst') ->
         let var_count = List.length tvb.tvb_pat.tpat_vars in
         let (ourvars, othervars) = List.split_n svars var_count in
-        let tvb' = {tvb with tvb_vars = ourvars} in
-        let fixedlst = fixvars tlst' othervars in
+        let tvb' = {
+          tvb with
+          tvb_expr = texpression_substitute subs tvb.tvb_expr;
+          tvb_vars = ourvars
+        } in
+        let fixedlst = fixup tlst' othervars in
         (tvb' :: fixedlst)
   in
-  (fctx, fixvars tvb_lst svars)
+  (fctx, fixup tvb_lst svars)
 
 (* context -> pattern -> tpattern *)
 and infer_pattern ctx pat =
@@ -341,7 +345,7 @@ and infer_match ctx expr cases =
 and type_expr (ctx : Context.context) (expr : expression) =
   let (ccs, t_ast) = infer_expr ctx expr in
   let subs = unify_many ccs in
-  let fixed_tree = texpression_map_types (substitute_scheme_list subs) (substitute_list subs) t_ast in
+  let fixed_tree = texpression_substitute subs t_ast in
   fixed_tree
 
 let add_types_to_context (ctx : Context.context) (type_decls : type_declaration list) =

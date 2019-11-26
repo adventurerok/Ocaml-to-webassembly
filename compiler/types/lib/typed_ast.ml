@@ -175,3 +175,7 @@ and tcase_map_types sf stf case =
     tc_lhs = tpattern_map_types sf stf case.tc_lhs;
     tc_rhs = texpression_map_types sf stf case.tc_rhs
   }
+
+let texpression_substitute subs texp =
+  texpression_map_types (substitute_scheme_list subs) (substitute_list subs) texp
+
