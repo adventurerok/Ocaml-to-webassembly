@@ -2,6 +2,7 @@ open Core_kernel
 open Parsetree
 open Types
 
+(* The typed AST definition *)
 type texpression = {
   texp_desc : texpression_desc;
   texp_loc: Location.t;
@@ -57,6 +58,8 @@ and tstructure_item_desc =
 | Tstr_value of Asttypes.rec_flag * tvalue_binding list
 | Tstr_type
 
+
+(* Functions to convert each to string *)
 let rec tstructure_to_string tstr =
   String.concat ~sep:";;" (List.map tstr ~f:tstructure_item_to_string)
 
@@ -110,6 +113,9 @@ and constant_to_string const =
   | Pconst_string (str, _) -> str
   | Pconst_float (str, _) -> str)
 
+(* Functions to map all schemes and scheme_types in the tree *)
+(* sf = scheme function: scheme -> scheme
+ * stf = scheme type function: scheme_type -> scheme_type *)
 let rec texpression_map_types sf stf texp =
   let desc =
     match texp.texp_desc with
@@ -176,6 +182,7 @@ and tcase_map_types sf stf case =
     tc_rhs = texpression_map_types sf stf case.tc_rhs
   }
 
+(* Uses the map_types function to substitute *)
 let texpression_substitute subs texp =
   texpression_map_types (substitute_scheme_list subs) (substitute_list subs) texp
 

@@ -106,12 +106,16 @@ let rec infer_expr (ctx : Context.context) (expr : expression) : (uni_pair list 
   })
 
 and infer_apply ctx f args =
+  (* Check the function first *)
   let (fcs, f_ast) = infer_expr ctx f in
   let ftype = f_ast.texp_type in
+  (* The AST has flat applies with a list of args, rather than a tree of apply with 1 arg
+   * Loop through each arg and compute a new function type by partially applying it *)
   let rec partial fc args =
     match args with
     | [] -> ([], fc, [])
     | ((_, expr) :: args') ->
+        (* Infer the arg *)
         let (acs, a_ast) = infer_expr ctx expr in
         let atyp = a_ast.texp_type in
         (match fc with
@@ -129,10 +133,12 @@ and infer_apply ctx f args =
   (fcs @ argcs, typ, Texp_apply(f_ast, ast_lst))
 
 and infer_fun ctx pat body =
+  (* Get a context from the pattern *)
   let a_ast = infer_pattern ctx pat in
   let atyp = a_ast.tpat_type in
   let vars = a_ast.tpat_vars in
   let ctx' = List.fold vars ~init:ctx ~f:(fun cx (v,t) -> Context.add_var cx v (Forall(empty_tvar_set, t))) in
+  (* Use this context to check the body *)
   let (bcs, b_ast) = infer_expr ctx' body in
   let btyp = b_ast.texp_type in
   (bcs, T_func(atyp, btyp), Texp_fun(a_ast, b_ast))
@@ -151,11 +157,14 @@ and ctx_of_nonrec_bindings ctx bindings =
       (ctx'', tvb :: tvb_lst)
 
 and ctx_of_nonrec_binding ctx binding =
+  (* Type the expression, so no constraints *)
   let e_ast = type_expr ctx binding.pvb_expr in
   let typ = e_ast.texp_type in
+  (* Then the pattern *)
   let p_ast = infer_pattern ctx binding.pvb_pat in
   let ptyp = p_ast.tpat_type in
   let vars = p_ast.tpat_vars in
+  (* Then unify *)
   let subs = unify ptyp typ in
   let (ctx', svars) = addvars subs ctx ctx vars in
   (ctx', {
@@ -164,6 +173,9 @@ and ctx_of_nonrec_binding ctx binding =
     tvb_vars = svars
   })
 
+(* For a list of (variable,scheme_type), substitute subs,
+ * then convert types into a scheme by making them forall over type variables not in ctx,
+ * before adding them to cx. Was originally part of another function but I need it twice. *)
 and addvars subs ctx cx vlist =
   match vlist with
   | [] -> (cx, [])
@@ -176,12 +188,18 @@ and addvars subs ctx cx vlist =
       (cx'', (v,genscheme) :: svars)
 
 and ctx_of_rec_bindings ctx bindings =
+  (* Extract a list of lhs patterns and rhs expressions *)
   let pe_list = List.map bindings ~f:(fun vb -> (vb.pvb_pat, vb.pvb_expr)) in
   let (pat_list, expr_list) = List.unzip pe_list in
+  (* Type check the patterns, getting their types and vars *)
   let p_ast_lst = List.map pat_list ~f:(infer_pattern ctx) in
   let (ptyp_ls, pvar_ls) = List.unzip (List.map p_ast_lst ~f:(fun p -> (p.tpat_type, p.tpat_vars))) in
+  (* Join the vars and create a context from them *)
   let allvars = List.concat pvar_ls in
   let ctx' = List.fold allvars ~init:ctx ~f:(fun cx (v,t) -> Context.add_var cx v (Forall(empty_tvar_set, t))) in
+  (* tpattern list -> scheme_type list -> expression list -> (uni list * scheme_type list * tvalue_binding list) *)
+  (* For each let binding, we take it's tpattern p_ast, pattern's scheme_type ptyp and expression,
+   * And produce constraints, an expression type and a tvalue_binding *)
   let rec handle pa_lst pt_lst e_lst =
     match (pa_lst, pt_lst, e_lst) with
     | ([], [], []) -> ([], [], [])
@@ -194,11 +212,15 @@ and ctx_of_rec_bindings ctx bindings =
           tvb_expr = e_ast; (* Need to substitute later *)
           tvb_vars = [] (* Compute this later *)
         } in
+        (* The pattern type and expression type must unify *)
         (ccs @ [(Uni(ptyp, etyp))] @ ecs, etyp :: typs, tvb :: tvb_lst)
     | _ -> raise (TypeError "Unequal number of pattern types and expression types. Impossible?")
   in let (ccs, _, tvb_lst) = handle p_ast_lst ptyp_ls expr_list in
   let subs = unify_many ccs in
+  (* fctx is the final context, svars is the substituted version of allvars *)
   let (fctx, svars) = addvars subs ctx ctx allvars in
+  (* Loop through tvalue_bindings fixing them.
+   * As allvars and svars are in order, we just take from the head that number of vars for the tvb_vars *)
   let rec fixup tlst svars =
     match tlst with
     | [] -> []
@@ -220,11 +242,13 @@ and infer_pattern ctx pat =
   let(ptyp, pvars, pdesc) =
     match pat.ppat_desc with
     | Ppat_var(ident) ->
+        (* Maps to a fresh variable *)
         let varname = ident.txt in
         let tv = fresh () in
         let typ = (T_var(tv)) in
         (typ, [(varname, typ)], Tpat_var(varname))
     | Ppat_tuple(lst) ->
+        (* Loop through subpatterns, returning type list, combined vars list and tpattern list *)
         let rec loop ls =
           match ls with
           | [] -> ([], [], [])
@@ -237,6 +261,7 @@ and infer_pattern ctx pat =
         in let (tlst, vars, ast_lst) = loop lst in
         (T_tuple(tlst), vars, Tpat_tuple(ast_lst))
     | Ppat_constraint(pat', ct) ->
+        (* Check the underlying pattern and unify with constraint *)
         let st = ct_to_st_with_check ctx ct in
         let p_ast = infer_pattern ctx pat' in
         let subs = unify p_ast.tpat_type st in
@@ -277,6 +302,7 @@ and infer_pattern_construct ctx ident pat_opt =
   | Lident(str) -> infer_pattern_ctx_construct ctx str pat_opt
   | _ -> raise (TypeError "Unknown construct")
 
+(* Infer a construct from the context *)
 and infer_ctx_construct ctx name expr_opt =
   let constr = Context.find_constr ctx name in
   match constr with
@@ -297,6 +323,8 @@ and infer_ctx_construct ctx name expr_opt =
       | (_, false) -> raise (TypeError ("Arguments expected for constructor " ^ name)))
   | _ -> raise (TypeError ("Unknown constructor " ^ name))
 
+(* Infer a construct from the context, but a pattern is supplied instead of an expression *)
+(* TODO maybe there's a way to combine these? *)
 and infer_pattern_ctx_construct ctx name pat_opt =
   let constr = Context.find_constr ctx name in
   match constr with
@@ -321,6 +349,7 @@ and infer_pattern_ctx_construct ctx name pat_opt =
 and infer_match ctx expr cases =
   let (ecs, e_ast) = infer_expr ctx expr in
   let etyp = e_ast.texp_type in
+  (* case -> incoming type -> (constraints * tcase list) *)
   let rec handle_cases cs ityp =
     match cs with
     | [] -> ([], [])
@@ -342,6 +371,7 @@ and infer_match ctx expr cases =
   (ecs @ ccs, restyp, Texp_match(e_ast, tc_lst))
 
 
+(* Infer the type and constraints, and then solve these to get just a type *)
 and type_expr (ctx : Context.context) (expr : expression) =
   let (ccs, t_ast) = infer_expr ctx expr in
   let subs = unify_many ccs in

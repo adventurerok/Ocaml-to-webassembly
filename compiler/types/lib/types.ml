@@ -5,6 +5,7 @@ type tvalue =
   | V_int
   | V_bool
 
+(* TODO why? *)
 type tvar = string
 
 type tvar_set = (string, String.comparator_witness) Set.t
@@ -33,6 +34,7 @@ let rec ftv typ =
 let ftv_scheme (Forall(s, t)) =
   Set.diff (ftv t) s
 
+(* Substitute tv for styp in typ *)
 let rec substitute tv styp typ =
   match typ with
   | (T_var(tvo)) -> if (String.equal tv tvo) then styp else typ
@@ -41,11 +43,14 @@ let rec substitute tv styp typ =
   | (T_constr(str, ls)) -> (T_constr(str, List.map ls ~f:(substitute tv styp)))
   | (T_func(a, b)) -> (T_func(substitute tv styp a, substitute tv styp b))
 
+(* Substitute a list of (tvar,styp) into typ IN ORDER *)
+(* TODO use maps for substitutions *)
 let rec substitute_list ls typ =
   match ls with
   | [] -> typ
   | ((tv,styp)::xs) -> substitute_list xs (substitute tv styp typ)
 
+(* Substitute tv for styp in both types in Uni *)
 let substitute_uni tv styp (Uni(a, b)) =
   (Uni(substitute tv styp a, substitute tv styp b))
 
@@ -67,6 +72,7 @@ let substitute_scheme_list ls (Forall(s,t)) =
 exception UnifyFail of string * uni_pair
 exception OccursFail
 
+(* Ensure that tv doesn't occur in typ *)
 let rec occurs_check tv typ =
   match typ with
   | T_val(_) -> ()
@@ -111,8 +117,10 @@ let rec find_unify (Uni(a, b)) =
       (upx @ uqy)
   | _ -> raise (UnifyFail ("Unequal types", (Uni(a, b))))
 
+(* Shorthand if you don't want to make a Uni yourself *)
 let unify a b = find_unify (Uni(a,b))
 
+(* Unify a whole list of constraints *)
 let rec unify_many lst =
   match lst with
   | [] -> []
@@ -122,6 +130,7 @@ let rec unify_many lst =
       let u2 = unify_many lst'' in
       (u1 @ u2)
 
+(* Converting things into strings *)
 let rec string_of_scheme_type typ =
   match typ with
   | T_var(vr) -> "'" ^ vr
