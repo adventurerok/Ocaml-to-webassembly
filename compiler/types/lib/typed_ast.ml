@@ -2,17 +2,25 @@ open Core_kernel
 open Parsetree
 open Types
 
+let sexp_of_constant (c : constant) =
+  let str = match c with
+  | Pconst_integer (str, _) -> str
+  | Pconst_char c -> Char.to_string c
+  | Pconst_string (str, _) -> str
+  | Pconst_float (str, _) -> str
+  in String.sexp_of_t str
+
 (* The typed AST definition *)
 type texpression = {
   texp_desc : texpression_desc;
-  texp_loc: Location.t;
+  texp_loc: Location.t [@sexp.opaque];
   texp_type: scheme_type
 }
 
 and texpression_desc =
   Texp_ident of string
 | Texp_constant of constant
-| Texp_let of Asttypes.rec_flag * tvalue_binding list * texpression
+| Texp_let of (Asttypes.rec_flag [@sexp.opaque]) * tvalue_binding list * texpression
 | Texp_fun of tpattern * texpression
 | Texp_apply of texpression * texpression list
 | Texp_match of texpression * tcase list
@@ -34,7 +42,7 @@ and tcase = {
 
 and tpattern = {
   tpat_desc: tpattern_desc;
-  tpat_loc: Location.t;
+  tpat_loc: Location.t [@sexp.opaque];
   tpat_type: scheme_type;
   tpat_vars: (string * scheme_type) list
 }
@@ -49,7 +57,7 @@ and tstructure = tstructure_item list
 
 and tstructure_item = {
   tstr_desc: tstructure_item_desc;
-  tstr_loc: Location.t;
+  tstr_loc: (Location.t [@sexp.opaque]);
   tstr_type: scheme_type
 }
 
@@ -57,7 +65,6 @@ and tstructure_item_desc =
   Tstr_eval of texpression
 | Tstr_value of Asttypes.rec_flag * tvalue_binding list
 | Tstr_type
-
 
 (* Functions to convert each to string *)
 let rec tstructure_to_string tstr =

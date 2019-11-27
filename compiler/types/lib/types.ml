@@ -4,22 +4,25 @@ type tvalue =
   | V_unit
   | V_int
   | V_bool
-
-(* TODO why? *)
-type tvar = string
+  [@@deriving sexp_of]
 
 type tvar_set = (string, String.comparator_witness) Set.t
+
+let sexp_of_tvar_set (tvs : tvar_set) =
+  List.sexp_of_t String.sexp_of_t (Set.to_list tvs)
 
 let empty_tvar_set = Set.empty (module String)
 
 type scheme_type =
-  | T_var of tvar
+  | T_var of string
   | T_val of tvalue
   | T_tuple of scheme_type list
   | T_constr of string * scheme_type list
   | T_func of scheme_type * scheme_type
+  [@@deriving sexp_of]
 
 type scheme = Forall of tvar_set * scheme_type
+[@@deriving sexp_of]
 
 type uni_pair = Uni of scheme_type * scheme_type
 
