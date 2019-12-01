@@ -1,0 +1,9 @@
+;(library
+;  (name otwa_test_types)
+;  (public_name proj.test_types)
+;  (libraries core_kernel compiler-libs.common proj.types ounit2)
+;  (preprocess (pps ppx_jane)))
+
+(test
+  (name test_types)
+  (libraries core_kernel compiler-libs.common proj.types ounit2))
