@@ -1,10 +1,10 @@
-open Base
+open Core_kernel
 
 type tvalue =
   | V_unit
   | V_int
   | V_bool
-  [@@deriving sexp_of]
+  [@@deriving sexp_of, equal]
 
 type tvar_set = (string, String.comparator_witness) Set.t
 
@@ -19,12 +19,41 @@ type scheme_type =
   | T_tuple of scheme_type list
   | T_constr of string * scheme_type list
   | T_func of scheme_type * scheme_type
-  [@@deriving sexp_of]
+  [@@deriving sexp_of, equal]
 
 type scheme = Forall of tvar_set * scheme_type
 [@@deriving sexp_of]
 
 type uni_pair = Uni of scheme_type * scheme_type
+
+(* Converting things into strings *)
+let rec string_of_scheme_type typ =
+  match typ with
+  | T_var(vr) -> "'" ^ vr
+  | T_tuple(ls) -> "(" ^ (String.concat ~sep:" * " (List.map ls ~f:string_of_scheme_type)) ^ ")"
+  | T_constr(str, ls) ->
+      (match ls with
+      | [] -> str
+      | (x::[]) -> (string_of_scheme_type x) ^ " " ^ str
+      | _ -> (string_of_scheme_type (T_tuple(ls))) ^ " " ^ str)
+  | T_val(V_int) -> "int"
+  | T_val(V_bool) -> "bool"
+  | T_val(V_unit) -> "unit"
+  | T_func(a,b) -> "(" ^ (string_of_scheme_type a) ^ " -> " ^ (string_of_scheme_type b) ^ ")"
+
+let string_of_scheme (Forall(vars, typ)) =
+  if Set.is_empty vars then
+    string_of_scheme_type typ
+  else
+    "forall " ^ (String.concat ~sep:"," (Set.to_list vars)) ^ ". " ^ (string_of_scheme_type typ)
+
+let string_of_uni_pair (Uni(s1, s2)) =
+  "uni(" ^ (string_of_scheme_type s1) ^ ", " ^ (string_of_scheme_type s2) ^ ")"
+
+let rec string_of_uni_pair_list = function
+  | [] -> ""
+  | (pr::lst) -> (string_of_uni_pair pr) ^ ", " ^ (string_of_uni_pair_list lst)
+
 
 let rec ftv typ =
   match typ with
@@ -72,53 +101,56 @@ let substitute_scheme_list ls (Forall(s,t)) =
   let reduced = List.filter ls ~f:(fun (a,_) -> not (Set.mem s a)) in
   (Forall(s, substitute_list reduced t))
 
-exception UnifyFail of string * uni_pair
-exception OccursFail
+(* message, left type, right type *)
+exception UnifyFail of string * string * string
+let unify_fail_exn msg a_in b_in = raise (UnifyFail(msg, string_of_scheme_type a_in, string_of_scheme_type b_in))
+
+(* type variable name, type *)
+exception OccursFail of string * string
 
 (* Ensure that tv doesn't occur in typ *)
-let rec occurs_check tv typ =
-  match typ with
-  | T_val(_) -> ()
-  | T_var(ov) ->
-      if (String.equal tv ov) then
-        raise (OccursFail)
-      else
-        ()
-  | T_tuple(ls) -> List.iter ls ~f:(occurs_check tv)
-  | T_constr(_, ls) -> List.iter ls ~f:(occurs_check tv)
-  | T_func(a, b) ->
-      let () = occurs_check tv a in
-      occurs_check tv b
+let occurs_check tv typ =
+  let rec inner typ' =
+    match typ' with
+    | T_val(_) -> ()
+    | T_var(ov) ->
+        if (String.equal tv ov) then
+          raise (OccursFail(tv, string_of_scheme_type typ))
+        else
+          ()
+    | T_tuple(ls) -> List.iter ls ~f:inner
+    | T_constr(_, ls) -> List.iter ls ~f:inner
+    | T_func(a, b) ->
+        let () = inner a in
+        inner b
+  in inner typ
 
-let unify_val va vb =
-  match(va, vb) with
-  | (V_int, V_int) -> []
-  | (V_bool, V_bool) -> []
-  | (V_unit, V_unit) -> []
-  | _ -> raise (UnifyFail ("Different value types", (Uni(T_val(va), T_val(vb)))))
-
-let rec find_unify (Uni(a, b)) =
-  match (a, b) with
-  | (T_val(va), T_val(vb)) -> unify_val va vb
-  | (T_tuple([]), T_tuple([])) -> []
-  | (T_tuple(x::xs), T_tuple(y::ys)) -> find_unify (Uni(T_func(x, T_tuple(xs)), T_func(y, T_tuple(ys))))
-  | (T_constr(s1, l1), T_constr(s2, l2)) ->
-      if String.equal s1 s2 then
-        find_unify (Uni(T_tuple(l1), T_tuple(l2)))
-      else
-        raise (UnifyFail ("Different constructs '" ^ s1 ^ "' and '" ^ s2 ^ "'", (Uni(a,b))))
-  | (T_var(ta), T_var(_)) -> [(ta, b)] (* To avoid self-unification failing the occurs check *)
-  | (T_var(tv), _) ->
-      let () = occurs_check tv b in
-      [(tv, b)]
-  | (_, T_var(tv)) ->
-      let () = occurs_check tv a in
-      [(tv, a)]
-  | (T_func(p, q), T_func(x, y)) ->
-      let upx = find_unify (Uni(p,x)) in
-      let uqy = find_unify (Uni(substitute_list upx q, substitute_list upx y)) in
-      (upx @ uqy)
-  | _ -> raise (UnifyFail ("Unequal types", (Uni(a, b))))
+let find_unify (Uni(a_in, b_in)) =
+  let rec inner a b =
+    match (a, b) with
+    | (T_val(va), T_val(vb)) ->
+        if equal_tvalue va vb then []
+        else unify_fail_exn "Different value types" a_in b_in
+    | (T_tuple([]), T_tuple([])) -> []
+    | (T_tuple(x::xs), T_tuple(y::ys)) -> inner (T_func(x, T_tuple(xs))) (T_func(y, T_tuple(ys)))
+    | (T_constr(s1, l1), T_constr(s2, l2)) ->
+        if String.equal s1 s2 then
+          inner (T_tuple(l1)) (T_tuple(l2))
+        else
+          unify_fail_exn "Different constructs" a_in b_in
+    | (T_var(ta), T_var(_)) -> [(ta, b)] (* To avoid self-unification failing the occurs check *)
+    | (T_var(tv), _) ->
+        let () = occurs_check tv b in
+        [(tv, b)]
+    | (_, T_var(tv)) ->
+        let () = occurs_check tv a in
+        [(tv, a)]
+    | (T_func(p, q), T_func(x, y)) ->
+        let upx = inner p x in
+        let uqy = inner (substitute_list upx q) (substitute_list upx y) in
+        (upx @ uqy)
+    | _ -> unify_fail_exn "Unequal types" a_in b_in
+  in inner a_in b_in
 
 (* Shorthand if you don't want to make a Uni yourself *)
 let unify a b = find_unify (Uni(a,b))
@@ -133,30 +165,3 @@ let rec unify_many lst =
       let u2 = unify_many lst'' in
       (u1 @ u2)
 
-(* Converting things into strings *)
-let rec string_of_scheme_type typ =
-  match typ with
-  | T_var(vr) -> "'" ^ vr
-  | T_tuple(ls) -> "(" ^ (String.concat ~sep:" * " (List.map ls ~f:string_of_scheme_type)) ^ ")"
-  | T_constr(str, ls) ->
-      (match ls with
-      | [] -> str
-      | (x::[]) -> (string_of_scheme_type x) ^ " " ^ str
-      | _ -> (string_of_scheme_type (T_tuple(ls))) ^ " " ^ str)
-  | T_val(V_int) -> "int"
-  | T_val(V_bool) -> "bool"
-  | T_val(V_unit) -> "unit"
-  | T_func(a,b) -> "(" ^ (string_of_scheme_type a) ^ " -> " ^ (string_of_scheme_type b) ^ ")"
-
-let string_of_scheme (Forall(vars, typ)) =
-  if Set.is_empty vars then
-    string_of_scheme_type typ
-  else
-    "forall " ^ (String.concat ~sep:"," (Set.to_list vars)) ^ ". " ^ (string_of_scheme_type typ)
-
-let string_of_uni_pair (Uni(s1, s2)) =
-  "uni(" ^ (string_of_scheme_type s1) ^ ", " ^ (string_of_scheme_type s2) ^ ")"
-
-let rec string_of_uni_pair_list = function
-  | [] -> ""
-  | (pr::lst) -> (string_of_uni_pair pr) ^ ", " ^ (string_of_uni_pair_list lst)

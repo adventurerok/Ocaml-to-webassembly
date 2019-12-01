@@ -126,7 +126,7 @@ and infer_apply ctx f args =
             let a = T_var(fresh ()) in
             let b = T_var(fresh ()) in
             let (bcs, btyp, ast_lst) = partial b args' in
-            let ccs = ((Uni(fc, T_func(a, b))) :: (Uni(a, atyp)) :: (Uni(b, btyp)) :: acs) @ bcs in
+            let ccs = ((Uni(fc, T_func(a, b))) :: (Uni(a, atyp)) :: acs) @ bcs in
             (ccs, btyp, a_ast :: ast_lst)
         | _ -> raise (TypeError "Cannot apply a non_function"))
   in let (argcs, typ, ast_lst) = partial ftype args in
