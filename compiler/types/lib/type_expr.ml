@@ -34,6 +34,18 @@ let generalize (ctx: Context.context) t =
   let free_vars = Set.diff (ftv t) (context_ftv ctx)
   in Forall(free_vars, t)
 
+let extract_outer_constraints ctx subs =
+  let ctx_ftv = context_ftv ctx in
+  let rec inner slist =
+    match slist with
+    | [] -> []
+    | ((tv, typ) :: slist') ->
+        if Set.mem ctx_ftv tv then
+          (Uni(T_var(tv), typ)) :: (inner slist')
+        else
+          inner slist'
+  in inner subs
+
 let rec core_to_scheme_type (ct: core_type) =
   match ct.ptyp_desc with
   | Ptyp_var(str) -> T_var(str)
@@ -71,10 +83,10 @@ let rec infer_expr (ctx : Context.context) (expr : expression) : (uni_pair list 
     | Pexp_ident(ident) -> infer_ident ctx ident
     | Pexp_fun(_, _, pat, body) -> infer_fun ctx pat body
     | Pexp_let(recflag, bindings, body) ->
-        let (ctx', tvb_lst) = ctx_of_bindings ctx recflag bindings in
+        let (ocs, ctx', tvb_lst) = ctx_of_bindings ctx recflag bindings in
         let (ecs, ast) = infer_expr ctx' body in
         let typ = ast.texp_type in
-        (ecs, typ, Texp_let(recflag, tvb_lst, ast))
+        (ocs @ ecs, typ, Texp_let(recflag, tvb_lst, ast))
     | Pexp_tuple(lst) ->
         let ctlst = List.map lst ~f:(infer_expr ctx) in
         let (ccslst, astlst) = List.unzip ctlst in
@@ -150,15 +162,15 @@ and ctx_of_bindings ctx recflag bindings =
 
 and ctx_of_nonrec_bindings ctx bindings =
   match bindings with
-  | [] -> (ctx, [])
+  | [] -> ([], ctx, [])
   | (binding :: bindings') ->
-      let (ctx', tvb) = ctx_of_nonrec_binding ctx binding in
-      let (ctx'', tvb_lst) = ctx_of_nonrec_bindings ctx' bindings' in
-      (ctx'', tvb :: tvb_lst)
+      let (acs, ctx', tvb) = ctx_of_nonrec_binding ctx binding in
+      let (bcs, ctx'', tvb_lst) = ctx_of_nonrec_bindings ctx' bindings' in
+      (acs @ bcs, ctx'', tvb :: tvb_lst)
 
 and ctx_of_nonrec_binding ctx binding =
   (* Type the expression, so no constraints *)
-  let e_ast = type_expr ctx binding.pvb_expr in
+  let (tcs, e_ast) = type_expr ctx binding.pvb_expr in
   let typ = e_ast.texp_type in
   (* Then the pattern *)
   let p_ast = infer_pattern ctx binding.pvb_pat in
@@ -166,8 +178,9 @@ and ctx_of_nonrec_binding ctx binding =
   let vars = p_ast.tpat_vars in
   (* Then unify *)
   let subs = unify ptyp typ in
+  let ocs = extract_outer_constraints ctx subs in
   let (ctx', svars) = addvars subs ctx ctx vars in
-  (ctx', {
+  (tcs @ ocs, ctx', {
     tvb_pat = p_ast;
     tvb_expr = e_ast;
     tvb_vars = svars
@@ -217,6 +230,7 @@ and ctx_of_rec_bindings ctx bindings =
     | _ -> raise (TypeError "Unequal number of pattern types and expression types. Impossible?")
   in let (ccs, _, tvb_lst) = handle p_ast_lst ptyp_ls expr_list in
   let subs = unify_many ccs in
+  let ocs = extract_outer_constraints ctx subs in
   (* fctx is the final context, svars is the substituted version of allvars *)
   let (fctx, svars) = addvars subs ctx ctx allvars in
   (* Loop through tvalue_bindings fixing them.
@@ -235,7 +249,7 @@ and ctx_of_rec_bindings ctx bindings =
         let fixedlst = fixup tlst' othervars in
         (tvb' :: fixedlst)
   in
-  (fctx, fixup tvb_lst svars)
+  (ocs, fctx, fixup tvb_lst svars)
 
 (* context -> pattern -> tpattern *)
 and infer_pattern ctx pat =
@@ -376,7 +390,8 @@ and type_expr (ctx : Context.context) (expr : expression) =
   let (ccs, t_ast) = infer_expr ctx expr in
   let subs = unify_many ccs in
   let fixed_tree = texpression_substitute subs t_ast in
-  fixed_tree
+  let ocs = extract_outer_constraints ctx subs in
+  (ocs, fixed_tree)
 
 let add_types_to_context (ctx : Context.context) (type_decls : type_declaration list) =
   let map_ct_to_tvar (ct, _) =
@@ -409,10 +424,12 @@ let type_structure_item (ctx : Context.context) (item : structure_item) =
   let (nctx, typ, desc) =
     match item.pstr_desc with
     | Pstr_eval(expr, _) ->
-        let e_ast = type_expr ctx expr in
+        (* TODO more outer constraints *)
+        let (_, e_ast) = type_expr ctx expr in
         (ctx, e_ast.texp_type, Tstr_eval(e_ast))
     | Pstr_value(recflag, bindings) ->
-        let (ctx', tvb_lst) = ctx_of_bindings ctx recflag bindings in
+        (* TODO watch out for the global constraints _ below *)
+        let (_, ctx', tvb_lst) = ctx_of_bindings ctx recflag bindings in
         (ctx', v_unit, Tstr_value(recflag, tvb_lst))
     | Pstr_type(_, type_decls) -> (ctx_of_decls ctx type_decls, v_unit, Tstr_type)
     | _ -> raise (TypeError ("Unsupported structure"))
