@@ -24,4 +24,15 @@ let rec topLoop ctx =
     | None -> (print_endline "Oh no"; ctx)
   in topLoop ctx'
 
-let _ = topLoop Context.empty_with_lists
+let openfile name =
+  let alltext = In_channel.with_file name ~f:In_channel.input_all in
+  let parsed = parsestring alltext in
+  let (ctx, tast) = Type_expr.type_structure Context.empty_with_lists parsed in
+  Context.print ctx;
+  Stdio.print_endline (Typed_ast.tstructure_to_string tast)
+
+let () =
+  if (Array.length Sys.argv) = 2 then
+    openfile Sys.argv.(1)
+  else
+    topLoop Context.empty_with_lists
