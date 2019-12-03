@@ -1,5 +1,6 @@
 open Core_kernel
 open Otwa_types
+open Otwa_transform
 
 let parsestring str =
   let buf = Lexing.from_string str in
@@ -29,7 +30,10 @@ let openfile name =
   let parsed = parsestring alltext in
   let (ctx, tast) = Type_expr.type_structure Context.empty_with_lists parsed in
   Context.print ctx;
-  Stdio.print_endline (Typed_ast.tstructure_to_string tast)
+  Stdio.print_endline (Typed_ast.tstructure_to_string tast);
+  let (funcs, fast) = Functions.func_transform_structure tast in
+  Stdio.print_endline (Typed_ast.tstructure_to_string fast);
+  Functions.print_func_datas funcs
 
 let () =
   if (Array.length Sys.argv) = 2 then

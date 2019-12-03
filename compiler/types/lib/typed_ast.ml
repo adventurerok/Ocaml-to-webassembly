@@ -193,3 +193,52 @@ and tcase_map_types sf stf case =
 let texpression_substitute subs texp =
   texpression_map_types (substitute_scheme_list subs) (substitute_list subs) texp
 
+let merge_maps a b =
+  Map.Poly.merge a b ~f:(fun ~key:_ p ->
+    match p with
+    | `Left(v) -> Some(v)
+    | `Right(v) -> Some (v)
+    | `Both(_, v) -> Some(v))
+
+let merge_map_list mlist =
+  List.fold ~init:(Map.Poly.empty) ~f:merge_maps mlist
+
+
+(* Gets a map from var name to type, containing free vars in exp *)
+let rec texpression_free_vars (exp : texpression) =
+  match exp.texp_desc with
+  | Texp_ident(id) -> Map.Poly.singleton id exp.texp_type
+  | Texp_constant _ -> Map.Poly.empty
+  | Texp_let (rf, tvb_list, e) ->
+      let tvb_map = merge_map_list (List.map tvb_list ~f:(fun tvb -> texpression_free_vars tvb.tvb_expr)) in
+      let vars = List.concat (List.map tvb_list ~f:(fun tvb ->
+        let (names, _) = List.unzip tvb.tvb_vars in
+        names))
+      in
+      let tvb_map' =
+        (match rf with
+        | Asttypes.Nonrecursive -> tvb_map
+        | Asttypes.Recursive -> List.fold ~init:tvb_map ~f:(fun a v -> Map.Poly.remove a v) vars)
+      in let emap = texpression_free_vars e in
+      let emap' = List.fold ~init:emap ~f:(fun a v -> Map.Poly.remove a v) vars in
+      merge_maps emap' tvb_map'
+  | Texp_fun (p, e) ->
+      let e_vars = texpression_free_vars e in
+      List.fold ~init:e_vars ~f:(fun a (v, _) -> Map.Poly.remove a v) p.tpat_vars
+  | Texp_apply (a, blist) -> merge_map_list ((texpression_free_vars a) :: (List.map blist ~f:texpression_free_vars))
+  | Texp_match (e, cases) ->
+      let emap = texpression_free_vars e in
+      let cmaps = List.map cases ~f:(fun case ->
+        let cexp_vars = texpression_free_vars case.tc_rhs in
+        List.fold ~init:cexp_vars ~f:(fun a (v, _) -> Map.Poly.remove a v) case.tc_lhs.tpat_vars)
+      in merge_map_list (emap :: cmaps)
+  | Texp_tuple(ls) -> merge_map_list (List.map ls ~f:texpression_free_vars)
+  | Texp_construct (_, expr_opt) ->
+      (match expr_opt with
+      | Some(e) -> texpression_free_vars e
+      | None -> Map.Poly.empty)
+  | Texp_ifthenelse (i, t, e_opt) ->
+      let it_map = merge_maps (texpression_free_vars i) (texpression_free_vars t) in
+      (match e_opt with
+      | Some(e) -> merge_maps it_map (texpression_free_vars e)
+      | None -> it_map)
