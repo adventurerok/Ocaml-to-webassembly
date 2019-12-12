@@ -34,7 +34,6 @@ let add_vars map vars =
 (* Globals: Not in closure (global variables or arguments), Locals: In closure *)
 
 let rec func_transform_expr (locals: type_map) (expr: texpression) =
-  let none = ([], expr.texp_desc) in
   let (funcs, desc) =
     match expr.texp_desc with
     | Texp_ident(x) -> ([], Texp_ident(x))
@@ -46,7 +45,7 @@ let rec func_transform_expr (locals: type_map) (expr: texpression) =
         let (ft_b_list, blist') = List.unzip (List.map blist ~f:(func_transform_expr locals)) in
         let ft_b = List.concat ft_b_list in
         (ft_a @ ft_b, Texp_apply(a', blist'))
-    | Texp_match (_, _) -> none
+    | Texp_match (e, cases) -> func_transform_match locals e cases
     | Texp_tuple(ls) ->
         let (funcs_list, exprs) = List.unzip (List.map ls ~f:(func_transform_expr locals)) in
         let funcs = List.concat funcs_list in
@@ -57,7 +56,15 @@ let rec func_transform_expr (locals: type_map) (expr: texpression) =
             let (funcs, e') = func_transform_expr locals e in
             (funcs, Texp_construct(name, Some(e')))
         | None -> ([], Texp_construct(name, None)))
-    | Texp_ifthenelse (_, _, _) -> none
+    | Texp_ifthenelse (i, t, e_opt) ->
+        let (ifuncs, i') = func_transform_expr locals i in
+        let (tfuncs, t') = func_transform_expr locals t in
+        (match e_opt with
+        | Some(e) ->
+            let (efuncs, e') = func_transform_expr locals e in
+            (ifuncs @ tfuncs @ efuncs, Texp_ifthenelse(i', t', Some(e')))
+        | None ->
+            (ifuncs @ tfuncs, Texp_ifthenelse(i', t', None)))
   in (funcs, {expr with texp_desc = desc})
 
 and func_transform_value_bindings locals rf tvb_list =
@@ -128,6 +135,15 @@ and func_transform_structure_item (si: tstructure_item) =
     | Tstr_type -> ([], si.tstr_desc)
   in (funcs, {si with tstr_desc = desc})
 
+and func_transform_match locals e cases =
+  let (efuncs, e') = func_transform_expr locals e in
+  let mlist = List.map cases ~f:(fun case ->
+    let locals' = List.fold ~init:locals ~f:(fun a (v, t) -> Map.Poly.set a ~key:v ~data:t) case.tc_lhs.tpat_vars in
+    let (cfuncs, rhs') = func_transform_expr locals' case.tc_rhs in
+    (cfuncs, {case with tc_rhs = rhs'}))
+  in
+  let (funcs_list, cases') = List.unzip mlist in
+  (List.concat (efuncs :: funcs_list), Texp_match(e', cases'))
 
 and func_transform_structure (struc: tstructure) =
   let (funcs_list, si_list) = List.unzip (List.map struc ~f:func_transform_structure_item) in

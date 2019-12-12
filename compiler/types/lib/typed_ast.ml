@@ -68,7 +68,7 @@ and tstructure_item_desc =
 
 (* Functions to convert each to string *)
 let rec tstructure_to_string tstr =
-  String.concat ~sep:";;" (List.map tstr ~f:tstructure_item_to_string)
+  String.concat ~sep:";;\n" (List.map tstr ~f:tstructure_item_to_string)
 
 and tstructure_item_to_string si =
   match si.tstr_desc with
