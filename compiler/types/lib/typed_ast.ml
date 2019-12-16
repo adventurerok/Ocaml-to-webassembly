@@ -19,7 +19,7 @@ type texpression = {
 
 and texpression_desc =
   Texp_ident of string
-| Texp_constant of constant
+| Texp_constant of string
 | Texp_let of (Asttypes.rec_flag [@sexp.opaque]) * tvalue_binding list * texpression
 | Texp_fun of tpattern * texpression
 | Texp_apply of texpression * texpression list
@@ -49,7 +49,7 @@ and tpattern = {
 
 and tpattern_desc =
   Tpat_var of string
-| Tpat_constant of constant
+| Tpat_constant of string
 | Tpat_tuple of tpattern list
 | Tpat_construct of string * tpattern option
 
@@ -80,7 +80,7 @@ and texpression_to_string (texpr : texpression) =
   "(" ^
   (match texpr.texp_desc with
   | Texp_ident(str) -> str
-  | Texp_constant(const) -> constant_to_string const
+  | Texp_constant(const) -> const
   | Texp_let (rf, vb, texpr') -> (tvalue_bindings_to_string rf vb) ^ " in " ^ (texpression_to_string texpr')
   | Texp_fun (p, e) -> "fun " ^ (tpattern_to_string p) ^ " -> " ^ (texpression_to_string e)
   | Texp_apply (a, b) -> String.concat ~sep:" " (List.map (a :: b) ~f:texpression_to_string)
@@ -101,11 +101,13 @@ and tvalue_binding_to_string vb =
   (tpattern_to_string vb.tvb_pat) ^ " = " ^ (texpression_to_string vb.tvb_expr)
 
 and tpattern_to_string pat =
+  "(" ^
   (match pat.tpat_desc with
   | Tpat_var(str) -> str
-  | Tpat_constant(const) -> constant_to_string const
+  | Tpat_constant(const) -> const
   | Tpat_tuple(ls) -> "(" ^ (String.concat ~sep:", " (List.map ls ~f:tpattern_to_string)) ^ ")"
   | Tpat_construct(name, patopt) -> name ^ (Option.value_map patopt ~default:"" ~f:tpattern_to_string))
+  ^ " : " ^ (string_of_scheme_type pat.tpat_type) ^ ")"
 
 and tcases_to_string cases =
   String.concat ~sep:" | " (List.map cases ~f:tcase_to_string)
@@ -113,12 +115,6 @@ and tcases_to_string cases =
 and tcase_to_string case =
   (tpattern_to_string case.tc_lhs) ^ " -> " ^ (texpression_to_string case.tc_rhs)
 
-and constant_to_string const =
-  (match const with
-  | Pconst_integer (str, _) -> str
-  | Pconst_char(c) -> Char.to_string c
-  | Pconst_string (str, _) -> str
-  | Pconst_float (str, _) -> str)
 
 (* Functions to map all schemes and scheme_types in the tree *)
 (* sf = scheme function: scheme -> scheme
@@ -192,6 +188,9 @@ and tcase_map_types sf stf case =
 (* Uses the map_types function to substitute *)
 let texpression_substitute subs texp =
   texpression_map_types (substitute_scheme_list subs) (substitute_list subs) texp
+
+let tpattern_substitute subs tpat =
+  tpattern_map_types (substitute_scheme_list subs) (substitute_list subs) tpat
 
 let merge_maps a b =
   Map.Poly.merge a b ~f:(fun ~key:_ p ->

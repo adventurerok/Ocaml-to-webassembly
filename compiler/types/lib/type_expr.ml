@@ -70,14 +70,16 @@ let ct_to_st_with_check (ctx : Context.context) (ct: core_type) =
 
 let type_constant (const : constant) =
   match const with
-  | Pconst_integer(_, _) -> (T_val(V_int))
+  | Pconst_integer(str, _) -> (T_val(V_int), str)
   | _ -> raise (TypeError "Unknown constant type")
 
 (* context -> expression -> (uni_pair list * texpression) *)
 let rec infer_expr (ctx : Context.context) (expr : expression) : (uni_pair list * texpression) =
   let (ccs, etyp, desc) =
     match expr.pexp_desc with
-    | Pexp_constant(const) -> ([], type_constant const, Texp_constant(const))
+    | Pexp_constant(const) ->
+        let (typ, str) = type_constant const in
+        ([], typ, Texp_constant(str))
     | Pexp_construct(ident, expr_opt) -> infer_construct ctx ident expr_opt
     | Pexp_apply(f, args) -> infer_apply ctx f args
     | Pexp_ident(ident) -> infer_ident ctx ident
@@ -181,7 +183,7 @@ and ctx_of_nonrec_binding ctx binding =
   let ocs = extract_outer_constraints ctx subs in
   let (ctx', svars) = addvars subs ctx ctx vars in
   (tcs @ ocs, ctx', {
-    tvb_pat = p_ast;
+    tvb_pat = tpattern_substitute subs p_ast;
     tvb_expr = e_ast;
     tvb_vars = svars
   })
@@ -242,7 +244,7 @@ and ctx_of_rec_bindings ctx bindings =
         let var_count = List.length tvb.tvb_pat.tpat_vars in
         let (ourvars, othervars) = List.split_n svars var_count in
         let tvb' = {
-          tvb with
+          tvb_pat = tpattern_substitute subs tvb.tvb_pat;
           tvb_expr = texpression_substitute subs tvb.tvb_expr;
           tvb_vars = ourvars
         } in
@@ -281,7 +283,9 @@ and infer_pattern ctx pat =
         let subs = unify p_ast.tpat_type st in
         let vars' = List.map p_ast.tpat_vars ~f:(fun (v, t) -> (v, substitute_list subs t)) in
         (st, vars', p_ast.tpat_desc)
-    | Ppat_constant(const) -> (type_constant const, [], Tpat_constant(const))
+    | Ppat_constant(const) ->
+        let (ctyp, str) = type_constant const in
+        (ctyp, [], Tpat_constant(str))
     | Ppat_construct(id, pat_opt) -> infer_pattern_construct ctx id pat_opt
     | _ -> raise (TypeError "Unsupported pattern")
   in {
