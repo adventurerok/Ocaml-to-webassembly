@@ -1,4 +1,6 @@
 open Core_kernel
+open Otwa_types
+open Types
 
 type itype =
   | It_bool
@@ -28,6 +30,27 @@ type ituptype = itype list
 let ituptype_to_string tt =
   "(" ^ (String.concat ~sep:", " (List.map tt ~f:itype_to_string)) ^ ")"
 
+exception BadType of string
+
+let stoitype (typ : scheme_type) =
+  match typ with
+  | T_var(_) -> raise (BadType "Cannot convert type variable into inter type")
+  | T_val(V_unit) -> It_unit
+  | T_val(V_int) -> It_int
+  | T_val(V_bool) -> It_bool
+  | T_tuple _ -> It_pointer
+  | T_constr (_, _) -> It_pointer
+  | T_func (_, _) -> It_pointer (* Closure pointer *)
+
+let functoitype (typ : scheme_type) =
+  match typ with
+  | T_func(a,b) -> (stoitype a, stoitype b)
+  | _ -> raise (BadType "Expecting function type")
+
+let tupletoitype (typ : scheme_type) =
+  match typ with
+  | T_tuple(ls) -> List.map ls ~f:stoitype
+  | _ -> raise (BadType "Expecting tuple type")
 
 type ibinop =
   Ibin_add

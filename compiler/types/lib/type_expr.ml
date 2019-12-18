@@ -322,18 +322,17 @@ and infer_pattern_construct ctx ident pat_opt =
 
 (* Infer a construct from the context *)
 and infer_ctx_construct ctx name expr_opt =
-  let constr = Context.find_constr ctx name in
-  match constr with
-  | Some(args, tname) ->
-      let (_, tvargs) = Option.value_exn (Context.find_type ctx tname) in
-      let subs = subs_to_fresh tvargs in
-      let constr_type = T_constr(tname, List.map tvargs ~f:(fun tv -> T_var(tv))) in
-      (match (expr_opt, List.is_empty args) with
+  match Context.find_constr ctx name with
+  | Some(constr) ->
+      let variant = Option.value_exn (Context.find_type ctx constr.type_name) in
+      let subs = subs_to_fresh variant.args in
+      let constr_type = T_constr(variant.name, List.map variant.args ~f:(fun tv -> T_var(tv))) in
+      (match (expr_opt, List.is_empty constr.args) with
       | (None, true) -> ([], substitute_list subs constr_type, Texp_construct(name, None))
       | (Some(expr), false) ->
           let (ccs, actual_ast) = infer_expr ctx expr in
           let actual_type = actual_ast.texp_type in
-          let expected_type = substitute_list subs (T_tuple(args)) in
+          let expected_type = substitute_list subs (T_tuple(constr.args)) in
           let ccs' = (Uni(expected_type, actual_type)) :: ccs in
           let subs_type = substitute_list subs constr_type in
           (ccs', subs_type, Texp_construct(name, Some(actual_ast)))
@@ -344,19 +343,18 @@ and infer_ctx_construct ctx name expr_opt =
 (* Infer a construct from the context, but a pattern is supplied instead of an expression *)
 (* TODO maybe there's a way to combine these? *)
 and infer_pattern_ctx_construct ctx name pat_opt =
-  let constr = Context.find_constr ctx name in
-  match constr with
-  | Some(args, tname) ->
-      let (_, tvargs) = Option.value_exn (Context.find_type ctx tname) in
-      let subs = subs_to_fresh tvargs in
-      let constr_type = T_constr(tname, List.map tvargs ~f:(fun tv -> T_var(tv))) in
-      (match (pat_opt, List.is_empty args) with
+  match Context.find_constr ctx name with
+  | Some(constr) ->
+      let variant = Option.value_exn (Context.find_type ctx constr.type_name) in
+      let subs = subs_to_fresh variant.args in
+      let constr_type = T_constr(variant.name, List.map variant.args ~f:(fun tv -> T_var(tv))) in
+      (match (pat_opt, List.is_empty constr.args) with
       | (None, true) -> (substitute_list subs constr_type, [], Tpat_construct(name, None))
       | (Some(pat), false) ->
           let p_ast = infer_pattern ctx pat in
           let actual_type = p_ast.tpat_type in
           let vars = p_ast.tpat_vars in
-          let expected_type = substitute_list subs (T_tuple(args)) in
+          let expected_type = substitute_list subs (T_tuple(constr.args)) in
           let subs' = unify expected_type actual_type in
           let vars' = List.map vars ~f:(fun (v,t) -> (v, substitute_list subs' t)) in
           (substitute_list subs constr_type, vars', Tpat_construct(name, Some(p_ast)))

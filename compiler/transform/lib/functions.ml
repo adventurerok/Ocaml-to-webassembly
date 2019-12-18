@@ -9,8 +9,6 @@ open Typed_ast
 
 let counter = ref 0
 
-let func_mk_closure = "@mk_closure"
-
 let fresh_func_name () =
   let id = !counter in
   counter := id + 1;
