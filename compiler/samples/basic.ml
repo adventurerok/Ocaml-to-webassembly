@@ -9,3 +9,7 @@ type tree =
   | Branch of int * tree * tree
 
 let mytree = Branch(4, Branch(2, Leaf, Leaf), Leaf)
+
+let sumt (x,y) = x + y
+
+let yobranch (Branch(x, t1, t2)) = x

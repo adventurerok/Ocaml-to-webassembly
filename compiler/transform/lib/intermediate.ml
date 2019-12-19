@@ -7,13 +7,16 @@ open Intermediate_ast
 exception IntermediateFailure of string
 
 
-let transform_list context ~f:map vars lst =
-  let (vars', code_list_rev) = List.fold lst ~init:(vars, []) ~f:(fun (vrs, c_lst) item ->
-    let (vrs', code) = map context vrs item in
+let transform_listi (context : Context.context) ~f:mapi (vars : Vars.vars) lst =
+  let (vars', code_list_rev) = List.foldi lst ~init:(vars, []) ~f:(fun pos (vrs, c_lst) item ->
+    let (vrs', code) = mapi context vrs pos item in
     (vrs', code :: c_lst))
   in
   let full_code = List.concat (List.rev code_list_rev) in
   (vars', full_code)
+
+let transform_list context ~f:map vars lst =
+  transform_listi context vars lst ~f:(fun ctx vrs _ item -> map ctx vrs item)
 
 (* Gives a new vars and list of iexpression *)
 let rec transform_expr (context: Context.context) (vars: Vars.vars) (expr: texpression) =
@@ -61,15 +64,51 @@ and transform_value_bindings_nonrecursive context vars tvb_list =
   in
   (vars', code_list)
 
-and transform_pat_assign _ vars (pat :tpattern) =
+(* Helper function, for a tuple pattern, returns it's list, otherwise a list containing just the pattern *)
+and pat_tuple_list (pat : tpattern) =
+  match pat.tpat_desc with
+  | Tpat_tuple(ls) -> ls
+  | _ -> [pat]
+
+and transform_pat_assign ?check_constructs:(check_constructs = true) context vars (pat :tpattern) =
   match pat.tpat_desc with
   | Tpat_var(name) ->
       let ityp = stoitype pat.tpat_type in
       let (vars', var_name) = Vars.add_named_var vars name ityp in
       (vars', [Iexp_newvar(ityp, var_name)])
   | Tpat_constant _ -> raise (IntermediateFailure "Cannot assign to constant")
-  | Tpat_tuple _ -> raise (IntermediateFailure "Not yet supported")
-  | Tpat_construct (_, _) -> raise (IntermediateFailure "Not yet supported")
+  | Tpat_tuple(plist) ->
+      let (vars1, var_name) = Vars.add_temp_var vars It_pointer in
+      let ituptype = tupletoitype pat.tpat_type in
+      let (vars2, code) = transform_listi context vars1 plist ~f:(fun _ vrs pos tpat ->
+        let (vrs', pat_code) = transform_pat_assign context vrs tpat in
+        (vrs', (Iexp_pushvar(It_pointer, var_name) :: Iexp_loadtupleindex(ituptype, pos) :: pat_code)))
+      in
+      (vars2, Iexp_newvar(It_pointer, var_name) :: code)
+  | Tpat_construct (name, tpat_opt) ->
+      let (vars1, var_name) = Vars.add_temp_var vars It_pointer in
+      let check_code =
+        if check_constructs then
+          let construct = Option.value_exn (Context.find_constr context name) in
+          (Iexp_pushvar(It_pointer, var_name)
+          :: Iexp_loadconstructid
+          :: Iexp_pushconst(It_int, Int.to_string construct.index)
+          :: Iexp_binop(It_int, Ibin_ne)
+          :: [Iexp_ifthenelse(It_unit, [Iexp_fail], None)])
+        else []
+      in
+      let (vars2, destruct_code) =
+        (match(tpat_opt) with
+        | Some(tpat) ->
+            let plist = pat_tuple_list tpat in
+            let ituptype = List.map plist ~f:(fun p -> stoitype p.tpat_type) in
+            transform_listi context vars1 plist ~f:(fun _ vrs pos cpat ->
+              let (vrs', pat_code) = transform_pat_assign context vrs cpat in
+              (vrs', (Iexp_pushvar(It_pointer, var_name) :: Iexp_loadconstructindex(ituptype, pos) :: pat_code)))
+        | None -> (vars1, []))
+      in
+      (vars2, Iexp_newvar(It_pointer, var_name) :: (check_code @ destruct_code))
+
 
 and transform_value_bindings_recursive _context _vars tvb_list =
   let _closure_names = List.map tvb_list ~f:(fun tvb ->
@@ -112,6 +151,8 @@ and transform_op context vars name args =
   in
   (vars', arg_code @ [Iexp_binop(ityp, bop)])
 
+(* Transforms an expression
+ * If that expression is a tuple, do not add the final pushtuple instruction *)
 and transform_notuple context vars expr =
   match expr.texp_desc with
   | Texp_tuple(ls) -> transform_list context vars ls ~f:transform_expr

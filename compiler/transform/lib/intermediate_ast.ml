@@ -114,6 +114,8 @@ type iexpression =
 | Iexp_loadconstructindex of ituptype * int
 (* Push the id of the construct to the stack *)
 | Iexp_loadconstructid
+(* Fail *)
+| Iexp_fail
 [@@deriving sexp_of]
 
 let rec iexpression_to_string (iexp : iexpression) =
@@ -127,7 +129,7 @@ let rec iexpression_to_string (iexp : iexpression) =
   | Iexp_fillclosure(itt) -> "fillclosure " ^ (ituptype_to_string itt)
   | Iexp_callclosure(ift) -> "callclosure " ^ (iftype_to_string ift)
   | Iexp_block(ls) -> "block{\n" ^ (String.concat ~sep:"\n" (List.map ls ~f:iexpression_to_string)) ^ "\n}"
-  | Iexp_ifthenelse (t, ifl, ell) -> "ifthenelse " ^ (itype_to_string t) ^ "if{" ^
+  | Iexp_ifthenelse (t, ifl, ell) -> "ifthenelse " ^ (itype_to_string t) ^ " if{\n" ^
       (String.concat ~sep:"\n" (List.map ifl ~f:iexpression_to_string)) ^ "\n}" ^
       Option.value (Option.map ell ~f:(fun ell_list -> " else {\n" ^ (String.concat ~sep:"\n" (List.map ell_list ~f:iexpression_to_string)) ^ "\n}")) ~default:""
   | Iexp_pushtuple(itt) -> "pushtuple " ^ (ituptype_to_string itt)
@@ -135,6 +137,7 @@ let rec iexpression_to_string (iexp : iexpression) =
   | Iexp_pushconstruct(itt, id) -> "pushconstruct " ^ (ituptype_to_string itt) ^ " " ^ (Int.to_string id)
   | Iexp_loadconstructindex(itt, id) -> "loadconstructindex " ^ (ituptype_to_string itt) ^ " " ^ (Int.to_string id)
   | Iexp_loadconstructid -> "loadconstructid"
+  | Iexp_fail -> "fail"
 
 
 let iexpression_list_to_string ls =
