@@ -357,7 +357,7 @@ and infer_pattern_ctx_construct ctx name pat_opt =
           let expected_type = substitute_list subs (T_tuple(constr.args)) in
           let subs' = unify expected_type actual_type in
           let vars' = List.map vars ~f:(fun (v,t) -> (v, substitute_list subs' t)) in
-          (substitute_list subs constr_type, vars', Tpat_construct(name, Some(p_ast)))
+          (substitute_list subs' constr_type, vars', Tpat_construct(name, Some(tpattern_substitute subs' p_ast)))
       | (_, true) -> raise (TypeError ("No arguments expected for constructor " ^ name))
       | (_, false) -> raise (TypeError ("Arguments expected for constructor " ^ name)))
   | _ -> raise (TypeError ("Unknown constructor " ^ name))
