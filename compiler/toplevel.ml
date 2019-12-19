@@ -34,12 +34,12 @@ let openfile name =
   let (funcs, fast) = Functions.func_transform_structure tast in
   Stdio.print_endline (Typed_ast.tstructure_to_string fast);
   Functions.print_func_datas funcs;
-  let code_list = Intermediate.transform_structure (Map.Poly.empty) fast in
+  let (_, code_list) = Intermediate.transform_structure ctx Vars.empty_global_vars fast in
   let str = Intermediate_ast.iexpression_list_to_string code_list in
   Stdio.print_endline str;
   List.iter funcs ~f:(fun fd ->
     Stdio.print_endline ("\nFunction " ^ fd.fd_name ^ " code:");
-    let codes = Intermediate.transform_expr (Map.Poly.empty) fd.fd_expr in
+    let (_, codes) = Intermediate.transform_function ctx fd in
     let cstr = Intermediate_ast.iexpression_list_to_string codes in
     Stdio.print_endline cstr)
 

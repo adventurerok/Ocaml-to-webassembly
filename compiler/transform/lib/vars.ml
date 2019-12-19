@@ -13,23 +13,21 @@ let empty_global_vars = {
   data = []
 }
 
+let add_var_mapping (vrs : vars) (n : string) (vn : string) (t : itype) =
+  {
+    vrs with
+    count = vrs.count + 1;
+    data = (n, vn, t) :: vrs.data
+  }
 
 
 let add_temp_var (vrs : vars) (t : itype) =
   let name = "@temp_" ^ (Int.to_string vrs.count) in
-  ({
-    vrs with
-    count = vrs.count + 1;
-    data = (name, name, t) :: vrs.data
-  }, name)
+  (add_var_mapping vrs name name t, name)
 
 let add_named_var (vrs : vars) (n : string) (t : itype) =
-  let varName = "@var_" ^ (Int.to_string vrs.count) ^ "_" ^ n in
-  ({
-    vrs with
-    count = vrs.count + 1;
-    data = (n, varName, t) :: vrs.data
-  }, varName)
+  let var_name = "@var_" ^ (Int.to_string vrs.count) ^ "_" ^ n in
+  (add_var_mapping vrs n var_name t, var_name)
 
 let lookup_var (vrs : vars) (n : string) =
   let rec loop data =
@@ -47,6 +45,7 @@ let lookup_var_or_global (vrs : vars) (n : string) =
   | Some(var_name) -> var_name
   | None -> "@global_" ^ n
 
+let function_arg = "@arg"
 
 let make_local_vars (fdata : Functions.func_data) =
   let empty = {
@@ -59,5 +58,5 @@ let make_local_vars (fdata : Functions.func_data) =
     let (vars', _) = add_named_var vars name ityp in
     vars')
   in
-  let with_arg = add_named_var with_cvars "@arg" (stoitype fdata.fd_pat.tpat_type) in
+  let with_arg = add_var_mapping with_cvars function_arg function_arg (stoitype fdata.fd_pat.tpat_type) in
   with_arg

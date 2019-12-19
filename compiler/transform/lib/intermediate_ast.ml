@@ -108,6 +108,12 @@ type iexpression =
 | Iexp_pushtuple of ituptype
 (* Push tuple's value at index i to the stack *)
 | Iexp_loadtupleindex of ituptype * int
+(* Create a construct using stack values, push pointer to stack *)
+| Iexp_pushconstruct of ituptype * int
+(* Push construct's value at index i to the stack *)
+| Iexp_loadconstructindex of ituptype * int
+(* Push the id of the construct to the stack *)
+| Iexp_loadconstructid
 [@@deriving sexp_of]
 
 let rec iexpression_to_string (iexp : iexpression) =
@@ -126,6 +132,9 @@ let rec iexpression_to_string (iexp : iexpression) =
       Option.value (Option.map ell ~f:(fun ell_list -> " else {\n" ^ (String.concat ~sep:"\n" (List.map ell_list ~f:iexpression_to_string)) ^ "\n}")) ~default:""
   | Iexp_pushtuple(itt) -> "pushtuple " ^ (ituptype_to_string itt)
   | Iexp_loadtupleindex (itt, id) -> "loadtupleindex " ^ (ituptype_to_string itt) ^ " " ^ (Int.to_string id)
+  | Iexp_pushconstruct(itt, id) -> "pushconstruct " ^ (ituptype_to_string itt) ^ " " ^ (Int.to_string id)
+  | Iexp_loadconstructindex(itt, id) -> "loadconstructindex " ^ (ituptype_to_string itt) ^ " " ^ (Int.to_string id)
+  | Iexp_loadconstructid -> "loadconstructid"
 
 
 let iexpression_list_to_string ls =
