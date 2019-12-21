@@ -68,6 +68,12 @@ let ct_to_st_with_check (ctx : Context.context) (ct: core_type) =
   let () = Context.check_type ctx st in
   st
 
+let list_to_single_or_tuple st_lst =
+  match st_lst with
+  | [] -> raise (TypeError "Expecting nonempty list of types")
+  | [single] -> single
+  | _ -> T_tuple(st_lst)
+
 let type_constant (const : constant) =
   match const with
   | Pconst_integer(str, _) -> (T_val(V_int), str)
@@ -287,6 +293,10 @@ and infer_pattern ctx pat =
         let (ctyp, str) = type_constant const in
         (ctyp, [], Tpat_constant(str))
     | Ppat_construct(id, pat_opt) -> infer_pattern_construct ctx id pat_opt
+    | Ppat_any ->
+        let tv = fresh () in
+        let typ = (T_var(tv)) in
+        (typ, [], Tpat_any)
     | _ -> raise (TypeError "Unsupported pattern")
   in {
     tpat_desc = pdesc;
@@ -332,7 +342,7 @@ and infer_ctx_construct ctx name expr_opt =
       | (Some(expr), false) ->
           let (ccs, actual_ast) = infer_expr ctx expr in
           let actual_type = actual_ast.texp_type in
-          let expected_type = substitute_list subs (T_tuple(constr.args)) in
+          let expected_type = substitute_list subs (list_to_single_or_tuple constr.args) in
           let ccs' = (Uni(expected_type, actual_type)) :: ccs in
           let subs_type = substitute_list subs constr_type in
           (ccs', subs_type, Texp_construct(name, Some(actual_ast)))
@@ -354,7 +364,7 @@ and infer_pattern_ctx_construct ctx name pat_opt =
           let p_ast = infer_pattern ctx pat in
           let actual_type = p_ast.tpat_type in
           let vars = p_ast.tpat_vars in
-          let expected_type = substitute_list subs (T_tuple(constr.args)) in
+          let expected_type = substitute_list subs (list_to_single_or_tuple constr.args) in
           let subs' = unify expected_type actual_type in
           let vars' = List.map vars ~f:(fun (v,t) -> (v, substitute_list subs' t)) in
           (substitute_list subs' constr_type, vars', Tpat_construct(name, Some(tpattern_substitute subs' p_ast)))

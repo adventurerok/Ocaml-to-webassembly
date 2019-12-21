@@ -48,7 +48,8 @@ and tpattern = {
 }
 
 and tpattern_desc =
-  Tpat_var of string
+  Tpat_any
+| Tpat_var of string
 | Tpat_constant of string
 | Tpat_tuple of tpattern list
 | Tpat_construct of string * tpattern option
@@ -103,6 +104,7 @@ and tvalue_binding_to_string vb =
 and tpattern_to_string pat =
   "(" ^
   (match pat.tpat_desc with
+  | Tpat_any -> "_"
   | Tpat_var(str) -> str
   | Tpat_constant(const) -> const
   | Tpat_tuple(ls) -> "(" ^ (String.concat ~sep:", " (List.map ls ~f:tpattern_to_string)) ^ ")"
