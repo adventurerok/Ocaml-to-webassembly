@@ -21,19 +21,19 @@ let transform_list context ~f:map vars lst =
 (* Gives a new vars and list of iexpression *)
 let rec transform_expr (context: Context.context) (vars: Vars.vars) (expr: texpression) =
   let ityp = stoitype expr.texp_type in
-  let none = (vars, []) in
   match expr.texp_desc with
   | Texp_ident(id) ->
       let var_id = Vars.lookup_var_or_global vars id in
       (vars, [Iexp_pushvar(ityp, var_id)])
   | Texp_constant(str) -> (vars, [Iexp_pushconst(ityp, str)])
   | Texp_let (rf, tvb_list, expr) ->
-      let (vars', tvb_iexprs) = transform_value_bindings context vars rf tvb_list in
-      let (vars'', in_iexprs) = transform_expr context vars' expr in
-      (vars'', [Iexp_block(tvb_iexprs @ in_iexprs)])
+      let (vars1, tvb_iexprs) = transform_value_bindings context vars rf tvb_list in
+      let (vars2, in_iexprs) = transform_expr context vars1 expr in
+      let (vars3, block_name) = Vars.add_block vars2 in
+      (vars3, [Iexp_block(block_name, tvb_iexprs @ in_iexprs)])
   | Texp_fun (_, _) -> raise (IntermediateFailure "Perform closure conversion first")
   | Texp_apply (fexpr, args) -> transform_apply context vars expr.texp_type fexpr args
-  | Texp_match (_, _) -> none
+  | Texp_match (e, cases) -> transform_match context vars e cases
   | Texp_tuple(els) ->
       let (vars', ils) = transform_list context vars els ~f:transform_expr in
       let ituptype = tupletoitype expr.texp_type in
@@ -58,7 +58,7 @@ and transform_value_bindings context vars rf tvb_list =
 and transform_value_bindings_nonrecursive context vars tvb_list =
   let (vars', code_list) = transform_list context vars tvb_list ~f:(fun _ vrs tvb ->
     let (vrs1, expr_code) = transform_expr context vrs tvb.tvb_expr in
-    let (vrs2, pat_code) = transform_pat_assign context vrs1 tvb.tvb_pat in
+    let (vrs2, pat_code) = transform_pat context vrs1 tvb.tvb_pat in
     (vrs2, expr_code @ pat_code)
   )
   in
@@ -70,31 +70,40 @@ and pat_tuple_list (pat : tpattern) =
   | Tpat_tuple(ls) -> ls
   | _ -> [pat]
 
-and transform_pat_assign ?check_constructs:(check_constructs = true) context vars (pat :tpattern) =
+and transform_pat ?check:(check = true) ?escape:(escape = Iexp_ifthenelse(It_unit, [Iexp_fail], None)) context vars (pat :tpattern) =
   match pat.tpat_desc with
+  | Tpat_any -> (vars, [Iexp_drop(stoitype pat.tpat_type)])
   | Tpat_var(name) ->
       let ityp = stoitype pat.tpat_type in
       let (vars', var_name) = Vars.add_named_var vars name ityp in
       (vars', [Iexp_newvar(ityp, var_name)])
-  | Tpat_constant _ -> raise (IntermediateFailure "Cannot assign to constant")
+  | Tpat_constant(const) ->
+      (* This would be shorthand for an equality check, e.g. evaluate this and make sure it's equal to 3 *)
+      let check_code =
+        if check then
+          let typ = stoitype pat.tpat_type in
+          [Iexp_pushconst(typ, const); Iexp_binop(typ, Ibin_ne); escape]
+        else []
+      in
+      (vars, check_code)
   | Tpat_tuple(plist) ->
       let (vars1, var_name) = Vars.add_temp_var vars It_pointer in
       let ituptype = tupletoitype pat.tpat_type in
       let (vars2, code) = transform_listi context vars1 plist ~f:(fun _ vrs pos tpat ->
-        let (vrs', pat_code) = transform_pat_assign context vrs tpat in
+        let (vrs', pat_code) = transform_pat ~check:check ~escape:escape context vrs tpat in
         (vrs', (Iexp_pushvar(It_pointer, var_name) :: Iexp_loadtupleindex(ituptype, pos) :: pat_code)))
       in
       (vars2, Iexp_newvar(It_pointer, var_name) :: code)
   | Tpat_construct (name, tpat_opt) ->
       let (vars1, var_name) = Vars.add_temp_var vars It_pointer in
       let check_code =
-        if check_constructs then
+        if check then
           let construct = Option.value_exn (Context.find_constr context name) in
           (Iexp_pushvar(It_pointer, var_name)
           :: Iexp_loadconstructid
           :: Iexp_pushconst(It_int, Int.to_string construct.index)
           :: Iexp_binop(It_int, Ibin_ne)
-          :: [Iexp_ifthenelse(It_unit, [Iexp_fail], None)])
+          :: [escape])
         else []
       in
       let (vars2, destruct_code) =
@@ -103,7 +112,7 @@ and transform_pat_assign ?check_constructs:(check_constructs = true) context var
             let plist = pat_tuple_list tpat in
             let ituptype = List.map plist ~f:(fun p -> stoitype p.tpat_type) in
             transform_listi context vars1 plist ~f:(fun _ vrs pos cpat ->
-              let (vrs', pat_code) = transform_pat_assign context vrs cpat in
+              let (vrs', pat_code) = transform_pat ~check:check ~escape:escape context vrs cpat in
               (vrs', (Iexp_pushvar(It_pointer, var_name) :: Iexp_loadconstructindex(ituptype, pos) :: pat_code)))
         | None -> (vars1, []))
       in
@@ -117,6 +126,28 @@ and transform_value_bindings_recursive _context _vars tvb_list =
     | _ -> raise (IntermediateFailure "Recursive bindings must be functions")))
   in raise (IntermediateFailure "Not yet supported")
   (* get all the closure functions and then build them all at once *)
+
+and transform_match context vars expr cases =
+  let (vars1, expr_code) = transform_expr context vars expr in
+  let match_type = stoitype expr.texp_type in
+  let (vars2, expr_var) = Vars.add_temp_var vars1 match_type in
+  let (vars3, match_block) = Vars.add_block vars2 in
+  let (vars4, inner_code) = transform_list context vars3 cases ~f:(fun _ vrs case ->
+    let (vrs1, case_block) = Vars.add_block vrs in
+    (* These instructions check and destructure the pattern *)
+    let (vrs2, pat_code) = transform_pat ~check:true ~escape:(Iexp_exitblockif(case_block))
+                                            context vrs1 case.tc_lhs
+    in
+    (* Case expression, possibly using variables from the pattern *)
+    let (vrs3, matched_code) = transform_expr context vrs2 case.tc_rhs in
+    let inside_block = [Iexp_pushvar(match_type, expr_var)] @
+                       pat_code @ matched_code @
+                       [Iexp_exitblock(match_block)]
+    in
+    (vrs3, [Iexp_block(case_block, inside_block)])
+  )
+  in
+  (vars4, expr_code @ [Iexp_newvar(match_type, expr_var); Iexp_block(match_block, inner_code @ [Iexp_fail])])
 
 and transform_apply context vars typ fexpr args =
   match fexpr.texp_desc with
@@ -208,7 +239,7 @@ let transform_structure context vars (st : tstructure) =
 
 let transform_function context (fd : Functions.func_data) =
   let vars = Vars.make_local_vars fd in
-  let (vars', arg_code) = transform_pat_assign context vars fd.fd_pat in
+  let (vars', arg_code) = transform_pat context vars fd.fd_pat in
   let (vars'', expr_code) = transform_expr context vars' fd.fd_expr in
   let arg_type = stoitype fd.fd_pat.tpat_type in
   (vars'', (Iexp_pushvar(arg_type, Vars.function_arg)) :: (arg_code @ expr_code))

@@ -87,35 +87,59 @@ let ibinop_to_string (ib : ibinop) =
 
 type iexpression =
 (* Create a new var, and pop to it from top of stack *)
+(* type of variable, name of variable *)
 | Iexp_newvar of itype * string
 (* Push var's value to the stack *)
+(* type of variable, name of variable *)
 | Iexp_pushvar of itype * string
 (* Binary operation using two stack values *)
+(* type of operands, binary operation *)
 | Iexp_binop of itype * ibinop
 (* Push a constant to the stack *)
+(* type of constant, string rep of constant *)
 | Iexp_pushconst of itype * string
 (* Make a new closure for specified function and tuple type, push pointer to stack *)
+(* type of function, name of function, type of closure variables *)
 | Iexp_newclosure of iftype * string * ituptype
-(* Fill a closure (top pointer on stack) using values from the stack *)
+(* Fill a closure (top pointer on stack) by popping values from the stack *)
+(* type of closure variables *)
 | Iexp_fillclosure of ituptype
-(* Call a closure on the stack 1 down using argument from stack top *)
+(* Call a closure on the stack 1 down using argument from stack top (pop both) *)
+(* type of function *)
 | Iexp_callclosure of iftype
 (* A block of instructions, locally scoped *)
-| Iexp_block of iexpression list
+(* name of block, list of instructions *)
+| Iexp_block of string * iexpression list
+(* Exit from the named block *)
+(* name of block *)
+| Iexp_exitblock of string
+(* Exit from the named block if top of stack is true *)
+(* name of block *)
+| Iexp_exitblockif of string
 (* If then else *)
+(* result type (on stack top), if case code, optional else code *)
 | Iexp_ifthenelse of itype * iexpression list * iexpression list option
-(* Create a tuple using stack values, push pointer to stack *)
+(* Create a tuple by popping stack values, push pointer to stack *)
+(* type of tuple *)
 | Iexp_pushtuple of ituptype
-(* Push tuple's value at index i to the stack *)
+(* Pop tuple, push its value at index i to the stack *)
+(* type of tuple, index in tuple *)
 | Iexp_loadtupleindex of ituptype * int
-(* Create a construct using stack values, push pointer to stack *)
+(* Create a construct by popping stack values, push pointer to stack *)
+(* type of construct arguments, id of construct *)
 | Iexp_pushconstruct of ituptype * int
-(* Push construct's value at index i to the stack *)
+(* Pop construct, push its value at index i to the stack *)
+(* type of construct arguments, index in arguments *)
 | Iexp_loadconstructindex of ituptype * int
-(* Push the id of the construct to the stack *)
+(* Pop construct, push its id to the stack *)
+(* No parameters *)
 | Iexp_loadconstructid
 (* Fail *)
+(* No parameters *)
 | Iexp_fail
+(* Drop top of stack *)
+(* type of thing on top of stack *)
+| Iexp_drop of itype
 [@@deriving sexp_of]
 
 let rec iexpression_to_string (iexp : iexpression) =
@@ -128,7 +152,12 @@ let rec iexpression_to_string (iexp : iexpression) =
       "newclosure " ^ (iftype_to_string ift) ^ " " ^ name ^ " " ^ (ituptype_to_string itt)
   | Iexp_fillclosure(itt) -> "fillclosure " ^ (ituptype_to_string itt)
   | Iexp_callclosure(ift) -> "callclosure " ^ (iftype_to_string ift)
-  | Iexp_block(ls) -> "block{\n" ^ (String.concat ~sep:"\n" (List.map ls ~f:iexpression_to_string)) ^ "\n}"
+  | Iexp_block(name, ls) ->
+      "block " ^ name ^ " {\n" ^
+      (String.concat ~sep:"\n" (List.map ls ~f:iexpression_to_string)) ^
+      "\n}"
+  | Iexp_exitblock(name) -> "exitblock " ^ name
+  | Iexp_exitblockif(name) -> "exitblockif " ^ name
   | Iexp_ifthenelse (t, ifl, ell) -> "ifthenelse " ^ (itype_to_string t) ^ " if{\n" ^
       (String.concat ~sep:"\n" (List.map ifl ~f:iexpression_to_string)) ^ "\n}" ^
       Option.value (Option.map ell ~f:(fun ell_list -> " else {\n" ^ (String.concat ~sep:"\n" (List.map ell_list ~f:iexpression_to_string)) ^ "\n}")) ~default:""
@@ -138,6 +167,7 @@ let rec iexpression_to_string (iexp : iexpression) =
   | Iexp_loadconstructindex(itt, id) -> "loadconstructindex " ^ (ituptype_to_string itt) ^ " " ^ (Int.to_string id)
   | Iexp_loadconstructid -> "loadconstructid"
   | Iexp_fail -> "fail"
+  | Iexp_drop(t) -> "drop " ^ (itype_to_string t)
 
 
 let iexpression_list_to_string ls =

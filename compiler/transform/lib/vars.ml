@@ -4,13 +4,15 @@ open Intermediate_ast
 type vars = {
   count: int;
   global: bool;
-  data: ((string * string * itype) list)
+  data: ((string * string * itype) list);
+  blocks: int
 }
 
 let empty_global_vars = {
   count = 0;
   global = true;
-  data = []
+  data = [];
+  blocks = 0
 }
 
 let add_var_mapping (vrs : vars) (n : string) (vn : string) (t : itype) =
@@ -28,6 +30,14 @@ let add_temp_var (vrs : vars) (t : itype) =
 let add_named_var (vrs : vars) (n : string) (t : itype) =
   let var_name = "@var_" ^ (Int.to_string vrs.count) ^ "_" ^ n in
   (add_var_mapping vrs n var_name t, var_name)
+
+let add_block (vrs : vars) =
+  let block_name = "block_" ^ (Int.to_string vrs.blocks) in
+  let vrs' = {
+    vrs with
+    blocks = vrs.blocks + 1
+  } in
+  (vrs', block_name)
 
 let lookup_var (vrs : vars) (n : string) =
   let rec loop data =
@@ -51,7 +61,8 @@ let make_local_vars (fdata : Functions.func_data) =
   let empty = {
     count = 0;
     global = false;
-    data = []
+    data = [];
+    blocks = 0
   } in
   let with_cvars = List.fold fdata.fd_cvars ~init:empty ~f:(fun vars (name,st) ->
     let ityp = stoitype st in
