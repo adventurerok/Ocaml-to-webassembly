@@ -119,12 +119,47 @@ and transform_pat ?check:(check = true) ?escape:(escape = Iexp_ifthenelse(It_uni
       (vars2, Iexp_newvar(It_pointer, var_name) :: (check_code @ destruct_code))
 
 
-and transform_value_bindings_recursive _context _vars tvb_list =
-  let _closure_names = List.map tvb_list ~f:(fun tvb ->
-    (match tvb.tvb_pat.tpat_desc with
-    | Tpat_var(name) -> name
-    | _ -> raise (IntermediateFailure "Recursive bindings must be functions")))
-  in raise (IntermediateFailure "Not yet supported")
+and transform_value_bindings_recursive context vars tvb_list =
+  (* Make a var for each recursive function *)
+  let details = List.map tvb_list ~f:(fun tvb ->
+    let rec_name =
+      match tvb.tvb_pat.tpat_desc with
+      | Tpat_var(name) -> name
+      | _ -> raise (IntermediateFailure "Recursive bindings must be functions")
+    in
+    let iftype = functoitype tvb.tvb_expr.texp_type in
+    let (fexpr, args) =
+      match tvb.tvb_expr.texp_desc with
+      | Texp_apply(fexpr_match, args_match) -> (fexpr_match, args_match)
+      | _ -> raise (IntermediateFailure "Recursive bindings must be functions")
+    in
+    let func_name =
+      match fexpr.texp_desc with
+      | Texp_ident(name) ->
+          if String.is_prefix name ~prefix:"@f_" then
+            String.drop_prefix name 3
+          else raise (IntermediateFailure "Recursive bindings must be functions")
+      | _ -> raise (IntermediateFailure "Recursive bindings must be functions")
+    in
+    let tuple_expr = List.hd_exn args in
+    let ituptype = tupletoitype tuple_expr.texp_type in
+    (rec_name, func_name, iftype, ituptype, tuple_expr)
+  )
+  in
+  let (vars1, new_closure_code) = transform_list context vars details
+                                    ~f:(fun _ vrs (rec_name, func_name, iftype, ituptype, _) ->
+    let (vrs', var_name) = Vars.add_named_var vrs rec_name It_pointer in
+    (vrs', [Iexp_newclosure(iftype, func_name, ituptype); Iexp_newvar(It_pointer, var_name)])
+  )
+  in
+  let (vars2, fill_closure_code) = transform_list context vars1 details
+                                    ~f:(fun _ vrs (rec_name, _, _, ituptype, tuple_expr) ->
+    let var_name = Option.value_exn (Vars.lookup_var vrs rec_name) in
+    let (vrs', tuple_code) = transform_notuple context vrs tuple_expr in
+    (vrs', tuple_code @ [Iexp_pushvar(It_pointer, var_name); Iexp_fillclosure(ituptype)])
+  )
+  in
+  (vars2, new_closure_code @ fill_closure_code)
   (* get all the closure functions and then build them all at once *)
 
 and transform_match context vars expr cases =
@@ -214,7 +249,8 @@ and transform_apply_closure context vars typ name args =
         | _ -> raise (IntermediateFailure "Cannot apply non function type "))
   in
   let (vars', loop_code) = loop typ vars args in
-  (vars', (Iexp_pushvar(It_pointer, name)) :: loop_code)
+  let var_name = Vars.lookup_var_or_global vars' name in
+  (vars', (Iexp_pushvar(It_pointer, var_name)) :: loop_code)
 
 and transform_construct context vars name expr_opt =
   let constr = Option.value_exn (Context.find_constr context name) in
