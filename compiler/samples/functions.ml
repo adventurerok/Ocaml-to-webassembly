@@ -5,7 +5,7 @@ let sum x y = x + y
 let rec fib n = if n = 0 then 1 else fib (n - 1)
 
 let add3 n =
-  let add1 n = n + 1 in
+  let add1 n = sum n 1 in
   add1 (add1 (add1 n))
 
 let mult m n =

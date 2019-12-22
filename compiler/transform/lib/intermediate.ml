@@ -3,6 +3,7 @@ open Otwa_types
 open Typed_ast
 open Types
 open Intermediate_ast
+open Intermediate_program
 
 exception IntermediateFailure of string
 
@@ -279,3 +280,71 @@ let transform_function context (fd : Functions.func_data) =
   let (vars'', expr_code) = transform_expr context vars' fd.fd_expr in
   let arg_type = stoitype fd.fd_pat.tpat_type in
   (vars'', (Iexp_pushvar(arg_type, Vars.function_arg)) :: (arg_code @ expr_code))
+
+let rec fix_globals global_vars local_vars code =
+  let check_global name =
+    match Vars.lookup_var local_vars name with
+    | None ->
+        let gname =
+          if String.is_prefix name ~prefix:"@global_" then
+            Option.value_exn (Vars.lookup_var global_vars (String.drop_prefix name 8))
+          else name (* We are from the init function *)
+        in Some(gname)
+    | _ -> None
+  in
+  List.map code ~f:(fun instr ->
+    match instr with
+    | Iexp_newvar(t, name) ->
+        (match check_global name with
+        | Some(gname) -> Iexp_assignglobal(t, gname)
+        | None -> instr)
+    | Iexp_pushvar(t, name) ->
+        (match check_global name with
+        | Some(gname) -> Iexp_pushglobal(t, gname)
+        | None -> instr)
+    | Iexp_ifthenelse(t, tcode, ecode_opt) ->
+        let tcode' = fix_globals global_vars local_vars tcode in
+        let ecode_opt' = Option.map ecode_opt ~f:(fix_globals global_vars local_vars) in
+        Iexp_ifthenelse(t, tcode', ecode_opt')
+    | Iexp_block(bname, bcode) ->
+        Iexp_block(bname, fix_globals global_vars local_vars bcode)
+    | _ -> instr
+  )
+
+let transform_program ?debug:(debug = false) context structure =
+  let (funcs, fast) = Functions.func_transform_structure structure in
+  let () = if debug then
+    Stdio.print_endline (Typed_ast.tstructure_to_string fast);
+    Functions.print_func_datas funcs
+  in
+  let (global_vars, init_code) = transform_structure context Vars.empty_global_vars fast in
+  let ifuncs = List.map funcs ~f:(fun fd ->
+    let (vars, code) = transform_function context fd in
+    (fd.fd_name, {
+      pf_name = fd.fd_name;
+      pf_vars = vars;
+      pf_code = code;
+      pf_type = functoitype fd.fd_type;
+      pf_cvars = List.map fd.fd_cvars ~f:(fun (name,st) -> (name, stoitype st))
+    }))
+  in
+  let init_func = {
+    pf_name = "init";
+    pf_vars = Vars.make_init_vars global_vars;
+    pf_code = init_code;
+    pf_type = (It_unit, It_unit);
+    pf_cvars = []
+  }
+  in
+  let all_funcs = ("init", init_func) :: ifuncs in
+  let corrected_funcs = List.map all_funcs ~f:(fun (name, f) ->
+    (name, {
+      f with
+      pf_code = fix_globals global_vars f.pf_vars f.pf_code
+    }))
+  in
+  {
+    prog_functions = Map.Poly.of_alist_exn corrected_funcs;
+    prog_globals = global_vars;
+    prog_initfunc = "init"
+  }

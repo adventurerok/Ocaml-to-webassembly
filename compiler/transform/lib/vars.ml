@@ -71,3 +71,18 @@ let make_local_vars (fdata : Functions.func_data) =
   in
   let with_arg = add_var_mapping with_cvars function_arg function_arg (stoitype fdata.fd_pat.tpat_type) in
   with_arg
+
+let make_init_vars global_vars =
+  {
+    count = 1;
+    global = false;
+    data = [("@init_arg", "@init_arg", It_pointer)];
+    blocks = global_vars.blocks
+  }
+
+let vars_to_string vars =
+  let dstr = List.map vars.data ~f:(fun (name, var_name, typ) ->
+    name ^ " -> " ^ var_name ^ " (" ^ (itype_to_string typ) ^ ")"
+  )
+  in
+  String.concat ~sep:"\n" dstr

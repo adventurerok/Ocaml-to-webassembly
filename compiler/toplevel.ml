@@ -31,17 +31,9 @@ let openfile name =
   let (ctx, tast) = Type_expr.type_structure Context.empty_with_lists parsed in
   Context.print ctx;
   Stdio.print_endline (Typed_ast.tstructure_to_string tast);
-  let (funcs, fast) = Functions.func_transform_structure tast in
-  Stdio.print_endline (Typed_ast.tstructure_to_string fast);
-  Functions.print_func_datas funcs;
-  let (_, code_list) = Intermediate.transform_structure ctx Vars.empty_global_vars fast in
-  let str = Intermediate_ast.iexpression_list_to_string code_list in
-  Stdio.print_endline str;
-  List.iter funcs ~f:(fun fd ->
-    Stdio.print_endline ("\nFunction " ^ fd.fd_name ^ " code:");
-    let (_, codes) = Intermediate.transform_function ctx fd in
-    let cstr = Intermediate_ast.iexpression_list_to_string codes in
-    Stdio.print_endline cstr)
+  let iprog = Intermediate.transform_program ~debug:true ctx tast in
+  let pstr = Intermediate_program.iprogram_to_string iprog in
+  Stdio.print_endline pstr
 
 let () =
   if (Array.length Sys.argv) = 2 then

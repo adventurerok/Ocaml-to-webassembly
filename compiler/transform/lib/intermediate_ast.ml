@@ -92,6 +92,12 @@ type iexpression =
 (* Push var's value to the stack *)
 (* type of variable, name of variable *)
 | Iexp_pushvar of itype * string
+(* Assign to global variable from popping the top of the stack *)
+(* type of global, name of global *)
+| Iexp_assignglobal of itype * string
+(* Push global's value to the stack *)
+(* type of global, name of global *)
+| Iexp_pushglobal of itype * string
 (* Binary operation using two stack values *)
 (* type of operands, binary operation *)
 | Iexp_binop of itype * ibinop
@@ -146,6 +152,8 @@ let rec iexpression_to_string (iexp : iexpression) =
   match iexp with
   | Iexp_newvar (t, name) -> "newvar " ^ (itype_to_string t) ^ " " ^ name
   | Iexp_pushvar (t, name) -> "pushvar " ^ (itype_to_string t) ^ " " ^ name
+  | Iexp_assignglobal (t, name) -> "assignglobal " ^ (itype_to_string t) ^ " " ^ name
+  | Iexp_pushglobal (t, name) -> "pushglobal " ^ (itype_to_string t) ^ " " ^ name
   | Iexp_binop (t, op) -> "binop " ^ (itype_to_string t) ^ " " ^ (ibinop_to_string op)
   | Iexp_pushconst (t, v) -> "pushconst " ^ (itype_to_string t) ^ " " ^ v
   | Iexp_newclosure (ift, name, itt) ->
