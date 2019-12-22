@@ -318,15 +318,15 @@ and infer_ident ctx ident =
 
 and infer_construct ctx ident expr_opt =
   match ident.txt with
-  | Lident("true") -> ([], T_val(V_bool), Texp_construct("true", None))
-  | Lident("false") -> ([], T_val(V_bool), Texp_construct("false", None))
+  | Lident("true") -> ([], T_val(V_bool), Texp_constant("true"))
+  | Lident("false") -> ([], T_val(V_bool), Texp_constant("false"))
   | Lident(str) -> infer_ctx_construct ctx str expr_opt
   | _ -> raise (TypeError "Unknown construct")
 
 and infer_pattern_construct ctx ident pat_opt =
   match ident.txt with
-  | Lident("true") -> (v_bool, [], Tpat_construct("true", None))
-  | Lident("false") -> (v_bool, [], Tpat_construct("false", None))
+  | Lident("true") -> (v_bool, [], Tpat_constant("true"))
+  | Lident("false") -> (v_bool, [], Tpat_constant("false"))
   | Lident(str) -> infer_pattern_ctx_construct ctx str pat_opt
   | _ -> raise (TypeError "Unknown construct")
 
