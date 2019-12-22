@@ -137,8 +137,8 @@ and transform_value_bindings_recursive context vars tvb_list =
     let func_name =
       match fexpr.texp_desc with
       | Texp_ident(name) ->
-          if String.is_prefix name ~prefix:"@f_" then
-            String.drop_prefix name 3
+          if String.is_prefix name ~prefix:"$f_" then
+            name
           else raise (IntermediateFailure "Recursive bindings must be functions")
       | _ -> raise (IntermediateFailure "Recursive bindings must be functions")
     in
@@ -192,7 +192,7 @@ and transform_apply context vars typ fexpr args =
       (match lookup with
       | Some(_) -> transform_op context vars name args
       | None ->
-          if String.is_prefix name ~prefix:"@f_" then
+          if String.is_prefix name ~prefix:"$f_" then
             transform_mk_closure context vars typ name args
           else
             transform_apply_closure context vars fexpr.texp_type name args)
@@ -231,7 +231,7 @@ and transform_mk_closure context vars typ name args =
   let ituptype = tupletoitype tuple_expr.texp_type in
   let (vars', tuple_codelst) = transform_notuple context vars tuple_expr in
   (vars', tuple_codelst @
-    [Iexp_newclosure(iftype, String.drop_prefix name 3, ituptype);
+    [Iexp_newclosure(iftype, name, ituptype);
      Iexp_fillclosure(ituptype)])
 
 and transform_apply_closure context vars typ name args =
@@ -286,7 +286,7 @@ let rec fix_globals global_vars local_vars code =
     match Vars.lookup_var local_vars name with
     | None ->
         let gname =
-          if String.is_prefix name ~prefix:"@global_" then
+          if String.is_prefix name ~prefix:"$global_" then
             Option.value_exn (Vars.lookup_var global_vars (String.drop_prefix name 8))
           else name (* We are from the init function *)
         in Some(gname)

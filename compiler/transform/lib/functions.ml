@@ -12,7 +12,7 @@ let counter = ref 0
 let fresh_func_name () =
   let id = !counter in
   counter := id + 1;
-  ("@f_" ^ (Int.to_string id))
+  ("$f_" ^ (Int.to_string id))
 
 type func_data = {
   fd_pat: tpattern;

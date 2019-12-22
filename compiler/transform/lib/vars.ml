@@ -24,11 +24,11 @@ let add_var_mapping (vrs : vars) (n : string) (vn : string) (t : itype) =
 
 
 let add_temp_var (vrs : vars) (t : itype) =
-  let name = "@temp_" ^ (Int.to_string vrs.count) in
+  let name = "$temp_" ^ (Int.to_string vrs.count) in
   (add_var_mapping vrs name name t, name)
 
 let add_named_var (vrs : vars) (n : string) (t : itype) =
-  let var_name = "@var_" ^ (Int.to_string vrs.count) ^ "_" ^ n in
+  let var_name = "$var_" ^ (Int.to_string vrs.count) ^ "_" ^ n in
   (add_var_mapping vrs n var_name t, var_name)
 
 let add_block (vrs : vars) =
@@ -53,9 +53,9 @@ let lookup_var (vrs : vars) (n : string) =
 let lookup_var_or_global (vrs : vars) (n : string) =
   match (lookup_var vrs n) with
   | Some(var_name) -> var_name
-  | None -> "@global_" ^ n
+  | None -> "$global_" ^ n
 
-let function_arg = "@arg"
+let function_arg = "$arg"
 
 let make_local_vars (fdata : Functions.func_data) =
   let empty = {
@@ -76,7 +76,7 @@ let make_init_vars global_vars =
   {
     count = 1;
     global = false;
-    data = [("@init_arg", "@init_arg", It_pointer)];
+    data = [("$init_arg", "$init_arg", It_pointer)];
     blocks = global_vars.blocks
   }
 
@@ -86,3 +86,7 @@ let vars_to_string vars =
   )
   in
   String.concat ~sep:"\n" dstr
+
+(* Gets the ordered list of var name and type *)
+let get_vars vars =
+  List.rev (List.map vars.data ~f:(fun (_, var_name, typ) -> (var_name, typ)))
