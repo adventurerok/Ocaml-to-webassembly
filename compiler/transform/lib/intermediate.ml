@@ -31,24 +31,27 @@ let rec transform_expr (context: Context.context) (vars: Vars.vars) (expr: texpr
       let (vars1, tvb_iexprs) = transform_value_bindings context vars rf tvb_list in
       let (vars2, in_iexprs) = transform_expr context vars1 expr in
       let (vars3, block_name) = Vars.add_block vars2 in
-      (vars3, [Iexp_block(block_name, tvb_iexprs @ in_iexprs)])
+      let res_type = stoitype expr.texp_type in
+      (vars3, [Iexp_block(block_name, res_type, tvb_iexprs @ in_iexprs)])
   | Texp_fun (_, _) -> raise (IntermediateFailure "Perform closure conversion first")
   | Texp_apply (fexpr, args) -> transform_apply context vars expr.texp_type fexpr args
-  | Texp_match (e, cases) -> transform_match context vars e cases
-  | Texp_tuple(els) ->
-      let (vars', ils) = transform_list context vars els ~f:transform_expr in
+  | Texp_match (e, cases) -> transform_match context vars expr.texp_type e cases
+  | Texp_tuple(_) ->
+      let (vars1, tuple_codelst) = transform_tupleargs context vars expr in
+      let (vars2, var_name) = Vars.add_temp_var vars1 It_pointer in
       let ituptype = tupletoitype expr.texp_type in
-      (vars', ils @ [Iexp_pushtuple(ituptype)])
+      (vars2, [Iexp_pushtuple(ituptype, var_name, tuple_codelst)])
   | Texp_construct (name, expr_opt) -> transform_construct context vars name expr_opt
   | Texp_ifthenelse (i, t, e_opt) ->
-      let (vars1, icode) = transform_expr context vars i in
-      let (vars2, tcode) = transform_expr context vars1 t in
+      let (vars1, block_name) = Vars.add_block vars in
+      let (vars2, icode) = transform_expr context vars1 i in
+      let (vars3, tcode) = transform_expr context vars2 t in
       (match e_opt with
       | Some(e) ->
-          let (vars3, ecode) = transform_expr context vars2 e in
-          (vars3, icode @ [Iexp_ifthenelse(ityp, tcode, Some(ecode))])
+          let (vars4, ecode) = transform_expr context vars3 e in
+          (vars4, icode @ [Iexp_ifthenelse(block_name, ityp, tcode, Some(ecode))])
       | None ->
-          (vars2, icode @ [Iexp_ifthenelse(ityp, tcode, None)]))
+          (vars3, icode @ [Iexp_ifthenelse(block_name, ityp, tcode, None)]))
 
 
 and transform_value_bindings context vars rf tvb_list =
@@ -71,7 +74,7 @@ and pat_tuple_list (pat : tpattern) =
   | Tpat_tuple(ls) -> ls
   | _ -> [pat]
 
-and transform_pat ?check:(check = true) ?escape:(escape = Iexp_ifthenelse(It_unit, [Iexp_fail], None)) context vars (pat :tpattern) =
+and transform_pat ?check:(check = true) ?escape:(escape = Iexp_ifthenelse("$escape", It_unit, [Iexp_fail], None)) context vars (pat :tpattern) =
   match pat.tpat_desc with
   | Tpat_any -> (vars, [Iexp_drop(stoitype pat.tpat_type)])
   | Tpat_var(name) ->
@@ -150,22 +153,23 @@ and transform_value_bindings_recursive context vars tvb_list =
   let (vars1, new_closure_code) = transform_list context vars details
                                     ~f:(fun _ vrs (rec_name, func_name, iftype, ituptype, _) ->
     let (vrs', var_name) = Vars.add_named_var vrs rec_name It_pointer in
-    (vrs', [Iexp_newclosure(iftype, func_name, ituptype); Iexp_newvar(It_pointer, var_name)])
+    (vrs', [Iexp_newclosure(iftype, func_name, ituptype, var_name)])
   )
   in
   let (vars2, fill_closure_code) = transform_list context vars1 details
                                     ~f:(fun _ vrs (rec_name, _, _, ituptype, tuple_expr) ->
     let var_name = Option.value_exn (Vars.lookup_var vrs rec_name) in
-    let (vrs', tuple_code) = transform_notuple context vrs tuple_expr in
-    (vrs', tuple_code @ [Iexp_pushvar(It_pointer, var_name); Iexp_fillclosure(ituptype)])
+    let (vrs', tuple_codelst) = transform_tupleargs context vrs tuple_expr in
+    (vrs', [Iexp_fillclosure(ituptype, var_name, tuple_codelst)])
   )
   in
   (vars2, new_closure_code @ fill_closure_code)
   (* get all the closure functions and then build them all at once *)
 
-and transform_match context vars expr cases =
+and transform_match context vars st_res_typ expr cases =
   let (vars1, expr_code) = transform_expr context vars expr in
   let match_type = stoitype expr.texp_type in
+  let result_type = stoitype st_res_typ in
   let (vars2, expr_var) = Vars.add_temp_var vars1 match_type in
   let (vars3, match_block) = Vars.add_block vars2 in
   let (vars4, inner_code) = transform_list context vars3 cases ~f:(fun _ vrs case ->
@@ -180,10 +184,10 @@ and transform_match context vars expr cases =
                        pat_code @ matched_code @
                        [Iexp_exitblock(match_block)]
     in
-    (vrs3, [Iexp_block(case_block, inside_block)])
+    (vrs3, [Iexp_block(case_block, result_type, inside_block)])
   )
   in
-  (vars4, expr_code @ [Iexp_newvar(match_type, expr_var); Iexp_block(match_block, inner_code @ [Iexp_fail])])
+  (vars4, expr_code @ [Iexp_newvar(match_type, expr_var); Iexp_block(match_block, result_type, inner_code @ [Iexp_fail])])
 
 and transform_apply context vars typ fexpr args =
   match fexpr.texp_desc with
@@ -220,19 +224,27 @@ and transform_op context vars name args =
 
 (* Transforms an expression
  * If that expression is a tuple, do not add the final pushtuple instruction *)
-and transform_notuple context vars expr =
+and transform_tupleargs context vars expr =
   match expr.texp_desc with
-  | Texp_tuple(ls) -> transform_list context vars ls ~f:transform_expr
-  | _ -> transform_expr context vars expr
+  | Texp_tuple(lst) ->
+      let (vars', code_list_rev) = List.fold lst ~init:(vars, []) ~f:(fun (vrs, c_lst) item ->
+        let (vrs', code) = transform_expr context vrs item in
+        (vrs', code :: c_lst))
+      in
+      (vars', List.rev code_list_rev)
+  | _ ->
+      let (vars, code) = transform_expr context vars expr in
+      (vars, [code])
 
 and transform_mk_closure context vars typ name args =
   let tuple_expr = List.hd_exn args in
   let iftype = functoitype typ in
   let ituptype = tupletoitype tuple_expr.texp_type in
-  let (vars', tuple_codelst) = transform_notuple context vars tuple_expr in
-  (vars', tuple_codelst @
-    [Iexp_newclosure(iftype, name, ituptype);
-     Iexp_fillclosure(ituptype)])
+  let (vars1, tuple_codelst) = transform_tupleargs context vars tuple_expr in
+  let (vars2, var_name) = Vars.add_temp_var vars1 It_pointer in
+  (vars2,
+    [Iexp_newclosure(iftype, name, ituptype, var_name);
+     Iexp_fillclosure(ituptype, var_name, tuple_codelst)])
 
 and transform_apply_closure context vars typ name args =
   (* Arg goes on top of stack, and closure 1 down *)
@@ -256,12 +268,13 @@ and transform_apply_closure context vars typ name args =
 and transform_construct context vars name expr_opt =
   let constr = Option.value_exn (Context.find_constr context name) in
   let ituptype = List.map constr.args ~f:stoitype in
+  let (vars1, var_name) = Vars.add_temp_var vars It_pointer in
   match expr_opt with
   | Some(expr) ->
-      let (vars', args_code) = transform_notuple context vars expr in
-      (vars', args_code @ [Iexp_pushconstruct(ituptype, constr.index)])
+      let (vars2, tuple_codelst) = transform_tupleargs context vars1 expr in
+      (vars2, [Iexp_pushconstruct(ituptype, var_name, constr.index, tuple_codelst)])
   | None ->
-      (vars, [Iexp_pushconstruct(ituptype, constr.index)])
+      (vars1, [Iexp_pushconstruct(ituptype, var_name, constr.index, [])])
 
 
 let transform_structure_item context vars (si : tstructure_item) =
@@ -281,35 +294,40 @@ let transform_function context (fd : Functions.func_data) =
   let arg_type = stoitype fd.fd_pat.tpat_type in
   (vars'', (Iexp_pushvar(arg_type, Vars.function_arg)) :: (arg_code @ expr_code))
 
-let rec fix_globals global_vars local_vars code =
-  let check_global name =
-    match Vars.lookup_var local_vars name with
-    | None ->
-        let gname =
-          if String.is_prefix name ~prefix:"$global_" then
-            Option.value_exn (Vars.lookup_var global_vars (String.drop_prefix name 8))
-          else name (* We are from the init function *)
-        in Some(gname)
-    | _ -> None
+let fix_globals global_vars local_vars code =
+  let fix_var (scope, name) =
+    match scope with
+    | Global -> Option.value_exn (Vars.lookup_var global_vars name)
+    | Local ->
+      (match Vars.lookup_var local_vars name with
+        | None -> (Global, name)
+        | _ -> (Local, name))
   in
-  List.map code ~f:(fun instr ->
+  let rec fix_instr instr =
     match instr with
     | Iexp_newvar(t, name) ->
-        (match check_global name with
-        | Some(gname) -> Iexp_assignglobal(t, gname)
-        | None -> instr)
+        Iexp_newvar(t, fix_var name)
     | Iexp_pushvar(t, name) ->
-        (match check_global name with
-        | Some(gname) -> Iexp_pushglobal(t, gname)
-        | None -> instr)
-    | Iexp_ifthenelse(t, tcode, ecode_opt) ->
-        let tcode' = fix_globals global_vars local_vars tcode in
-        let ecode_opt' = Option.map ecode_opt ~f:(fix_globals global_vars local_vars) in
-        Iexp_ifthenelse(t, tcode', ecode_opt')
-    | Iexp_block(bname, bcode) ->
-        Iexp_block(bname, fix_globals global_vars local_vars bcode)
+        Iexp_pushvar(t, fix_var name)
+    | Iexp_ifthenelse(bname, t, tcode, ecode_opt) ->
+        let tcode' = fix_instr_list tcode in
+        let ecode_opt' = Option.map ecode_opt ~f:fix_instr_list in
+        Iexp_ifthenelse(bname, t, tcode', ecode_opt')
+    | Iexp_block(bname, btyp, bcode) ->
+        Iexp_block(bname, btyp, fix_instr_list bcode)
+    | Iexp_newclosure(ift, fname, itt, var) ->
+        Iexp_newclosure(ift, fname, itt, fix_var var)
+    | Iexp_fillclosure(itt, name, tuple_lst) ->
+        Iexp_fillclosure(itt, fix_var name, fix_instr_list_list tuple_lst)
+    | Iexp_pushtuple(itt, name, tuple_lst) ->
+        Iexp_pushtuple(itt, fix_var name, fix_instr_list_list tuple_lst)
+    | Iexp_pushconstruct(itt, name, id, tuple_lst) ->
+        Iexp_pushconstruct(itt, fix_var name, id, fix_instr_list_list tuple_lst)
     | _ -> instr
-  )
+  and fix_instr_list lst = List.map lst ~f:fix_instr
+  and fix_instr_list_list lst = List.map lst ~f:fix_instr_list
+  in
+  fix_instr_list code
 
 let transform_program ?debug:(debug = false) context structure =
   let (funcs, fast) = Functions.func_transform_structure structure in

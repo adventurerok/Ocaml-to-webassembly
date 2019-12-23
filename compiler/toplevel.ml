@@ -1,6 +1,7 @@
 open Core_kernel
 open Otwa_types
 open Otwa_transform
+open Otwa_codegen
 
 let parsestring str =
   let buf = Lexing.from_string str in
@@ -33,7 +34,10 @@ let openfile name =
   Stdio.print_endline (Typed_ast.tstructure_to_string tast);
   let iprog = Intermediate.transform_program ~debug:true ctx tast in
   let pstr = Intermediate_program.iprogram_to_string iprog in
-  Stdio.print_endline pstr
+  Stdio.print_endline pstr;
+  let wa_code = Webassembly.iprogram_to_module iprog in
+  Stdio.print_endline "\n\n";
+  Stdio.print_endline wa_code
 
 let () =
   if (Array.length Sys.argv) = 2 then
