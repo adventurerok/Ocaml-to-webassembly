@@ -1,0 +1,5 @@
+(library
+  (name otwa_codegen)
+  (public_name proj.codegen)
+  (libraries core_kernel proj.transform)
+  (preprocess (pps ppx_jane)))
