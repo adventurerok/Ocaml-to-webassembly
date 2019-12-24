@@ -62,13 +62,16 @@ let codegen_local_vars vars ret_typ cvar_count =
   let var_list = Vars.get_vars vars in
   let wa_result = itype_to_waresult ret_typ in
   let strs = List.mapi var_list ~f:(fun index (var_name, ityp) ->
-    let watyp = itype_to_watype ityp in
     if index <= cvar_count then
-      let param = "(param " ^ var_name ^ " " ^ watyp ^ ")" in
+      let param =
+        match ityp with
+        | It_none -> ""
+        | _ -> "(param " ^ var_name ^ " " ^ (itype_to_watype ityp) ^ ")"
+      in
       if index = cvar_count then
         param ^ "\n" ^ wa_result
       else param
-    else "(local " ^ var_name ^ " " ^ watyp ^ ")"
+    else "(local " ^ var_name ^ " " ^ (itype_to_watype ityp) ^ ")"
   )
   in
   String.concat ~sep:"\n" strs
@@ -143,8 +146,7 @@ and codegen_newclosure wrap_table _ift func_name itt (vscope, vname) =
   scope ^ ".set " ^ vname ^ "\n" ^
   scope ^ ".get " ^ vname ^ "\n" ^
   (itype_to_watype It_int) ^ ".const " ^ (Int.to_string func_id) ^ "\n" ^
-  (itype_to_watype It_int) ^ ".store offset=0\n" ^
-  scope ^ ".get " ^ vname
+  (itype_to_watype It_int) ^ ".store offset=0"
 
 and codegen_fillclosure wrap_table itt var tuple_codelst =
   codegen_filltuple wrap_table itt var tuple_codelst (itype_size It_int)
@@ -230,7 +232,7 @@ let codegen_types () =
   String.concat ~sep:"\n" module_types
 
 let codegen_wrapper_table iprog =
-  let func_names = Map.Poly.keys iprog.prog_functions in
+  let func_names = Map.Poly.keys (Map.Poly.remove iprog.prog_functions iprog.prog_initfunc) in
   let wrap_names = List.map func_names ~f:wrapper_func_name in
   let wrap_table = List.foldi func_names ~init:Map.Poly.empty ~f:(fun index map name ->
     Map.Poly.set map ~key:name ~data:index)
@@ -287,8 +289,10 @@ let codegen_ifunction_wrapper (func : ifunction) =
    "call " ^ func.pf_name ^ "\n" ^
    ")"
 
-let codegen_ifunction (wrap_table : string_int_map) (func : ifunction) =
-  (codegen_ifunction_wrapper func) ^ "\n" ^
+let codegen_ifunction (wrap_table : string_int_map) init_func (func : ifunction) =
+  (if not (String.equal init_func func.pf_name) then
+    (codegen_ifunction_wrapper func) ^ "\n"
+   else "") ^
   (codegen_ifunction_core wrap_table func)
 
 let pretty_indent str =
@@ -311,7 +315,7 @@ let iprogram_to_module (prog : iprogram) =
     wrap_code ^ "\n" ^
     (codegen_globals prog.prog_globals) ^ "\n" ^
     (let (_, func_list) = List.unzip (Map.Poly.to_alist prog.prog_functions) in
-    let func_codes = List.map func_list ~f:(codegen_ifunction wrap_table) in
+    let func_codes = List.map func_list ~f:(codegen_ifunction wrap_table prog.prog_initfunc) in
     String.concat ~sep:"\n" func_codes) ^ "\n" ^
     "(start " ^ prog.prog_initfunc ^ ")\n" ^
     ")"

@@ -116,7 +116,7 @@ type iexpression =
 (* Push a constant to the stack *)
 (* type of constant, string rep of constant *)
 | Iexp_pushconst of itype * string
-(* Make a new closure for specified function and tuple type, push pointer to stack and put it in given variable *)
+(* Make a new closure for specified function and tuple type, and put it in given variable *)
 (* type of function, name of function, type of closure variables, variable to put closure in *)
 | Iexp_newclosure of iftype * string * ituptype * ivariable
 (* Fill a closure in the named variable using the code to generate those values *)

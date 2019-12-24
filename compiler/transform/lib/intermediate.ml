@@ -252,7 +252,8 @@ and transform_mk_closure context vars typ name args =
   let (vars2, var_name) = Vars.add_temp_var vars1 It_pointer in
   (vars2,
     [Iexp_newclosure(iftype, name, ituptype, var_name);
-     Iexp_fillclosure(ituptype, var_name, tuple_codelst)])
+     Iexp_fillclosure(ituptype, var_name, tuple_codelst);
+     Iexp_pushvar(It_pointer, var_name)])
 
 and transform_apply_closure context vars typ name args =
   (* Arg goes on top of stack, and closure 1 down *)
@@ -365,8 +366,8 @@ let transform_program ?debug:(debug = false) context structure =
   let init_func = {
     pf_name = "$init";
     pf_vars = Vars.make_init_vars global_vars;
-    pf_code = init_code @ [Iexp_pushconst(It_unit, "unit")];
-    pf_type = (It_unit, It_unit);
+    pf_code = init_code;
+    pf_type = (It_none, It_none);
     pf_cvars = []
   }
   in

@@ -28,12 +28,6 @@ let empty_global_vars = {
   scope = Global
 }
 
-let empty_function_names = {
-  base_empty_vars with
-  temp_prefix = "$$f_anon_";
-  named_prefix = "$$f_";
-}
-
 let add_var_mapping (vrs : vars) (n : string) (vn : string) (t : itype) =
   {
     vrs with
@@ -109,7 +103,7 @@ let make_init_vars global_vars =
     base_empty_vars with
     count = 1;
     scope = Local;
-    data = [("$init_arg", "$init_arg", It_pointer)];
+    data = [("$init_arg", "$init_arg", It_none)];
     var_names = Set.Poly.singleton "$init_arg";
     blocks = global_vars.blocks
   }
