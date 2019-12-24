@@ -1,4 +1,6 @@
 
+let nrec q = q + 4
+
 let rec fact n =
   match n with
   | 0 -> 1
