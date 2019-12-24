@@ -6,6 +6,8 @@ open Intermediate_program
 (* Malloc will take an int number of bytes to allocate, and return a pointer to the new memory *)
 let malloc_id = "$malloc"
 
+exception CodegenFailure of string
+
 let itype_to_watype it =
   match it with
   | It_bool -> "i32"
@@ -13,6 +15,12 @@ let itype_to_watype it =
   | It_pointer -> "i32"
   | It_float -> "f32"
   | It_unit -> "i32"
+  | It_none -> raise (CodegenFailure "It_none cannot be converted directly to wasm")
+
+let itype_to_waresult it =
+  match it with
+  | It_none -> ""
+  | _ -> "(result " ^ (itype_to_watype it) ^ ")"
 
 let itype_size it =
   match it with
@@ -21,21 +29,21 @@ let itype_size it =
   | It_pointer -> 4
   | It_float -> 4
   | It_unit -> 4
+  | It_none -> 0
 
 let ituptype_size itt =
   Option.value ~default:0 (List.reduce (List.map itt ~f:itype_size) ~f:(+))
 
-exception CodegenFailure of string
 
 let codegen_local_vars vars ret_typ cvar_count =
   let var_list = Vars.get_vars vars in
-  let ret_wa_typ = itype_to_watype ret_typ in
+  let wa_result = itype_to_waresult ret_typ in
   let strs = List.mapi var_list ~f:(fun index (var_name, ityp) ->
     let watyp = itype_to_watype ityp in
     if index <= cvar_count then
       let param = "(param " ^ var_name ^ " " ^ watyp ^ ")" in
       if index = cvar_count then
-        param ^ "\n" ^ "(result " ^ ret_wa_typ ^ ")"
+        param ^ "\n" ^ wa_result
       else param
     else "(local " ^ var_name ^ " " ^ watyp ^ ")"
   )
@@ -61,10 +69,11 @@ and codegen_iexpr (expr : iexpression) =
   | Iexp_exitblockif(name) -> "br_if " ^ name
   | Iexp_ifthenelse (name, ityp, tcode, ecode_opt) -> codegen_ifthenelse name ityp tcode ecode_opt
   | Iexp_pushtuple(itt, name, tuple_codelst) -> codegen_pushtuple itt name tuple_codelst
-  | Iexp_loadtupleindex (_, _) -> none
-  | Iexp_pushconstruct (_, _, _, _) -> none
-  | Iexp_loadconstructindex (_, _) -> none
-  | Iexp_loadconstructid -> none
+  | Iexp_loadtupleindex (itt, index) -> codegen_tupleindex itt index 0
+  | Iexp_pushconstruct (itt, name, id, tuple_codelst) ->
+      codegen_pushtuple (It_int :: itt) name ([Iexp_pushconst(It_int, Int.to_string id)] :: tuple_codelst)
+  | Iexp_loadconstructindex (itt, index) -> codegen_tupleindex (It_int :: itt) (index + 1) 0
+  | Iexp_loadconstructid -> codegen_tupleindex [It_int] 0 0
   | Iexp_fail -> "unreachable"
   | Iexp_drop _ -> "drop"
 
@@ -96,13 +105,16 @@ and codegen_const ityp str_rep =
       | "true" -> booltyp ^ ".const 1"
       | "false" -> booltyp ^ ".const 0"
       | _ -> raise (CodegenFailure "Boolean is not true or false"))
+  | It_unit ->
+      (itype_to_watype It_unit) ^ ".const 0"
   | _ ->
       let watyp = itype_to_watype ityp in
       watyp ^ ".const " ^ str_rep
 
 and codegen_block name ityp code_lst =
   let wa_lst = codegen_iexpr_list code_lst in
-  "block " ^ name ^ " " ^ (itype_to_watype ityp) ^ "\n" ^
+  let wa_result = itype_to_waresult ityp in
+  "block " ^ name ^ " " ^ wa_result ^ "\n" ^
   wa_lst ^ "\n" ^
   "end " ^ name
 
@@ -137,18 +149,51 @@ and codegen_pushtuple itt (scope_enum, name) tuple_codelst =
   String.concat ~sep:"\n" (List.rev code_list_rev)) ^ "\n" ^
   scope ^ ".get " ^ name
 
+and codegen_tupleindex itt index offset =
+  (* Only types that occur before the one we want *)
+  let itt_trim = List.take itt index in
+  let final_offset = List.fold itt_trim ~init:offset ~f:(fun o ityp -> o + (itype_size ityp)) in
+  let watyp = itype_to_watype (List.nth_exn itt index) in
+  watyp ^ ".load offset=" ^ (Int.to_string final_offset)
+
+let codegen_globals (globals : Vars.vars) =
+  let global_list = Vars.get_vars globals in
+  let global_wa_list = List.map global_list ~f:(fun (var_name, ityp) ->
+    let watyp = itype_to_watype ityp in
+    let export_name = (String.chop_prefix_exn var_name ~prefix:"$") in
+    "(global " ^ var_name ^
+    " (export \"" ^ export_name ^ "\")" ^
+    " (mut " ^ watyp ^ ") (" ^ watyp ^ ".const 0))")
+  in
+  String.concat ~sep:"\n" global_wa_list
 
 let codegen_ifunction (func : ifunction) =
   let (_, ret_typ) = func.pf_type in
   let cvar_count = List.length func.pf_cvars in
-  "(func " ^ func.pf_name ^ "\n"
+  let export_name = String.chop_prefix_exn func.pf_name ~prefix:"$" in
+  "(func " ^ func.pf_name ^ " (export \"" ^ export_name ^ "\")\n"
   ^ (codegen_local_vars func.pf_vars ret_typ cvar_count) ^ "\n"
   ^ (codegen_iexpr_list func.pf_code) ^ "\n"
   ^ ")"
 
+let pretty_indent str =
+  let lines = String.split_lines str in
+  let fixed_lines = List.folding_map lines ~init:0 ~f:(fun indent line ->
+    let lbracket_count = String.count line ~f:(fun c -> c = '(') in
+    let rbracket_count = String.count line ~f:(fun c -> c = ')') in
+    let new_indent = indent + lbracket_count - rbracket_count in
+    let line_indent = if String.is_prefix line ~prefix:")" then new_indent else indent in
+    (new_indent, (String.make (2 * line_indent) ' ') ^ line))
+  in
+  String.concat ~sep:"\n" fixed_lines
+
 let iprogram_to_module (prog : iprogram) =
-  "(module\n" ^
-  (let (_, func_list) = List.unzip (Map.Poly.to_alist prog.prog_functions) in
-  let func_codes = List.map func_list ~f:codegen_ifunction in
-  String.concat ~sep:"\n" func_codes) ^ "\n" ^
-  ")"
+  let ugly_code =
+    "(module\n" ^
+    (codegen_globals prog.prog_globals) ^ "\n" ^
+    (let (_, func_list) = List.unzip (Map.Poly.to_alist prog.prog_functions) in
+    let func_codes = List.map func_list ~f:codegen_ifunction in
+    String.concat ~sep:"\n" func_codes) ^ "\n" ^
+    ")"
+  in
+  pretty_indent ugly_code

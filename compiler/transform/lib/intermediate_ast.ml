@@ -8,6 +8,7 @@ type itype =
   | It_float
   | It_pointer
   | It_unit
+  | It_none
   [@@deriving sexp_of, equal]
 
 let itype_to_string (it : itype) =
@@ -17,6 +18,7 @@ let itype_to_string (it : itype) =
   | It_float -> "float"
   | It_pointer -> "pointer"
   | It_unit -> "unit"
+  | It_none -> "none"
 
 type iftype = itype * itype
 [@@deriving sexp_of, equal]

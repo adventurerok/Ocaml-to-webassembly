@@ -171,8 +171,9 @@ and transform_match context vars st_res_typ expr cases =
   let match_type = stoitype expr.texp_type in
   let result_type = stoitype st_res_typ in
   let (vars2, expr_var) = Vars.add_temp_var vars1 match_type in
-  let (vars3, match_block) = Vars.add_block vars2 in
-  let (vars4, inner_code) = transform_list context vars3 cases ~f:(fun _ vrs case ->
+  let (vars3, result_var) = Vars.add_temp_var vars2 result_type in
+  let (vars4, match_block) = Vars.add_block vars3 in
+  let (vars5, inner_code) = transform_list context vars4 cases ~f:(fun _ vrs case ->
     let (vrs1, case_block) = Vars.add_block vrs in
     (* These instructions check and destructure the pattern *)
     let (vrs2, pat_code) = transform_pat ~check:true ~escape:(Iexp_exitblockif(case_block))
@@ -182,12 +183,19 @@ and transform_match context vars st_res_typ expr cases =
     let (vrs3, matched_code) = transform_expr context vrs2 case.tc_rhs in
     let inside_block = [Iexp_pushvar(match_type, expr_var)] @
                        pat_code @ matched_code @
-                       [Iexp_exitblock(match_block)]
+                       [Iexp_newvar(result_type, result_var);
+                       Iexp_exitblock(match_block)]
     in
-    (vrs3, [Iexp_block(case_block, result_type, inside_block)])
+    (vrs3, [Iexp_block(case_block, It_none, inside_block)])
   )
   in
-  (vars4, expr_code @ [Iexp_newvar(match_type, expr_var); Iexp_block(match_block, result_type, inner_code @ [Iexp_fail])])
+  (vars5,
+    expr_code @
+    [Iexp_newvar(match_type, expr_var);
+    Iexp_block(match_block, It_none, inner_code @ [Iexp_fail]);
+    Iexp_pushvar(result_type, result_var)
+    ]
+  )
 
 and transform_apply context vars typ fexpr args =
   match fexpr.texp_desc with
@@ -347,14 +355,14 @@ let transform_program ?debug:(debug = false) context structure =
     }))
   in
   let init_func = {
-    pf_name = "init";
+    pf_name = "$init";
     pf_vars = Vars.make_init_vars global_vars;
-    pf_code = init_code;
+    pf_code = init_code @ [Iexp_pushconst(It_unit, "unit")];
     pf_type = (It_unit, It_unit);
     pf_cvars = []
   }
   in
-  let all_funcs = ("init", init_func) :: ifuncs in
+  let all_funcs = ("$init", init_func) :: ifuncs in
   let corrected_funcs = List.map all_funcs ~f:(fun (name, f) ->
     (name, {
       f with
@@ -364,5 +372,5 @@ let transform_program ?debug:(debug = false) context structure =
   {
     prog_functions = Map.Poly.of_alist_exn corrected_funcs;
     prog_globals = global_vars;
-    prog_initfunc = "init"
+    prog_initfunc = "$init"
   }
