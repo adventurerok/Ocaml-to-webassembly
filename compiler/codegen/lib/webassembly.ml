@@ -313,6 +313,7 @@ let iprogram_to_module (prog : iprogram) =
     (let (_, func_list) = List.unzip (Map.Poly.to_alist prog.prog_functions) in
     let func_codes = List.map func_list ~f:(codegen_ifunction wrap_table) in
     String.concat ~sep:"\n" func_codes) ^ "\n" ^
+    "(start " ^ prog.prog_initfunc ^ ")\n" ^
     ")"
   in
   pretty_indent ugly_code

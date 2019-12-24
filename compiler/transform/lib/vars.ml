@@ -7,16 +7,31 @@ type vars = {
   data: ((string * string * itype) list);
   temp_count: int;
   var_names: string Set.Poly.t;
-  blocks: int
+  blocks: int;
+  temp_prefix: string;
+  named_prefix: string;
 }
 
-let empty_global_vars = {
+let base_empty_vars = {
   count = 0;
-  scope = Global;
+  scope = Local;
   data = [];
   temp_count = 0;
   var_names = Set.Poly.empty;
-  blocks = 0
+  blocks = 0;
+  temp_prefix = "$temp_";
+  named_prefix = "$";
+}
+
+let empty_global_vars = {
+  base_empty_vars with
+  scope = Global
+}
+
+let empty_function_names = {
+  base_empty_vars with
+  temp_prefix = "$$f_anon_";
+  named_prefix = "$$f_";
 }
 
 let add_var_mapping (vrs : vars) (n : string) (vn : string) (t : itype) =
@@ -29,7 +44,7 @@ let add_var_mapping (vrs : vars) (n : string) (vn : string) (t : itype) =
 
 
 let add_temp_var (vrs : vars) (t : itype) =
-  let name = "$temp_" ^ (Int.to_string vrs.temp_count) in
+  let name = vrs.temp_prefix ^ (Int.to_string vrs.temp_count) in
   let vrs' = {
     vrs with
     temp_count = vrs.temp_count + 1;
@@ -46,7 +61,7 @@ let add_named_var (vrs : vars) (n : string) (t : itype) =
     else
       full_name
   in
-  let var_name = find_free_name ("$" ^ n) 0 in
+  let var_name = find_free_name (vrs.named_prefix ^ n) 0 in
   (add_var_mapping vrs n var_name t, (vrs.scope, var_name))
 
 let add_block (vrs : vars) =
@@ -78,12 +93,8 @@ let function_arg = (Local, function_arg_name)
 
 let make_local_vars (fdata : Functions.func_data) =
   let empty = {
-    count = 0;
-    scope = Local;
-    data = [];
-    temp_count = 0;
-    var_names = Set.Poly.empty;
-    blocks = 0
+    base_empty_vars with
+    scope = Local
   } in
   let with_cvars = List.fold fdata.fd_cvars ~init:empty ~f:(fun vars (name,st) ->
     let ityp = stoitype st in
@@ -95,10 +106,10 @@ let make_local_vars (fdata : Functions.func_data) =
 
 let make_init_vars global_vars =
   {
+    base_empty_vars with
     count = 1;
     scope = Local;
     data = [("$init_arg", "$init_arg", It_pointer)];
-    temp_count = 0;
     var_names = Set.Poly.singleton "$init_arg";
     blocks = global_vars.blocks
   }

@@ -140,7 +140,7 @@ and transform_value_bindings_recursive context vars tvb_list =
     let func_name =
       match fexpr.texp_desc with
       | Texp_ident(name) ->
-          if String.is_prefix name ~prefix:"$f_" then
+          if String.is_prefix name ~prefix:"$$f_" then
             name
           else raise (IntermediateFailure "Recursive bindings must be functions")
       | _ -> raise (IntermediateFailure "Recursive bindings must be functions")
@@ -204,7 +204,7 @@ and transform_apply context vars typ fexpr args =
       (match lookup with
       | Some(_) -> transform_op context vars name args
       | None ->
-          if String.is_prefix name ~prefix:"$f_" then
+          if String.is_prefix name ~prefix:"$$f_" then
             transform_mk_closure context vars typ name args
           else
             transform_apply_closure context vars fexpr.texp_type name args)
@@ -310,7 +310,10 @@ let transform_function context (fd : Functions.func_data) =
 let fix_globals global_vars local_vars code =
   let fix_var (scope, name) =
     match scope with
-    | Global -> Option.value_exn (Vars.lookup_var global_vars name)
+    | Global ->
+        (match Vars.lookup_var global_vars name with
+        | Some(gvar) -> gvar
+        | None -> raise (IntermediateFailure ("Missing global variable " ^ name)))
     | Local ->
       (match Vars.lookup_var local_vars name with
         | None -> (Global, name)
