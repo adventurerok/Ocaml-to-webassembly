@@ -204,7 +204,6 @@ and addvars subs ctx cx vlist =
       let truetype = substitute_list subs t in
       let genscheme = generalize ctx truetype in
       let cx' = Context.add_var cx v genscheme in
-      Stdio.print_endline ("Bind " ^ v ^ " to " ^ (string_of_scheme genscheme));
       let (cx'', svars) = addvars subs ctx cx' vlist' in
       (cx'', (v,genscheme) :: svars)
 

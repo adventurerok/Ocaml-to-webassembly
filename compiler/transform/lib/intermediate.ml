@@ -348,9 +348,9 @@ let fix_globals global_vars local_vars code =
 
 let transform_program ?debug:(debug = false) context structure =
   let (funcs, fast) = Functions.func_transform_structure structure in
-  let () = if debug then
+  let () = if debug then (
     Stdio.print_endline (Typed_ast.tstructure_to_string fast);
-    Functions.print_func_datas funcs
+    Functions.print_func_datas funcs)
   in
   let (global_vars, init_code) = transform_structure context Vars.empty_global_vars fast in
   let ifuncs = List.map funcs ~f:(fun fd ->
