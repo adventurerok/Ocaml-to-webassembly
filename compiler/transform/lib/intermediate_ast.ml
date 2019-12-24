@@ -9,7 +9,7 @@ type itype =
   | It_pointer
   | It_unit
   | It_none
-  [@@deriving sexp_of, equal]
+  [@@deriving sexp_of, equal, enumerate]
 
 let itype_to_string (it : itype) =
   match it with
@@ -21,7 +21,7 @@ let itype_to_string (it : itype) =
   | It_none -> "none"
 
 type iftype = itype * itype
-[@@deriving sexp_of, equal]
+[@@deriving sexp_of, equal, enumerate]
 
 let iftype_to_string (a,b) =
   (itype_to_string a) ^ " -> " ^ (itype_to_string b)
@@ -122,9 +122,9 @@ type iexpression =
 (* Fill a closure in the named variable using the code to generate those values *)
 (* type of closure variables, name of variable *)
 | Iexp_fillclosure of ituptype * ivariable * (iexpression list) list
-(* Call a closure on the stack 1 down using argument from stack top (pop both) *)
-(* type of function *)
-| Iexp_callclosure of iftype
+(* Call closure in variable using argument generated from code *)
+(* type of function, variable to use to help call, code to generate argument *)
+| Iexp_callclosure of iftype * ivariable * (iexpression list)
 (* A block of instructions, locally scoped *)
 (* name of block, result type, list of instructions *)
 | Iexp_block of string * itype * iexpression list
@@ -172,7 +172,10 @@ let rec iexpression_to_string (iexp : iexpression) =
   | Iexp_fillclosure(itt, name, codes) ->
       "fillclosure " ^ (ituptype_to_string itt) ^ " " ^ (ivariable_to_string name) ^ " " ^
       tuple_codes_to_string codes
-  | Iexp_callclosure(ift) -> "callclosure " ^ (iftype_to_string ift)
+  | Iexp_callclosure(ift, var, code) ->
+      "callclosure " ^ (iftype_to_string ift) ^ " " ^ (ivariable_to_string var) ^ "(\n" ^
+      (iexpression_list_to_string code) ^ "\n" ^
+      ")"
   | Iexp_block(name, t, ls) ->
       "block " ^ name ^ " " ^ (itype_to_string t) ^ " {\n" ^
       (String.concat ~sep:"\n" (List.map ls ~f:iexpression_to_string)) ^

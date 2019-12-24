@@ -264,9 +264,14 @@ and transform_apply_closure context vars typ name args =
         | T_func(atyp, btyp) ->
             let iatyp = stoitype atyp in
             let ibtyp = stoitype btyp in
-            let (vrs', code) = transform_expr context vars arg in
-            let (vrs'', final_code) = loop btyp vrs' arg_list' in
-            (vrs'', code @ [Iexp_callclosure((iatyp, ibtyp))] @ final_code)
+            let (vrs1, code) = transform_expr context vrs arg in
+            let (vrs2, final_code) = loop btyp vrs1 arg_list' in
+            let (vrs3, closure_var) = Vars.add_temp_var vrs2 It_pointer in
+            (vrs3,
+              [Iexp_newvar(It_pointer, closure_var);
+              Iexp_callclosure((iatyp, ibtyp), closure_var, code)]
+              @ final_code
+            )
         | _ -> raise (IntermediateFailure "Cannot apply non function type "))
   in
   let (vars', loop_code) = loop typ vars args in
