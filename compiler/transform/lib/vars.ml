@@ -5,6 +5,8 @@ type vars = {
   count: int;
   scope: iscope;
   data: ((string * string * itype) list);
+  temp_count: int;
+  var_names: string Set.Poly.t;
   blocks: int
 }
 
@@ -12,6 +14,8 @@ let empty_global_vars = {
   count = 0;
   scope = Global;
   data = [];
+  temp_count = 0;
+  var_names = Set.Poly.empty;
   blocks = 0
 }
 
@@ -19,16 +23,30 @@ let add_var_mapping (vrs : vars) (n : string) (vn : string) (t : itype) =
   {
     vrs with
     count = vrs.count + 1;
-    data = (n, vn, t) :: vrs.data
+    data = (n, vn, t) :: vrs.data;
+    var_names = Set.Poly.add vrs.var_names vn
   }
 
 
 let add_temp_var (vrs : vars) (t : itype) =
-  let name = "$temp_" ^ (Int.to_string vrs.count) in
-  (add_var_mapping vrs name name t, (vrs.scope, name))
+  let name = "$temp_" ^ (Int.to_string vrs.temp_count) in
+  let vrs' = {
+    vrs with
+    temp_count = vrs.temp_count + 1;
+  }
+  in
+  (add_var_mapping vrs' name name t, (vrs.scope, name))
 
 let add_named_var (vrs : vars) (n : string) (t : itype) =
-  let var_name = "$var_" ^ (Int.to_string vrs.count) ^ "_" ^ n in
+  let rec find_free_name test_name cnt =
+    let extension = if cnt = 0 then "" else "-" ^ (Int.to_string cnt) in
+    let full_name = test_name ^ extension in
+    if Set.Poly.mem vrs.var_names full_name then
+      find_free_name test_name (cnt + 1)
+    else
+      full_name
+  in
+  let var_name = find_free_name ("$" ^ n) 0 in
   (add_var_mapping vrs n var_name t, (vrs.scope, var_name))
 
 let add_block (vrs : vars) =
@@ -63,6 +81,8 @@ let make_local_vars (fdata : Functions.func_data) =
     count = 0;
     scope = Local;
     data = [];
+    temp_count = 0;
+    var_names = Set.Poly.empty;
     blocks = 0
   } in
   let with_cvars = List.fold fdata.fd_cvars ~init:empty ~f:(fun vars (name,st) ->
@@ -78,6 +98,8 @@ let make_init_vars global_vars =
     count = 1;
     scope = Local;
     data = [("$init_arg", "$init_arg", It_pointer)];
+    temp_count = 0;
+    var_names = Set.Poly.singleton "$init_arg";
     blocks = global_vars.blocks
   }
 
