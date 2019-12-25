@@ -6,3 +6,5 @@ _minted*
 *.toc
 _build
 .merlin
+compiler/samples/*.wast
+compiler/samples/*.wasm

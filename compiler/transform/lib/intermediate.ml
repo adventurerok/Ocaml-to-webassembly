@@ -74,7 +74,7 @@ and pat_tuple_list (pat : tpattern) =
   | Tpat_tuple(ls) -> ls
   | _ -> [pat]
 
-and transform_pat ?check:(check = true) ?escape:(escape = Iexp_ifthenelse("$escape", It_unit, [Iexp_fail], None)) context vars (pat :tpattern) =
+and transform_pat ?check:(check = true) ?escape:(escape = Iexp_ifthenelse("$escape", It_none, [Iexp_fail], None)) context vars (pat :tpattern) =
   match pat.tpat_desc with
   | Tpat_any -> (vars, [Iexp_drop(stoitype pat.tpat_type)])
   | Tpat_var(name) ->
