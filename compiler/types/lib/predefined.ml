@@ -23,7 +23,8 @@ let ident_map = Map.of_alist_exn (module String)
     (">=", f_iib);
     ("=", f_iib);
     ("&&", f_bbb);
-    ("||", f_bbb)
+    ("||", f_bbb);
+    ("~-", f_ii)
   ]
 
 let lookup_ident = Map.find ident_map

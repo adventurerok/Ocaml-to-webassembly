@@ -218,22 +218,25 @@ and transform_apply context vars typ fexpr args =
 and transform_op context vars name args =
   let (vars', arg_code) = transform_list context vars args ~f:transform_expr in
   let ityp = stoitype ((List.hd_exn args).texp_type) in
-  let bop =
-    match name with
-    | "+" -> Ibin_add
-    | "-" -> Ibin_sub
-    | "*" -> Ibin_mul
-    | "/" -> Ibin_div
-    | "<" -> Ibin_lt
-    | ">" -> Ibin_gt
-    | "<=" -> Ibin_le
-    | ">=" -> Ibin_ge
-    | "=" -> Ibin_eq
-    | "&&" -> Ibin_and
-    | "||" -> Ibin_or
-    | _ -> raise (IntermediateFailure "Unsupported binary operation")
-  in
-  (vars', arg_code @ [Iexp_binop(ityp, bop)])
+  match name with
+  | "~-" -> (vars', [Iexp_pushconst(ityp, "0")] @ arg_code @ [Iexp_binop(ityp, Ibin_sub)])
+  | _ ->
+    let bop =
+      (match name with
+      | "+" -> Ibin_add
+      | "-" -> Ibin_sub
+      | "*" -> Ibin_mul
+      | "/" -> Ibin_div
+      | "<" -> Ibin_lt
+      | ">" -> Ibin_gt
+      | "<=" -> Ibin_le
+      | ">=" -> Ibin_ge
+      | "=" -> Ibin_eq
+      | "&&" -> Ibin_and
+      | "||" -> Ibin_or
+      | _ -> raise (IntermediateFailure "Unsupported binary operation"))
+    in
+    (vars', arg_code @ [Iexp_binop(ityp, bop)])
 
 (* Transforms an expression
  * If that expression is a tuple, do not add the final pushtuple instruction *)
