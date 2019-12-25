@@ -30,7 +30,7 @@ async function testFile(path) {
       path: path,
       result: false,
       message: "Failed otwa compilation",
-      detail: e.stdout + "\n" ^ e.stderr
+      detail: e.stdout + "\n" + e.stderr
     }
   }
 
