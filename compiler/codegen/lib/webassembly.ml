@@ -103,21 +103,26 @@ and codegen_iexpr (wrap_table : string_int_map) (expr : iexpression) =
   | Iexp_drop _ -> "drop"
 
 and codegen_binop ityp binop =
+  let signed_ext =
+    match ityp with
+    | It_int -> "_s"
+    | _ -> ""
+  in
   let opname =
     match binop with
     | Ibin_add -> "add"
     | Ibin_sub -> "sub"
     | Ibin_mul -> "mul"
-    | Ibin_div -> "div_s"
-    | Ibin_rem -> "rem_s"
+    | Ibin_div -> "div" ^ signed_ext
+    | Ibin_rem -> "rem" ^ signed_ext
     | Ibin_and -> "and"
     | Ibin_or -> "or"
     | Ibin_eq -> "eq"
     | Ibin_ne -> "ne"
-    | Ibin_lt -> "lt_s"
-    | Ibin_le -> "le_s"
-    | Ibin_gt -> "gt_s"
-    | Ibin_ge -> "ge_s"
+    | Ibin_lt -> "lt" ^ signed_ext
+    | Ibin_le -> "le" ^ signed_ext
+    | Ibin_gt -> "gt" ^ signed_ext
+    | Ibin_ge -> "ge" ^ signed_ext
   in
   let watyp = itype_to_watype ityp in
   watyp ^ "." ^ opname

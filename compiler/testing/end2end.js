@@ -89,10 +89,10 @@ function runInstanceTests(path, instance, testJson) {
 
   if(testJson.globals) {
     for(let global in testJson.globals) {
-      let expected = testJson.globals[global];
+      let expected = testJson.globals[global].toString();
       let actual = instance.exports[global].value;
 
-      if(expected != actual) {
+      if(!compareValues(instance, expected, actual)) {
         failures.push("Mismatch in global value '" + global + "': expected " + expected + " but got " + actual);
       }
     }
@@ -110,6 +110,23 @@ function runInstanceTests(path, instance, testJson) {
       message: "Failed WebAssembly runtime testing",
       detail: failures.join("\n")
     }
+  }
+}
+
+function compareValues(instance, expected, actual) {
+  if(expected == "true") {
+    return actual == 1;
+  } else if(expected == "false") {
+    return actual == 0;
+  } else if(expected.endsWith("f")) {
+    // float equality test
+    const precision = 6;
+    expected = Number.parseFloat(expected.substring(0, expected.length - 1)).toPrecision(precision);
+    actual = Number.parseFloat(actual).toPrecision(precision);
+    return expected == actual;
+  } else {
+    // default integer test, but use parseFloat to avoid parseInt just ignoring floating point part
+    return Number.parseFloat(expected) == actual;
   }
 }
 

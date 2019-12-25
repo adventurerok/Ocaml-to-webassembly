@@ -224,9 +224,13 @@ and transform_op context vars name args =
     let bop =
       (match name with
       | "+" -> Ibin_add
+      | "+." -> Ibin_add
       | "-" -> Ibin_sub
+      | "-." -> Ibin_sub
       | "*" -> Ibin_mul
+      | "*." -> Ibin_mul
       | "/" -> Ibin_div
+      | "/." -> Ibin_div
       | "<" -> Ibin_lt
       | ">" -> Ibin_gt
       | "<=" -> Ibin_le

@@ -40,6 +40,7 @@ let stoitype (typ : scheme_type) =
   | T_val(V_unit) -> It_unit
   | T_val(V_int) -> It_int
   | T_val(V_bool) -> It_bool
+  | T_val(V_float) -> It_float
   | T_tuple _ -> It_pointer
   | T_constr (_, _) -> It_pointer
   | T_func (_, _) -> It_pointer (* Closure pointer *)

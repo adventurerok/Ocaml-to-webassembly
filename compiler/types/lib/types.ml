@@ -4,14 +4,13 @@ type tvalue =
   | V_unit
   | V_int
   | V_bool
+  | V_float
   [@@deriving sexp_of, equal]
 
-type tvar_set = (string, String.comparator_witness) Set.t
+type tvar_set = string Set.Poly.t
 
 let sexp_of_tvar_set (tvs : tvar_set) =
   List.sexp_of_t String.sexp_of_t (Set.to_list tvs)
-
-let empty_tvar_set = Set.empty (module String)
 
 type scheme_type =
   | T_var of string
@@ -39,6 +38,7 @@ let rec string_of_scheme_type typ =
   | T_val(V_int) -> "int"
   | T_val(V_bool) -> "bool"
   | T_val(V_unit) -> "unit"
+  | T_val(V_float) -> "float"
   | T_func(a,b) -> "(" ^ (string_of_scheme_type a) ^ " -> " ^ (string_of_scheme_type b) ^ ")"
 
 let string_of_scheme (Forall(vars, typ)) =
@@ -57,14 +57,14 @@ let rec string_of_uni_pair_list = function
 
 let rec ftv typ =
   match typ with
-  | (T_var(tv)) -> Set.singleton (module String) tv
-  | (T_val(_)) -> empty_tvar_set
-  | (T_tuple(ls)) -> Set.union_list (module String) (List.map ls ~f:ftv)
-  | (T_constr(_, ls)) -> Set.union_list (module String) (List.map ls ~f:ftv)
-  | (T_func(a, b)) -> Set.union (ftv a) (ftv b)
+  | (T_var(tv)) -> Set.Poly.singleton tv
+  | (T_val(_)) -> Set.Poly.empty
+  | (T_tuple(ls)) -> Set.Poly.union_list (List.map ls ~f:ftv)
+  | (T_constr(_, ls)) -> Set.Poly.union_list (List.map ls ~f:ftv)
+  | (T_func(a, b)) -> Set.Poly.union (ftv a) (ftv b)
 
 let ftv_scheme (Forall(s, t)) =
-  Set.diff (ftv t) s
+  Set.Poly.diff (ftv t) s
 
 (* Substitute tv for styp in typ *)
 let rec substitute tv styp typ =

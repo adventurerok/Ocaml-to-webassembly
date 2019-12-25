@@ -28,7 +28,7 @@ let instantiate (Forall(s, t)) =
   substitute_list subs t
 
 let context_ftv (ctx: Context.context) =
-  Set.union_list (module String) (List.map (Context.get_var_list ctx) ~f:(fun (_,t) -> ftv_scheme t))
+  Set.Poly.union_list (List.map (Context.get_var_list ctx) ~f:(fun (_,t) -> ftv_scheme t))
 
 let generalize (ctx: Context.context) t =
   let free_vars = Set.diff (ftv t) (context_ftv ctx)
@@ -60,6 +60,7 @@ and ct_constr_to_scheme_type id ct_list =
   | Lident("int") -> v_int
   | Lident("bool") -> v_bool
   | Lident("unit") -> v_unit
+  | Lident("float") -> v_float
   | Lident(str) -> (T_constr(str, List.map ct_list ~f:core_to_scheme_type))
   | _ -> raise (TypeError "Unsupported core type construct")
 
@@ -76,7 +77,8 @@ let list_to_single_or_tuple st_lst =
 
 let type_constant (const : constant) =
   match const with
-  | Pconst_integer(str, _) -> (T_val(V_int), str)
+  | Pconst_integer(str, _) -> (v_int, str)
+  | Pconst_float(str, _) -> (v_float, str)
   | _ -> raise (TypeError "Unknown constant type")
 
 (* context -> expression -> (uni_pair list * texpression) *)
@@ -157,7 +159,7 @@ and infer_fun ctx pat body =
   let a_ast = infer_pattern ctx pat in
   let atyp = a_ast.tpat_type in
   let vars = a_ast.tpat_vars in
-  let ctx' = List.fold vars ~init:ctx ~f:(fun cx (v,t) -> Context.add_var cx v (Forall(empty_tvar_set, t))) in
+  let ctx' = List.fold vars ~init:ctx ~f:(fun cx (v,t) -> Context.add_var cx v (Forall(Set.Poly.empty, t))) in
   (* Use this context to check the body *)
   let (bcs, b_ast) = infer_expr ctx' body in
   let btyp = b_ast.texp_type in
@@ -216,7 +218,7 @@ and ctx_of_rec_bindings ctx bindings =
   let (ptyp_ls, pvar_ls) = List.unzip (List.map p_ast_lst ~f:(fun p -> (p.tpat_type, p.tpat_vars))) in
   (* Join the vars and create a context from them *)
   let allvars = List.concat pvar_ls in
-  let ctx' = List.fold allvars ~init:ctx ~f:(fun cx (v,t) -> Context.add_var cx v (Forall(empty_tvar_set, t))) in
+  let ctx' = List.fold allvars ~init:ctx ~f:(fun cx (v,t) -> Context.add_var cx v (Forall(Set.Poly.empty, t))) in
   (* tpattern list -> scheme_type list -> expression list -> (uni list * scheme_type list * tvalue_binding list) *)
   (* For each let binding, we take it's tpattern p_ast, pattern's scheme_type ptyp and expression,
    * And produce constraints, an expression type and a tvalue_binding *)
@@ -311,7 +313,9 @@ and infer_ident ctx ident =
       | Some(typ) -> ([], instantiate typ, Texp_ident(str))
       | None ->
           (match lookup_ident str with
-          | Some(t2) -> ([], t2, Texp_ident(str))
+          | Some(sch) ->
+              let t2 = instantiate sch in
+              ([], t2, Texp_ident(str))
           | None -> raise (TypeError ("Unknown identifer '" ^ str ^ "'"))))
   | _ -> raise (TypeError ("Unknown strange identifer"))
 
@@ -384,7 +388,7 @@ and infer_match ctx expr cases =
         let (p_ast) = infer_pattern ctx case.pc_lhs in
         let ptyp = p_ast.tpat_type in
         let vars = p_ast.tpat_vars in
-        let ctx' = List.fold vars ~init:ctx ~f:(fun cx (v,t) -> Context.add_var cx v (Forall(empty_tvar_set, t))) in
+        let ctx' = List.fold vars ~init:ctx ~f:(fun cx (v,t) -> Context.add_var cx v (Forall(Set.Poly.empty, t))) in
         let (ccs, c_ast) = infer_expr ctx' case.pc_rhs in
         let ctyp = c_ast.texp_type in
         let (ccs', tc_lst) = handle_cases cs' ctyp in

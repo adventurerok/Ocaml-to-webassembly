@@ -1,0 +1,11 @@
+{
+  "globals": {
+    "x": "3.0f",
+    "y": "4.5f",
+    "z": "4e-6f",
+    "t1": true,
+    "t2": true,
+    "f1": false,
+    "f2": false
+  }
+}
