@@ -207,8 +207,13 @@ and transform_apply context vars typ fexpr args =
           if String.is_prefix name ~prefix:"$$f_" then
             transform_mk_closure context vars typ name args
           else
-            transform_apply_closure context vars fexpr.texp_type name args)
-  | _ -> raise (IntermediateFailure "Applying other expressions not yet supported")
+            let var_name = Vars.lookup_var_or_global vars name in
+            transform_apply_closure context vars fexpr.texp_type var_name args)
+  | _ ->
+      let (vars1, other_code) = transform_expr context vars fexpr in
+      let (vars2, var_name) = Vars.add_temp_var vars1 It_pointer in
+      let (vars3, apply_code) = transform_apply_closure context vars2 fexpr.texp_type var_name args in
+      (vars3, other_code @ [Iexp_newvar(It_pointer, var_name)] @ apply_code)
 
 and transform_op context vars name args =
   let (vars', arg_code) = transform_list context vars args ~f:transform_expr in
@@ -255,7 +260,7 @@ and transform_mk_closure context vars typ name args =
      Iexp_fillclosure(ituptype, var_name, tuple_codelst);
      Iexp_pushvar(It_pointer, var_name)])
 
-and transform_apply_closure context vars typ name args =
+and transform_apply_closure context vars typ var_name args =
   (* Arg goes on top of stack, and closure 1 down *)
   let rec loop ftyp vrs arg_list =
     match arg_list with
@@ -276,7 +281,6 @@ and transform_apply_closure context vars typ name args =
         | _ -> raise (IntermediateFailure "Cannot apply non function type "))
   in
   let (vars', loop_code) = loop typ vars args in
-  let var_name = Vars.lookup_var_or_global vars' name in
   (vars', (Iexp_pushvar(It_pointer, var_name)) :: loop_code)
 
 and transform_construct context vars name expr_opt =
