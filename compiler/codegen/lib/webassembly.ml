@@ -19,6 +19,15 @@ let runtime =
   "global.set $mem_idx\n" ^
   ")"
 
+let closure_call_export =
+  "(func $call_closure_i32_i32 (export \"call_closure_i32_i32\") (param $closure i32) (param $arg i32) (result i32)\n" ^
+  "local.get $closure\n" ^
+  "local.get $arg\n" ^
+  "local.get $closure\n" ^
+  "i32.load offset=0\n" ^
+  "call_indirect (type $type-i32-i32-i32)\n" ^
+  ")"
+
 exception CodegenFailure of string
 
 let itype_to_watype it =
@@ -243,7 +252,7 @@ let codegen_wrapper_table iprog =
     Map.Poly.set map ~key:name ~data:index)
   in
   let wrap_code =
-    "(table funcref\n" ^
+    "(table (export \"wrapper_functions\") funcref\n" ^
     "(elem\n" ^
     (String.concat ~sep:"\n" wrap_names) ^ "\n" ^
     ")\n" ^
@@ -316,6 +325,9 @@ let iprogram_to_module (prog : iprogram) =
   let ugly_code =
     "(module\n" ^
     runtime ^ "\n" ^
+    (if not (Map.Poly.is_empty wrap_table) then
+      closure_call_export ^ "\n"
+    else "") ^
     (codegen_types ()) ^ "\n" ^
     wrap_code ^ "\n" ^
     (codegen_globals prog.prog_globals) ^ "\n" ^
