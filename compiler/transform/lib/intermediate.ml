@@ -371,7 +371,8 @@ let transform_program ?debug:(debug = false) context structure =
       pf_vars = vars;
       pf_code = code;
       pf_type = functoitype fd.fd_type;
-      pf_cvars = List.map fd.fd_cvars ~f:(fun (name,st) -> (name, stoitype st))
+      pf_cvars = List.map fd.fd_cvars ~f:(fun (name,st) -> (name, stoitype st));
+      pf_export_name = fd.fd_export_name
     }))
   in
   let init_func = {
@@ -379,7 +380,8 @@ let transform_program ?debug:(debug = false) context structure =
     pf_vars = Vars.make_init_vars global_vars;
     pf_code = init_code;
     pf_type = (It_none, It_none);
-    pf_cvars = []
+    pf_cvars = [];
+    pf_export_name = None
   }
   in
   let all_funcs = ("$init", init_func) :: ifuncs in

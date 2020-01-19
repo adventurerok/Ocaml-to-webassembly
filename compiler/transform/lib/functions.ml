@@ -41,7 +41,8 @@ type func_data = {
   fd_expr: texpression;
   fd_cvars: (string * scheme_type) list;
   fd_type: scheme_type;
-  fd_name: string
+  fd_name: string;
+  fd_export_name: string option;
 }
 
 type type_map = (string, scheme_type) Map.Poly.t
@@ -49,6 +50,27 @@ type type_map = (string, scheme_type) Map.Poly.t
 let add_vars map vars =
   List.fold ~init:map ~f:(fun m (tv, t) -> Map.Poly.set m ~key:tv ~data:t) vars
 
+let rec remove_apps name count =
+  if String.is_suffix name ~suffix:"-app" then
+    remove_apps (String.chop_suffix_exn name ~suffix:"-app") (count + 1)
+  else (name, count)
+
+(* Gives export names to the functions to export *)
+(* Current criteria: named functions with all their arguments (most -apps on the end), with no cvars *)
+let select_export_functions fnames funcs =
+  List.map funcs ~f:(fun func ->
+    let with_app = func.fd_name ^ "-app" in
+    let (noapp_name, app_count) = remove_apps func.fd_name 0 in
+    if ((not (String.is_prefix func.fd_name ~prefix:"$$f_anon_")) &&
+        (not (Set.mem fnames.names with_app)) &&
+        ((List.length func.fd_cvars) = app_count)) then
+      let export_name = (String.chop_prefix_exn noapp_name ~prefix:"$$f_") in
+      {
+        func with
+        fd_export_name = Some(export_name)
+      }
+    else
+      func)
 
 let transform_list ~f:map fnames locals lst =
   let (fnames', funcs_rev, result_rev) = List.fold lst ~init:(fnames, [], []) ~f:(fun (fn, f_lst, out_lst) item ->
@@ -134,7 +156,8 @@ and func_transform_func next_name fnames locals typ pat expr =
     fd_expr = expr_trans;
     fd_cvars = closure_list;
     fd_type = typ;
-    fd_name = fname
+    fd_name = fname;
+    fd_export_name = None
   }
   in
   let closure_tuple_items = List.map closure_list ~f:(fun (v, t) ->
@@ -186,10 +209,11 @@ and func_transform_structure (struc: tstructure) =
     names = Set.Poly.empty
   }
   in
-  let (_, funcs, si_list) = transform_list fnames 0 struc ~f:(fun fn _ item ->
+  let (fnames', funcs, si_list) = transform_list fnames 0 struc ~f:(fun fn _ item ->
     func_transform_structure_item fn item)
   in
-  (funcs, si_list)
+  let funcs' = select_export_functions fnames' funcs in
+  (funcs', si_list)
 
 
 let func_data_to_string fdata =

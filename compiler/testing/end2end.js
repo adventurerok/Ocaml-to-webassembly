@@ -90,7 +90,7 @@ function runInstanceTests(path, instance, testJson) {
   if(testJson.globals) {
     for(let global in testJson.globals) {
       let expected = testJson.globals[global].toString();
-      let actual = instance.exports[global].value;
+      let actual = instance.exports["global_" + global].value;
 
       if(!compareValues(instance, expected, actual)) {
         failures.push("Mismatch in global value '" + global + "': expected " + expected + " but got " + actual);

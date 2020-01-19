@@ -30,7 +30,10 @@ and ifunction = {
   pf_type: iftype;
 
   (* Closure variables in order with types *)
-  pf_cvars: (string * itype) list
+  pf_cvars: (string * itype) list;
+
+  (* Name to export with, or none to not export *)
+  pf_export_name: string option
 }
 
 

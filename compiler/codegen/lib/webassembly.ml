@@ -263,7 +263,7 @@ let codegen_globals (globals : Vars.vars) =
   let global_list = Vars.get_vars globals in
   let global_wa_list = List.map global_list ~f:(fun (var_name, ityp) ->
     let watyp = itype_to_watype ityp in
-    let export_name = (String.chop_prefix_exn var_name ~prefix:"$") in
+    let export_name = "global_" ^ (String.chop_prefix_exn var_name ~prefix:"$") in
     "(global " ^ var_name ^
     " (export \"" ^ export_name ^ "\")" ^
     " (mut " ^ watyp ^ ") (" ^ watyp ^ ".const 0))")
@@ -273,8 +273,12 @@ let codegen_globals (globals : Vars.vars) =
 let codegen_ifunction_core (wrap_table : string_int_map) (func : ifunction) =
   let (_, ret_typ) = func.pf_type in
   let cvar_count = List.length func.pf_cvars in
-  let export_name = String.chop_prefix_exn func.pf_name ~prefix:"$" in
-  "(func " ^ func.pf_name ^ " (export \"" ^ export_name ^ "\")\n"
+  let export =
+    match func.pf_export_name with
+    | Some(export_name) -> " (export \"" ^ export_name ^ "\")"
+    | None -> ""
+  in
+  "(func " ^ func.pf_name ^ export ^ "\n"
   ^ (codegen_local_vars func.pf_vars ret_typ cvar_count) ^ "\n"
   ^ (codegen_iexpr_list wrap_table func.pf_code) ^ "\n"
   ^ ")"
