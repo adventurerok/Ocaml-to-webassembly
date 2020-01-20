@@ -57,9 +57,19 @@ async function testFile(path) {
   }
 
   // instantiate wasm
-  const buffer = await readFile(wasmPath);
-  const module = await WebAssembly.compile(buffer);
-  const instance = await WebAssembly.instantiate(module);
+  let instance = null;
+  try{
+    const buffer = await readFile(wasmPath);
+    const module = await WebAssembly.compile(buffer);
+    instance = await WebAssembly.instantiate(module);
+  } catch(e) {
+    return {
+      path: path,
+      result: false,
+      message: "Failed WebAssembly instantiation",
+      detail: e
+    }
+  }
 
   if(debug) {
     console.log("instantiated for " + path);
