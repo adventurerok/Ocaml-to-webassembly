@@ -3,6 +3,7 @@ open Otwa_types
 open Types
 
 type itype =
+  | It_poly
   | It_bool
   | It_int
   | It_float
@@ -13,6 +14,7 @@ type itype =
 
 let itype_to_string (it : itype) =
   match it with
+  | It_poly -> "poly"
   | It_bool -> "bool"
   | It_int -> "int"
   | It_float -> "float"
@@ -34,9 +36,14 @@ let ituptype_to_string tt =
 
 exception BadType of string
 
+let itype_needs_wrap (it : itype) =
+  match it with
+  | It_float -> true
+  | _ -> false
+
 let stoitype (typ : scheme_type) =
   match typ with
-  | T_var(_) -> raise (BadType "Cannot convert type variable into inter type")
+  | T_var(_) -> It_poly
   | T_val(V_unit) -> It_unit
   | T_val(V_int) -> It_int
   | T_val(V_bool) -> It_bool
@@ -153,6 +160,12 @@ type iexpression =
 (* Pop construct, push its id to the stack *)
 (* No parameters *)
 | Iexp_loadconstructid
+(* Wrap a value (on stack) of a type that needs boxing *)
+(* unwrapped type, unwrapped variable, variable to store wrapped result *)
+| Iexp_wrap of itype * ivariable * ivariable
+(* Unwrap a value *)
+(* unwrapped type, wrapped variable, unwrapped target variable *)
+| Iexp_unwrap of itype * ivariable * ivariable
 (* Fail *)
 (* No parameters *)
 | Iexp_fail
@@ -195,6 +208,10 @@ let rec iexpression_to_string (iexp : iexpression) =
       tuple_codes_to_string codes
   | Iexp_loadconstructindex(itt, id) -> "loadconstructindex " ^ (ituptype_to_string itt) ^ " " ^ (Int.to_string id)
   | Iexp_loadconstructid -> "loadconstructid"
+  | Iexp_wrap(typ, unwrap, wrap) ->
+      "wrap " ^ (itype_to_string typ) ^ " " ^ (ivariable_to_string unwrap) ^ " " ^ (ivariable_to_string wrap)
+  | Iexp_unwrap(typ, wrap, unwrap) ->
+      "unwrap " ^ (itype_to_string typ) ^ " " ^ (ivariable_to_string wrap) ^ " " ^ (ivariable_to_string unwrap)
   | Iexp_fail -> "fail"
   | Iexp_drop(t) -> "drop " ^ (itype_to_string t)
 

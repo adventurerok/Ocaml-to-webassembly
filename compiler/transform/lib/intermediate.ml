@@ -37,7 +37,7 @@ let rec transform_expr (context: Context.context) (vars: Vars.vars) (expr: texpr
   | Texp_apply (fexpr, args) -> transform_apply context vars expr.texp_type fexpr args
   | Texp_match (e, cases) -> transform_match context vars expr.texp_type e cases
   | Texp_tuple(_) ->
-      let (vars1, tuple_codelst) = transform_tupleargs context vars expr in
+      let (vars1, tuple_codelst) = transform_tupleargs ~poly_wrap:true context vars expr in
       let (vars2, var_name) = Vars.add_temp_var vars1 It_pointer in
       let ituptype = tupletoitype expr.texp_type in
       (vars2, [Iexp_pushtuple(ituptype, var_name, tuple_codelst)])
@@ -74,35 +74,59 @@ and pat_tuple_list (pat : tpattern) =
   | Tpat_tuple(ls) -> ls
   | _ -> [pat]
 
-and transform_pat ?check:(check = true) ?escape:(escape = Iexp_ifthenelse("$escape", It_none, [Iexp_fail], None)) context vars (pat :tpattern) =
+and transform_pat ?check:(check = true)
+                  ?escape:(escape = Iexp_ifthenelse("$escape", It_none, [Iexp_fail], None))
+                  ?wrapped:(wrapped = false)
+                  context
+                  vars
+                  (pat :tpattern) =
   match pat.tpat_desc with
   | Tpat_any -> (vars, [Iexp_drop(stoitype pat.tpat_type)])
   | Tpat_var(name) ->
       let ityp = stoitype pat.tpat_type in
-      let (vars', var_name) = Vars.add_named_var vars name ityp in
-      (vars', [Iexp_newvar(ityp, var_name)])
+      let (vars1, named_var) = Vars.add_named_var vars name ityp in
+      if (wrapped && (itype_needs_wrap ityp)) then
+        let (vars2, wrapped_var) = Vars.add_temp_var vars1 It_poly in
+        (vars2,
+          [Iexp_newvar(It_poly, wrapped_var);
+          Iexp_unwrap(ityp, wrapped_var, named_var)]
+        )
+      else
+      (vars1, [Iexp_newvar(ityp, named_var)])
   | Tpat_constant(const) ->
       (* This would be shorthand for an equality check, e.g. evaluate this and make sure it's equal to 3 *)
-      let check_code =
+      let (vars', check_code) =
         if check then
-          let typ = stoitype pat.tpat_type in
-          [Iexp_pushconst(typ, const); Iexp_binop(typ, Ibin_ne); escape]
-        else []
+          let ityp = stoitype pat.tpat_type in
+          if (wrapped && (itype_needs_wrap ityp)) then
+            let (vars1, wrap_var) = Vars.add_temp_var vars It_poly in
+            let (vars2, unwrap_var) = Vars.add_temp_var vars1 ityp in
+            (vars2,
+              [Iexp_newvar(It_poly, wrap_var);
+              Iexp_unwrap(ityp, wrap_var, unwrap_var);
+              Iexp_pushvar(ityp, unwrap_var);
+              Iexp_pushconst(ityp, const);
+              Iexp_binop(ityp, Ibin_ne);
+              escape]
+            )
+          else
+            (vars, [Iexp_pushconst(ityp, const); Iexp_binop(ityp, Ibin_ne); escape])
+        else (vars, [])
       in
-      (vars, check_code)
+      (vars', check_code)
   | Tpat_tuple(plist) ->
       let (vars1, var_name) = Vars.add_temp_var vars It_pointer in
       let ituptype = tupletoitype pat.tpat_type in
       let (vars2, code) = transform_listi context vars1 plist ~f:(fun _ vrs pos tpat ->
-        let (vrs', pat_code) = transform_pat ~check:check ~escape:escape context vrs tpat in
+        let (vrs', pat_code) = transform_pat ~check:check ~escape:escape ~wrapped:true context vrs tpat in
         (vrs', (Iexp_pushvar(It_pointer, var_name) :: Iexp_loadtupleindex(ituptype, pos) :: pat_code)))
       in
       (vars2, Iexp_newvar(It_pointer, var_name) :: code)
   | Tpat_construct (name, tpat_opt) ->
       let (vars1, var_name) = Vars.add_temp_var vars It_pointer in
+      let construct = Option.value_exn (Context.find_constr context name) in
       let check_code =
         if check then
-          let construct = Option.value_exn (Context.find_constr context name) in
           (Iexp_pushvar(It_pointer, var_name)
           :: Iexp_loadconstructid
           :: Iexp_pushconst(It_int, Int.to_string construct.index)
@@ -113,10 +137,15 @@ and transform_pat ?check:(check = true) ?escape:(escape = Iexp_ifthenelse("$esca
       let (vars2, destruct_code) =
         (match(tpat_opt) with
         | Some(tpat) ->
-            let plist = pat_tuple_list tpat in
+            let plist =
+              if (List.length construct.args > 1) then
+                pat_tuple_list tpat
+              else
+                [tpat]
+            in
             let ituptype = List.map plist ~f:(fun p -> stoitype p.tpat_type) in
             transform_listi context vars1 plist ~f:(fun _ vrs pos cpat ->
-              let (vrs', pat_code) = transform_pat ~check:check ~escape:escape context vrs cpat in
+              let (vrs', pat_code) = transform_pat ~check:check ~escape:escape ~wrapped:true context vrs cpat in
               (vrs', (Iexp_pushvar(It_pointer, var_name) :: Iexp_loadconstructindex(ituptype, pos) :: pat_code)))
         | None -> (vars1, []))
       in
@@ -159,7 +188,7 @@ and transform_value_bindings_recursive context vars tvb_list =
   let (vars2, fill_closure_code) = transform_list context vars1 details
                                     ~f:(fun _ vrs (rec_name, _, _, ituptype, tuple_expr) ->
     let var_name = Option.value_exn (Vars.lookup_var vrs rec_name) in
-    let (vrs', tuple_codelst) = transform_tupleargs context vrs tuple_expr in
+    let (vrs', tuple_codelst) = transform_tupleargs ~poly_wrap:false context vrs tuple_expr in
     (vrs', [Iexp_fillclosure(ituptype, var_name, tuple_codelst)])
   )
   in
@@ -244,31 +273,58 @@ and transform_op context vars name args =
 
 (* Transforms an expression
  * If that expression is a tuple, do not add the final pushtuple instruction *)
-and transform_tupleargs context vars expr =
+and transform_tupleargs ?poly_wrap:(poly_wrap=false) context vars expr =
   match expr.texp_desc with
   | Texp_tuple(lst) ->
       let (vars', code_list_rev) = List.fold lst ~init:(vars, []) ~f:(fun (vrs, c_lst) item ->
-        let (vrs', code) = transform_expr context vrs item in
+        let (vrs', code) = transform_expr_wrap ~wrap:poly_wrap context vrs item in
         (vrs', code :: c_lst))
       in
       (vars', List.rev code_list_rev)
   | _ ->
-      let (vars, code) = transform_expr context vars expr in
+      let (vars, code) = transform_expr_wrap ~wrap:poly_wrap context vars expr in
       (vars, [code])
 
 and transform_mk_closure context vars typ name args =
   let tuple_expr = List.hd_exn args in
   let iftype = functoitype typ in
   let ituptype = tupletoitype tuple_expr.texp_type in
-  let (vars1, tuple_codelst) = transform_tupleargs context vars tuple_expr in
+  let (vars1, tuple_codelst) = transform_tupleargs ~poly_wrap:false context vars tuple_expr in
   let (vars2, var_name) = Vars.add_temp_var vars1 It_pointer in
   (vars2,
     [Iexp_newclosure(iftype, name, ituptype, var_name);
      Iexp_fillclosure(ituptype, var_name, tuple_codelst);
      Iexp_pushvar(It_pointer, var_name)])
 
+and transform_expr_wrap ?wrap:(wrap = true) context vars expr =
+  let (vars1, code) = transform_expr context vars expr in
+  if wrap then
+    let ityp = stoitype expr.texp_type in
+    if itype_needs_wrap ityp then
+      let (vars2, unwrap_var) = Vars.add_temp_var vars1 ityp in
+      let (vars3, wrap_var) = Vars.add_temp_var vars2 It_poly in
+      (vars3,
+        code @
+        [Iexp_newvar(ityp, unwrap_var);
+        Iexp_wrap(ityp, unwrap_var, wrap_var);
+        Iexp_pushvar(It_poly, wrap_var)]
+      )
+    else (vars1, code)
+  else (vars1, code)
+
+and transform_unwrap _context vars typ =
+  let ityp = stoitype typ in
+  if itype_needs_wrap ityp then
+    let (vars1, wrap_var) = Vars.add_temp_var vars It_poly in
+    let (vars2, unwrap_var) = Vars.add_temp_var vars1 ityp in
+    (vars2,
+      [Iexp_newvar(It_poly, wrap_var);
+      Iexp_unwrap(ityp, wrap_var, unwrap_var);
+      Iexp_pushvar(ityp, unwrap_var)]
+    )
+  else (vars, [])
+
 and transform_apply_closure context vars typ var_name args =
-  (* Arg goes on top of stack, and closure 1 down *)
   let rec loop ftyp vrs arg_list =
     match arg_list with
     | [] -> (vrs, [])
@@ -277,12 +333,14 @@ and transform_apply_closure context vars typ var_name args =
         | T_func(atyp, btyp) ->
             let iatyp = stoitype atyp in
             let ibtyp = stoitype btyp in
-            let (vrs1, code) = transform_expr context vrs arg in
-            let (vrs2, final_code) = loop btyp vrs1 arg_list' in
-            let (vrs3, closure_var) = Vars.add_temp_var vrs2 It_pointer in
-            (vrs3,
+            let (vrs1, closure_var) = Vars.add_temp_var vrs It_pointer in
+            let (vrs2, code) = transform_expr_wrap context vrs1 arg in
+            let (vrs3, unwrap_code) = transform_unwrap context vrs2 btyp in
+            let (vrs4, final_code) = loop btyp vrs3 arg_list' in
+            (vrs4,
               [Iexp_newvar(It_pointer, closure_var);
               Iexp_callclosure((iatyp, ibtyp), closure_var, code)]
+              @ unwrap_code
               @ final_code
             )
         | _ -> raise (IntermediateFailure "Cannot apply non function type "))
@@ -296,8 +354,13 @@ and transform_construct context vars name expr_opt =
   let (vars1, var_name) = Vars.add_temp_var vars It_pointer in
   match expr_opt with
   | Some(expr) ->
-      let (vars2, tuple_codelst) = transform_tupleargs context vars1 expr in
-      (vars2, [Iexp_pushconstruct(ituptype, var_name, constr.index, tuple_codelst)])
+      (* We need to watch out for if there is one argument only, but it is a tuple *)
+      if ((List.length ituptype) > 1) then
+        let (vars2, tuple_codelst) = transform_tupleargs ~poly_wrap:true context vars1 expr in
+        (vars2, [Iexp_pushconstruct(ituptype, var_name, constr.index, tuple_codelst)])
+      else
+        let (vars2, expr_code) = transform_expr_wrap ~wrap:true context vars1 expr in
+        (vars2, [Iexp_pushconstruct(ituptype, var_name, constr.index, [expr_code])])
   | None ->
       (vars1, [Iexp_pushconstruct(ituptype, var_name, constr.index, [])])
 

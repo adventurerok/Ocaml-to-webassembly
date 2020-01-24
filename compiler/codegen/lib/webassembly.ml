@@ -32,6 +32,7 @@ exception CodegenFailure of string
 
 let itype_to_watype it =
   match it with
+  | It_poly -> "i32"
   | It_bool -> "i32"
   | It_int -> "i32"
   | It_pointer -> "i32"
@@ -44,14 +45,19 @@ let itype_to_waresult it =
   | It_none -> ""
   | _ -> "(result " ^ (itype_to_watype it) ^ ")"
 
+
 let itype_size it =
   match it with
+  | It_poly -> 4
   | It_bool -> 4
   | It_int -> 4
   | It_pointer -> 4
   | It_float -> 4
   | It_unit -> 4
   | It_none -> 0
+
+let poly_size = itype_size It_poly
+let poly_watype = itype_to_watype It_poly
 
 let ituptype_size itt =
   Option.value ~default:0 (List.reduce (List.map itt ~f:itype_size) ~f:(+))
@@ -97,17 +103,19 @@ and codegen_iexpr (wrap_table : string_int_map) (expr : iexpression) =
   | Iexp_pushconst (ityp, str_rep) -> codegen_const ityp str_rep
   | Iexp_newclosure (ift, func_name, itt, var) -> codegen_newclosure wrap_table ift func_name itt var
   | Iexp_fillclosure(itt, var, tuple_codelst) -> codegen_fillclosure wrap_table itt var tuple_codelst
-  | Iexp_callclosure(ift, var, arg_code) -> codegen_callclosure wrap_table ift var arg_code
+  | Iexp_callclosure(_, var, arg_code) -> codegen_callclosure wrap_table var arg_code
   | Iexp_block (name, typ, lst) -> codegen_block wrap_table name typ lst
   | Iexp_exitblock(name) -> "br " ^ name
   | Iexp_exitblockif(name) -> "br_if " ^ name
   | Iexp_ifthenelse (name, ityp, tcode, ecode_opt) -> codegen_ifthenelse wrap_table name ityp tcode ecode_opt
   | Iexp_pushtuple(itt, name, tuple_codelst) -> codegen_pushtuple wrap_table itt name tuple_codelst
-  | Iexp_loadtupleindex (itt, index) -> codegen_tupleindex itt index 0
+  | Iexp_loadtupleindex (itt, index) -> codegen_tupleindex ~wrapped:true itt index 0
   | Iexp_pushconstruct (itt, name, id, tuple_codelst) ->
       codegen_pushtuple wrap_table (It_int :: itt) name ([Iexp_pushconst(It_int, Int.to_string id)] :: tuple_codelst)
-  | Iexp_loadconstructindex (itt, index) -> codegen_tupleindex (It_int :: itt) (index + 1) 0
-  | Iexp_loadconstructid -> codegen_tupleindex [It_int] 0 0
+  | Iexp_loadconstructindex (itt, index) -> codegen_tupleindex ~wrapped:true (It_int :: itt) (index + 1) 0
+  | Iexp_loadconstructid -> codegen_tupleindex ~wrapped:false [It_int] 0 0
+  | Iexp_wrap(ityp, unwrap, wrap) -> codegen_wrap ityp unwrap wrap
+  | Iexp_unwrap(ityp, wrap, unwrap) -> codegen_unwrap ityp wrap unwrap
   | Iexp_fail -> "unreachable"
   | Iexp_drop _ -> "drop"
 
@@ -163,16 +171,15 @@ and codegen_newclosure wrap_table _ift func_name itt (vscope, vname) =
   (itype_to_watype It_int) ^ ".store offset=0"
 
 and codegen_fillclosure wrap_table itt var tuple_codelst =
-  codegen_filltuple wrap_table itt var tuple_codelst (itype_size It_int)
+  codegen_filltuple ~wrapped:false wrap_table itt var tuple_codelst (itype_size It_int)
 
-and codegen_callclosure wrap_table ift (vscope, vname) arg_code =
+and codegen_callclosure wrap_table (vscope, vname) arg_code =
   let scope = iscope_to_string vscope in
-  let closure_type = closure_type_name ift in
   scope ^ ".get " ^ vname ^ "\n" ^
   (codegen_iexpr_list wrap_table arg_code) ^ "\n" ^
   scope ^ ".get " ^ vname ^ "\n" ^
   (itype_to_watype It_int) ^ ".load offset=0\n" ^
-  "call_indirect (type " ^ closure_type ^ ")"
+  "call_indirect (type $type-i32-i32-i32)"
 
 and codegen_block wrap_table name ityp code_lst =
   let wa_lst = codegen_iexpr_list wrap_table code_lst in
@@ -198,10 +205,10 @@ and codegen_pushtuple wrap_table itt (scope_enum, name) tuple_codelst =
   "i32.const " ^ (Int.to_string tup_size) ^ "\n" ^
   "call " ^ malloc_id ^ "\n" ^
   scope ^ ".set " ^ name ^ "\n" ^
-  (codegen_filltuple wrap_table itt (scope_enum, name) tuple_codelst 0) ^ "\n" ^
+  (codegen_filltuple ~wrapped:true wrap_table itt (scope_enum, name) tuple_codelst 0) ^ "\n" ^
   scope ^ ".get " ^ name
 
-and codegen_filltuple wrap_table itt (scope_enum, name) tuple_codelst start_offset =
+and codegen_filltuple ~wrapped:wrapped wrap_table itt (scope_enum, name) tuple_codelst start_offset =
   let scope = iscope_to_string scope_enum in
   (
     let zipped_lst = List.zip_exn itt tuple_codelst in
@@ -209,19 +216,46 @@ and codegen_filltuple wrap_table itt (scope_enum, name) tuple_codelst start_offs
       let item_wa =
         scope ^ ".get " ^ name ^ "\n" ^
         (codegen_iexpr_list wrap_table item_code) ^ "\n" ^
-        (itype_to_watype it) ^ ".store offset=" ^ (Int.to_string offset)
+        (if wrapped then poly_watype else (itype_to_watype it)) ^ ".store offset=" ^ (Int.to_string offset)
       in
-      (offset + (itype_size it), item_wa :: out_lst)
+      (offset + (if wrapped then poly_size else (itype_size it)), item_wa :: out_lst)
   )
   in
   String.concat ~sep:"\n" (List.rev code_list_rev))
 
-and codegen_tupleindex itt index offset =
+and codegen_tupleindex ~wrapped:wrapped itt index offset =
   (* Only types that occur before the one we want *)
   let itt_trim = List.take itt index in
-  let final_offset = List.fold itt_trim ~init:offset ~f:(fun o ityp -> o + (itype_size ityp)) in
+  let final_offset = List.fold itt_trim ~init:offset ~f:(fun o ityp ->
+    o + (if wrapped then poly_size else (itype_size ityp)))
+  in
   let watyp = itype_to_watype (List.nth_exn itt index) in
-  watyp ^ ".load offset=" ^ (Int.to_string final_offset)
+  (if wrapped then poly_watype else watyp) ^ ".load offset=" ^ (Int.to_string final_offset)
+
+and codegen_wrap ityp (unwrap_scope_enum, unwrap_name) (wrap_scope_enum, wrap_name) =
+  let wrap_size = itype_size ityp in
+  let unwrap_scope = iscope_to_string unwrap_scope_enum in
+  let wrap_scope = iscope_to_string wrap_scope_enum in
+  "i32.const " ^ (Int.to_string wrap_size) ^ "\n" ^
+  "call " ^ malloc_id ^ "\n" ^
+  wrap_scope ^ ".set " ^ wrap_name ^ "\n" ^
+  (match ityp with
+  | It_float ->
+      wrap_scope ^ ".get " ^ wrap_name ^ "\n" ^
+      unwrap_scope ^ ".get " ^ unwrap_name ^ "\n" ^
+      (itype_to_watype It_float) ^ ".store offset=0"
+  | _ -> raise (CodegenFailure ("The type " ^ (itype_to_string ityp) ^ " cannot be wrapped")))
+
+and codegen_unwrap ityp (wrap_scope_enum, wrap_name) (unwrap_scope_enum, unwrap_name) =
+  let unwrap_scope = iscope_to_string unwrap_scope_enum in
+  let wrap_scope = iscope_to_string wrap_scope_enum in
+  let watyp = itype_to_watype ityp in
+  match ityp with
+  | It_float ->
+    wrap_scope ^ ".get " ^ wrap_name ^ "\n" ^
+    watyp ^ ".load offset=0\n" ^
+    unwrap_scope ^ ".set " ^ unwrap_name
+  | _ -> raise (CodegenFailure ("The type " ^ (itype_to_string ityp) ^ " cannot be unwrapped"))
 
 
 (* Generate all closure types avoiding duplicates *)
@@ -288,24 +322,44 @@ let codegen_ifunction_wrapper (func : ifunction) =
   let wrapper_name = wrapper_func_name func.pf_name in
   let (iarg, iret) = func.pf_type in
   let wa_arg_type = itype_to_watype iarg in
-  let wa_result = itype_to_waresult iret in
+  let wa_result_type = itype_to_watype iret in
+  let arg_needs_unwrap = itype_needs_wrap iarg in
+  let result_needs_wrap = itype_needs_wrap iret in
   "(func " ^ wrapper_name ^ "\n" ^
   "(param $closure " ^ (itype_to_watype It_pointer) ^ ")\n" ^
-  "(param $arg " ^ wa_arg_type ^ ")\n" ^
-  wa_result ^ "\n" ^
-  (let (_, itt) = List.unzip func.pf_cvars in
-   let load_cvar_codes = List.folding_map itt ~init:(itype_size It_int) ~f:(fun offset ityp ->
-     let next_offset = offset + (itype_size ityp) in
-     let code =
-       "local.get $closure\n" ^
-       (itype_to_watype ityp) ^ ".load offset=" ^ (Int.to_string offset)
-     in
-     (next_offset, code))
-   in
-   String.concat ~sep:"\n" load_cvar_codes) ^ "\n" ^
-   "local.get $arg\n" ^
-   "call " ^ func.pf_name ^ "\n" ^
-   ")"
+  "(param $arg " ^ poly_watype ^ ")\n" ^
+  "(result " ^ poly_watype ^ ")\n" ^
+  (if arg_needs_unwrap then
+    "(local $arg_unwrap " ^ wa_arg_type ^ ")\n"
+  else "") ^
+  (if result_needs_wrap then
+    "(local $result_unwrap " ^ wa_result_type ^ ")\n" ^
+    "(local $result_wrap " ^ poly_watype ^ ")\n"
+  else "") ^
+  (
+    let (_, itt) = List.unzip func.pf_cvars in
+    let load_cvar_codes = List.folding_map itt ~init:(itype_size It_int) ~f:(fun offset ityp ->
+      let next_offset = offset + (itype_size ityp) in
+      let code =
+        "local.get $closure\n" ^
+        (itype_to_watype ityp) ^ ".load offset=" ^ (Int.to_string offset)
+      in
+      (next_offset, code))
+    in
+    String.concat ~sep:"\n" load_cvar_codes
+  ) ^ "\n" ^
+  (if arg_needs_unwrap then
+    (codegen_unwrap iarg (Local, "$arg") (Local, "$arg_unwrap")) ^ "\n" ^
+    "local.get $arg_unwrap\n"
+  else
+    "local.get $arg\n") ^
+  "call " ^ func.pf_name ^ "\n" ^
+  (if result_needs_wrap then
+    "local.set $result_unwrap\n" ^
+    (codegen_wrap iret (Local, "$result_unwrap") (Local, "$result_wrap")) ^ "\n" ^
+    "local.get $result_wrap\n"
+  else "") ^
+  ")"
 
 let codegen_ifunction (wrap_table : string_int_map) init_func (func : ifunction) =
   (if not (String.equal init_func func.pf_name) then

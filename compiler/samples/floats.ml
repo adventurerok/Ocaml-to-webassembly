@@ -17,3 +17,5 @@ let t2 = y > x
 let f1 = x = y
 
 let f2 = y < x
+
+let float_add n1 n2 = n1 +. n2
