@@ -10,7 +10,7 @@ let parsestring str =
 let openfile name debug output =
   let alltext = In_channel.with_file name ~f:In_channel.input_all in
   let parsed = parsestring alltext in
-  let (ctx, tast) = Type_expr.type_structure Context.empty_with_lists parsed in
+  let (ctx, tast) = Type_expr.type_structure Context.empty_lists_refs parsed in
   if debug then (
     Context.print ctx;
     Stdio.print_endline (Typed_ast.tstructure_to_string tast));

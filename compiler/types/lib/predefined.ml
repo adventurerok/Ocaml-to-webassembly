@@ -18,6 +18,8 @@ let f_ffb = Forall(Set.Poly.empty, T_func(v_float, T_func(v_float, v_bool)))
 let f_aaa = Forall(Set.Poly.of_list ["a"; "b"; "c"], T_func(T_var("a"), T_func(T_var("b"), T_var("c"))))
 let f_aab = Forall(Set.Poly.of_list ["a"; "b"], T_func(T_var("a"), T_func(T_var("b"), v_bool)))
 
+let ref_a = T_constr("ref", [T_var("a")])
+
 let ident_map = Map.Poly.of_alist_exn
   [
     ("+", f_iii);
@@ -36,7 +38,10 @@ let ident_map = Map.Poly.of_alist_exn
     ("-.", f_fff);
     ("*.", f_fff);
     ("/.", f_fff);
-    ("~-.", f_ff)
+    ("~-.", f_ff);
+    ("ref", Forall(Set.Poly.singleton "a", T_func(T_var("a"), ref_a)));
+    (":=", Forall(Set.Poly.singleton "a", T_func(ref_a, T_func(T_var("a"), v_unit))));
+    ("!", Forall(Set.Poly.singleton "a", T_func(ref_a, T_var("a"))))
   ]
 
 let lookup_ident = Map.find ident_map

@@ -246,9 +246,51 @@ and transform_apply context vars typ fexpr args =
 
 and transform_op context vars name args =
   let (vars', arg_code) = transform_list context vars args ~f:transform_expr in
-  let ityp = stoitype ((List.hd_exn args).texp_type) in
+  let typ = ((List.hd_exn args).texp_type) in
+  let ityp = stoitype typ in
   match name with
   | "~-" -> (vars', [Iexp_pushconst(ityp, "0")] @ arg_code @ [Iexp_binop(ityp, Ibin_sub)])
+  | "ref" ->
+      let (vars2, wrap_code) = transform_wrap context vars' typ in
+      let (vars3, data_var) = Vars.add_temp_var vars2 It_poly in
+      let (vars4, ref_var) = Vars.add_temp_var vars3 It_pointer in
+      (vars4, arg_code
+              @ wrap_code
+              @ [Iexp_newvar(It_poly, data_var);
+                 Iexp_wrap(It_poly, data_var, ref_var);
+                 Iexp_pushvar(It_pointer, ref_var)]
+      )
+  | "!" ->
+      let (vars2, ref_var) = Vars.add_temp_var vars' It_pointer in
+      let (vars3, data_var) = Vars.add_temp_var vars2 It_poly in
+      let ref_typ =
+        match typ with
+        | T_constr("ref", [a]) -> a
+        | _ -> raise (IntermediateFailure "Cannot derefence non ref type")
+      in
+      let (vars4, unwrap_code) = transform_unwrap context vars3 ref_typ in
+      (vars4, arg_code
+              @ [Iexp_newvar(It_pointer, ref_var);
+                 Iexp_unwrap(It_poly, ref_var, data_var);
+                 Iexp_pushvar(It_poly, data_var)]
+              @ unwrap_code
+      )
+  | ":=" ->
+      let ref_typ =
+        match typ with
+        | T_constr("ref", [a]) -> a
+        | _ -> raise (IntermediateFailure "Cannot derefence non ref type")
+      in
+      let (vars2, wrap_code) = transform_wrap context vars' ref_typ in
+      let (vars3, data_var) = Vars.add_temp_var vars2 It_poly in
+      let (vars4, ref_var) = Vars.add_temp_var vars3 It_pointer in
+      (vars4, arg_code
+              @ wrap_code
+              @ [Iexp_newvar(It_poly, data_var);
+                 Iexp_newvar(It_pointer, ref_var);
+                 Iexp_update_wrap(It_poly, data_var, ref_var);
+                 Iexp_pushconst(It_unit, "()")]
+      )
   | _ ->
     let bop =
       (match name with
@@ -299,18 +341,21 @@ and transform_mk_closure context vars typ name args =
 and transform_expr_wrap ?wrap:(wrap = true) context vars expr =
   let (vars1, code) = transform_expr context vars expr in
   if wrap then
-    let ityp = stoitype expr.texp_type in
-    if itype_needs_wrap ityp then
-      let (vars2, unwrap_var) = Vars.add_temp_var vars1 ityp in
-      let (vars3, wrap_var) = Vars.add_temp_var vars2 It_poly in
-      (vars3,
-        code @
-        [Iexp_newvar(ityp, unwrap_var);
-        Iexp_wrap(ityp, unwrap_var, wrap_var);
-        Iexp_pushvar(It_poly, wrap_var)]
-      )
-    else (vars1, code)
+    let (vars2, wrap_code) = transform_wrap context vars1 expr.texp_type in
+    (vars2, code @ wrap_code)
   else (vars1, code)
+
+and transform_wrap _context vars typ =
+  let ityp = stoitype typ in
+  if itype_needs_wrap ityp then
+    let (vars1, unwrap_var) = Vars.add_temp_var vars ityp in
+    let (vars2, wrap_var) = Vars.add_temp_var vars1 It_poly in
+    (vars2,
+      [Iexp_newvar(ityp, unwrap_var);
+      Iexp_wrap(ityp, unwrap_var, wrap_var);
+      Iexp_pushvar(It_poly, wrap_var)]
+    )
+  else (vars, [])
 
 and transform_unwrap _context vars typ =
   let ityp = stoitype typ in
@@ -367,7 +412,10 @@ and transform_construct context vars name expr_opt =
 
 let transform_structure_item context vars (si : tstructure_item) =
   match si.tstr_desc with
-  | Tstr_eval(e) -> transform_expr context vars e
+  | Tstr_eval(e) ->
+      let(vars1, code) = transform_expr context vars e in
+      (* We need to drop the resulting value on the stack *)
+      (vars1, code @ [Iexp_drop(stoitype e.texp_type)])
   | Tstr_value (rf, tvb_list) -> transform_value_bindings context vars rf tvb_list
   | Tstr_type -> (vars, [])
 

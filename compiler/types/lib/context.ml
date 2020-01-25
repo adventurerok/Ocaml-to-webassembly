@@ -91,10 +91,15 @@ let add_constr ctx cname args tname =
 let find_constr ctx name =
   Map.Poly.find ctx.constructs name
 
+(* Adds list constructors to context *)
 let empty_with_lists =
   let list_type = add_type empty "list" ["a"] in
   let with_nil = add_constr list_type "[]" [] "list" in
   add_constr with_nil "::" [T_var("a"); T_constr("list", [T_var("a")])] "list"
+
+let empty_lists_refs =
+  let ref_type = add_type empty_with_lists "ref" ["a"] in
+  add_constr ref_type "ref" [T_var("a")] "ref"
 
 exception InvalidType of scheme_type * string
 

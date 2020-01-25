@@ -115,6 +115,7 @@ and codegen_iexpr (wrap_table : string_int_map) (expr : iexpression) =
   | Iexp_loadconstructindex (itt, index) -> codegen_tupleindex ~wrapped:true (It_int :: itt) (index + 1) 0
   | Iexp_loadconstructid -> codegen_tupleindex ~wrapped:false [It_int] 0 0
   | Iexp_wrap(ityp, unwrap, wrap) -> codegen_wrap ityp unwrap wrap
+  | Iexp_update_wrap(ityp, unwrap, wrap) -> codegen_update_wrap ityp unwrap wrap
   | Iexp_unwrap(ityp, wrap, unwrap) -> codegen_unwrap ityp wrap unwrap
   | Iexp_fail -> "unreachable"
   | Iexp_drop _ -> "drop"
@@ -232,18 +233,26 @@ and codegen_tupleindex ~wrapped:wrapped itt index offset =
   let watyp = itype_to_watype (List.nth_exn itt index) in
   (if wrapped then poly_watype else watyp) ^ ".load offset=" ^ (Int.to_string final_offset)
 
-and codegen_wrap ityp (unwrap_scope_enum, unwrap_name) (wrap_scope_enum, wrap_name) =
+and codegen_wrap ityp unwrap_var (wrap_scope_enum, wrap_name) =
   let wrap_size = itype_size ityp in
-  let unwrap_scope = iscope_to_string unwrap_scope_enum in
   let wrap_scope = iscope_to_string wrap_scope_enum in
   "i32.const " ^ (Int.to_string wrap_size) ^ "\n" ^
   "call " ^ malloc_id ^ "\n" ^
   wrap_scope ^ ".set " ^ wrap_name ^ "\n" ^
+  (codegen_update_wrap ityp unwrap_var (wrap_scope_enum, wrap_name))
+
+and codegen_update_wrap ityp (unwrap_scope_enum, unwrap_name) (wrap_scope_enum, wrap_name) =
+  let unwrap_scope = iscope_to_string unwrap_scope_enum in
+  let wrap_scope = iscope_to_string wrap_scope_enum in
   (match ityp with
   | It_float ->
       wrap_scope ^ ".get " ^ wrap_name ^ "\n" ^
       unwrap_scope ^ ".get " ^ unwrap_name ^ "\n" ^
       (itype_to_watype It_float) ^ ".store offset=0"
+  | It_poly ->
+      wrap_scope ^ ".get " ^ wrap_name ^ "\n" ^
+      unwrap_scope ^ ".get " ^ unwrap_name ^ "\n" ^
+      poly_watype ^ ".store offset=0"
   | _ -> raise (CodegenFailure ("The type " ^ (itype_to_string ityp) ^ " cannot be wrapped")))
 
 and codegen_unwrap ityp (wrap_scope_enum, wrap_name) (unwrap_scope_enum, unwrap_name) =
@@ -251,10 +260,11 @@ and codegen_unwrap ityp (wrap_scope_enum, wrap_name) (unwrap_scope_enum, unwrap_
   let wrap_scope = iscope_to_string wrap_scope_enum in
   let watyp = itype_to_watype ityp in
   match ityp with
-  | It_float ->
-    wrap_scope ^ ".get " ^ wrap_name ^ "\n" ^
-    watyp ^ ".load offset=0\n" ^
-    unwrap_scope ^ ".set " ^ unwrap_name
+  | It_float
+  | It_poly ->
+      wrap_scope ^ ".get " ^ wrap_name ^ "\n" ^
+      watyp ^ ".load offset=0\n" ^
+      unwrap_scope ^ ".set " ^ unwrap_name
   | _ -> raise (CodegenFailure ("The type " ^ (itype_to_string ityp) ^ " cannot be unwrapped"))
 
 

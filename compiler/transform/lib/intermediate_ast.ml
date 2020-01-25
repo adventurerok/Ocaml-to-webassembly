@@ -160,10 +160,13 @@ type iexpression =
 (* Pop construct, push its id to the stack *)
 (* No parameters *)
 | Iexp_loadconstructid
-(* Wrap a value (on stack) of a type that needs boxing *)
+(* Wrap a value (on stack) of a type that needs boxing, or for a ref *)
 (* unwrapped type, unwrapped variable, variable to store wrapped result *)
 | Iexp_wrap of itype * ivariable * ivariable
-(* Unwrap a value *)
+(* Update a wrapped value, useful for refs *)
+(* unwrapped type, unwrapped variable, wrapped variable *)
+| Iexp_update_wrap of itype * ivariable * ivariable
+(* Unwrap a value / dereference a ref *)
 (* unwrapped type, wrapped variable, unwrapped target variable *)
 | Iexp_unwrap of itype * ivariable * ivariable
 (* Fail *)
@@ -210,6 +213,8 @@ let rec iexpression_to_string (iexp : iexpression) =
   | Iexp_loadconstructid -> "loadconstructid"
   | Iexp_wrap(typ, unwrap, wrap) ->
       "wrap " ^ (itype_to_string typ) ^ " " ^ (ivariable_to_string unwrap) ^ " " ^ (ivariable_to_string wrap)
+  | Iexp_update_wrap(typ, unwrap, wrap) ->
+      "update_wrap " ^ (itype_to_string typ) ^ " " ^ (ivariable_to_string unwrap) ^ " " ^ (ivariable_to_string wrap)
   | Iexp_unwrap(typ, wrap, unwrap) ->
       "unwrap " ^ (itype_to_string typ) ^ " " ^ (ivariable_to_string wrap) ^ " " ^ (ivariable_to_string unwrap)
   | Iexp_fail -> "fail"
