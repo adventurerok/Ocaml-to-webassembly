@@ -34,7 +34,7 @@ let rec transform_expr (context: Context.context) (vars: Vars.vars) (expr: texpr
   match expr.texp_desc with
   | Texp_ident(id) ->
       let var_id = Vars.lookup_var_or_global vars id in
-      (vars, [Iexp_pushvar(ityp, var_id)])
+      (vars, [Iexp_getvar(ityp, var_id)])
   | Texp_constant(str) -> (vars, [Iexp_pushconst(ityp, str)])
   | Texp_let (rf, tvb_list, expr) ->
       let (vars1, tvb_iexprs) = transform_value_bindings context vars rf tvb_list in
@@ -46,7 +46,7 @@ let rec transform_expr (context: Context.context) (vars: Vars.vars) (expr: texpr
   | Texp_apply (fexpr, args) -> transform_apply context vars expr.texp_type fexpr args
   | Texp_match (e, cases) -> transform_match context vars expr.texp_type e cases
   | Texp_tuple(_) ->
-      let (vars1, tuple_codelst) = transform_tupleargs ~poly_wrap:true context vars expr in
+      let (vars1, tuple_codelst) = transform_tupleargs ~poly_box:true context vars expr in
       let (vars2, var_name) = Vars.add_temp_var vars1 It_pointer in
       let ituptype = tupletoitype expr.texp_type in
       (vars2, [Iexp_pushtuple(ituptype, var_name, tuple_codelst)])
@@ -89,7 +89,7 @@ and pat_tuple_list (pat : tpattern) =
 
 and transform_pat ?check:(check = true)
                   ?escape:(escape = Iexp_ifthenelse("$escape", It_none, [Iexp_fail], None))
-                  ?wrapped:(wrapped = false)
+                  ?boxed:(boxed = false)
                   context
                   vars
                   (pat :tpattern) =
@@ -98,26 +98,26 @@ and transform_pat ?check:(check = true)
   | Tpat_var(name) ->
       let ityp = stoitype pat.tpat_type in
       let (vars1, named_var) = Vars.add_named_var vars name ityp in
-      if (wrapped && (itype_needs_wrap ityp)) then
-        let (vars2, wrapped_var) = Vars.add_temp_var vars1 It_poly in
+      if (boxed && (itype_needs_box ityp)) then
+        let (vars2, boxed_var) = Vars.add_temp_var vars1 It_poly in
         (vars2,
-          [Iexp_newvar(It_poly, wrapped_var);
-          Iexp_unwrap(ityp, wrapped_var, named_var)]
+          [Iexp_setvar(It_poly, boxed_var);
+          Iexp_unbox(ityp, boxed_var, named_var)]
         )
       else
-      (vars1, [Iexp_newvar(ityp, named_var)])
+      (vars1, [Iexp_setvar(ityp, named_var)])
   | Tpat_constant(const) ->
       (* This would be shorthand for an equality check, e.g. evaluate this and make sure it's equal to 3 *)
       let (vars', check_code) =
         if check then
           let ityp = stoitype pat.tpat_type in
-          if (wrapped && (itype_needs_wrap ityp)) then
-            let (vars1, wrap_var) = Vars.add_temp_var vars It_poly in
-            let (vars2, unwrap_var) = Vars.add_temp_var vars1 ityp in
+          if (boxed && (itype_needs_box ityp)) then
+            let (vars1, box_var) = Vars.add_temp_var vars It_poly in
+            let (vars2, unbox_var) = Vars.add_temp_var vars1 ityp in
             (vars2,
-              [Iexp_newvar(It_poly, wrap_var);
-              Iexp_unwrap(ityp, wrap_var, unwrap_var);
-              Iexp_pushvar(ityp, unwrap_var);
+              [Iexp_setvar(It_poly, box_var);
+              Iexp_unbox(ityp, box_var, unbox_var);
+              Iexp_getvar(ityp, unbox_var);
               Iexp_pushconst(ityp, const);
               Iexp_binop(ityp, Ibin_ne);
               escape]
@@ -131,16 +131,16 @@ and transform_pat ?check:(check = true)
       let (vars1, var_name) = Vars.add_temp_var vars It_pointer in
       let ituptype = tupletoitype pat.tpat_type in
       let (vars2, code) = transform_listi context vars1 plist ~f:(fun _ vrs pos tpat ->
-        let (vrs', pat_code) = transform_pat ~check:check ~escape:escape ~wrapped:true context vrs tpat in
-        (vrs', (Iexp_pushvar(It_pointer, var_name) :: Iexp_loadtupleindex(ituptype, pos) :: pat_code)))
+        let (vrs', pat_code) = transform_pat ~check:check ~escape:escape ~boxed:true context vrs tpat in
+        (vrs', (Iexp_getvar(It_pointer, var_name) :: Iexp_loadtupleindex(ituptype, pos) :: pat_code)))
       in
-      (vars2, Iexp_newvar(It_pointer, var_name) :: code)
+      (vars2, Iexp_setvar(It_pointer, var_name) :: code)
   | Tpat_construct (name, plist) ->
       let (vars1, var_name) = Vars.add_temp_var vars It_pointer in
       let construct = Option.value_exn (Context.find_constr context name) in
       let check_code =
         if check then
-          (Iexp_pushvar(It_pointer, var_name)
+          (Iexp_getvar(It_pointer, var_name)
           :: Iexp_loadconstructid
           :: Iexp_pushconst(It_int, Int.to_string construct.index)
           :: Iexp_binop(It_int, Ibin_ne)
@@ -150,10 +150,10 @@ and transform_pat ?check:(check = true)
       let (vars2, destruct_code) =
         let ituptype = List.map plist ~f:(fun p -> stoitype p.tpat_type) in
         transform_listi context vars1 plist ~f:(fun _ vrs pos cpat ->
-          let (vrs', pat_code) = transform_pat ~check:check ~escape:escape ~wrapped:true context vrs cpat in
-          (vrs', (Iexp_pushvar(It_pointer, var_name) :: Iexp_loadconstructindex(ituptype, pos) :: pat_code)))
+          let (vrs', pat_code) = transform_pat ~check:check ~escape:escape ~boxed:true context vrs cpat in
+          (vrs', (Iexp_getvar(It_pointer, var_name) :: Iexp_loadconstructindex(ituptype, pos) :: pat_code)))
       in
-      (vars2, Iexp_newvar(It_pointer, var_name) :: (check_code @ destruct_code))
+      (vars2, Iexp_setvar(It_pointer, var_name) :: (check_code @ destruct_code))
 
 
 and transform_value_bindings_recursive context vars tvb_list =
@@ -192,7 +192,7 @@ and transform_value_bindings_recursive context vars tvb_list =
   let (vars2, fill_closure_code) = transform_list context vars1 details
                                     ~f:(fun _ vrs (rec_name, _, _, ituptype, tuple_expr) ->
     let var_name = Option.value_exn (Vars.lookup_var vrs rec_name) in
-    let (vrs', tuple_codelst) = transform_tupleargs ~poly_wrap:false context vrs tuple_expr in
+    let (vrs', tuple_codelst) = transform_tupleargs ~poly_box:false context vrs tuple_expr in
     (vrs', [Iexp_fillclosure(ituptype, var_name, tuple_codelst)])
   )
   in
@@ -214,9 +214,9 @@ and transform_match context vars st_res_typ expr cases =
     in
     (* Case expression, possibly using variables from the pattern *)
     let (vrs3, matched_code) = transform_expr context vrs2 case.tc_rhs in
-    let inside_block = [Iexp_pushvar(match_type, expr_var)] @
+    let inside_block = [Iexp_getvar(match_type, expr_var)] @
                        pat_code @ matched_code @
-                       [Iexp_newvar(result_type, result_var);
+                       [Iexp_setvar(result_type, result_var);
                        Iexp_exitblock(match_block)]
     in
     (vrs3, [Iexp_block(case_block, It_none, inside_block)])
@@ -224,9 +224,9 @@ and transform_match context vars st_res_typ expr cases =
   in
   (vars5,
     expr_code @
-    [Iexp_newvar(match_type, expr_var);
+    [Iexp_setvar(match_type, expr_var);
     Iexp_block(match_block, It_none, inner_code @ [Iexp_fail]);
-    Iexp_pushvar(result_type, result_var)
+    Iexp_getvar(result_type, result_var)
     ]
   )
 
@@ -246,7 +246,7 @@ and transform_apply context vars typ fexpr args =
       let (vars1, other_code) = transform_expr context vars fexpr in
       let (vars2, var_name) = Vars.add_temp_var vars1 It_pointer in
       let (vars3, apply_code) = transform_apply_closure context vars2 fexpr.texp_type var_name args in
-      (vars3, other_code @ [Iexp_newvar(It_pointer, var_name)] @ apply_code)
+      (vars3, other_code @ [Iexp_setvar(It_pointer, var_name)] @ apply_code)
 
 and transform_op context vars name args =
   let (vars', arg_code) = transform_list context vars args ~f:transform_expr in
@@ -260,14 +260,14 @@ and transform_op context vars name args =
       | _ ->
           (vars', [Iexp_pushconst(ityp, "0")] @ arg_code @ [Iexp_binop(ityp, Ibin_sub)]))
   | "ref" ->
-      let (vars2, wrap_code) = transform_wrap context vars' typ in
+      let (vars2, box_code) = transform_box context vars' typ in
       let (vars3, data_var) = Vars.add_temp_var vars2 It_poly in
       let (vars4, ref_var) = Vars.add_temp_var vars3 It_pointer in
       (vars4, arg_code
-              @ wrap_code
-              @ [Iexp_newvar(It_poly, data_var);
-                 Iexp_wrap(It_poly, data_var, ref_var);
-                 Iexp_pushvar(It_pointer, ref_var)]
+              @ box_code
+              @ [Iexp_setvar(It_poly, data_var);
+                 Iexp_newbox(It_poly, data_var, ref_var);
+                 Iexp_getvar(It_pointer, ref_var)]
       )
   | "!" ->
       let (vars2, ref_var) = Vars.add_temp_var vars' It_pointer in
@@ -277,12 +277,12 @@ and transform_op context vars name args =
         | T_constr("ref", [a]) -> a
         | _ -> raise (IntermediateFailure "Cannot derefence non ref type")
       in
-      let (vars4, unwrap_code) = transform_unwrap context vars3 ref_typ in
+      let (vars4, unbox_code) = transform_unbox context vars3 ref_typ in
       (vars4, arg_code
-              @ [Iexp_newvar(It_pointer, ref_var);
-                 Iexp_unwrap(It_poly, ref_var, data_var);
-                 Iexp_pushvar(It_poly, data_var)]
-              @ unwrap_code
+              @ [Iexp_setvar(It_pointer, ref_var);
+                 Iexp_unbox(It_poly, ref_var, data_var);
+                 Iexp_getvar(It_poly, data_var)]
+              @ unbox_code
       )
   | ":=" ->
       let ref_typ =
@@ -290,14 +290,14 @@ and transform_op context vars name args =
         | T_constr("ref", [a]) -> a
         | _ -> raise (IntermediateFailure "Cannot derefence non ref type")
       in
-      let (vars2, wrap_code) = transform_wrap context vars' ref_typ in
+      let (vars2, box_code) = transform_box context vars' ref_typ in
       let (vars3, data_var) = Vars.add_temp_var vars2 It_poly in
       let (vars4, ref_var) = Vars.add_temp_var vars3 It_pointer in
       (vars4, arg_code
-              @ wrap_code
-              @ [Iexp_newvar(It_poly, data_var);
-                 Iexp_newvar(It_pointer, ref_var);
-                 Iexp_update_wrap(It_poly, data_var, ref_var);
+              @ box_code
+              @ [Iexp_setvar(It_poly, data_var);
+                 Iexp_setvar(It_pointer, ref_var);
+                 Iexp_updatebox(It_poly, data_var, ref_var);
                  Iexp_pushconst(It_unit, "()")]
       )
   | "not" ->
@@ -326,57 +326,57 @@ and transform_op context vars name args =
 
 (* Transforms an expression
  * If that expression is a tuple, do not add the final pushtuple instruction *)
-and transform_tupleargs ?poly_wrap:(poly_wrap=false) context vars expr =
+and transform_tupleargs ?poly_box:(poly_box=false) context vars expr =
   match expr.texp_desc with
   | Texp_tuple(lst) ->
       let (vars', code_list_rev) = List.fold lst ~init:(vars, []) ~f:(fun (vrs, c_lst) item ->
-        let (vrs', code) = transform_expr_wrap ~wrap:poly_wrap context vrs item in
+        let (vrs', code) = transform_expr_box ~box:poly_box context vrs item in
         (vrs', code :: c_lst))
       in
       (vars', List.rev code_list_rev)
   | _ ->
-      let (vars, code) = transform_expr_wrap ~wrap:poly_wrap context vars expr in
+      let (vars, code) = transform_expr_box ~box:poly_box context vars expr in
       (vars, [code])
 
 and transform_mk_closure context vars typ name args =
   let tuple_expr = List.hd_exn args in
   let iftype = functoitype typ in
   let ituptype = tupletoitype tuple_expr.texp_type in
-  let (vars1, tuple_codelst) = transform_tupleargs ~poly_wrap:false context vars tuple_expr in
+  let (vars1, tuple_codelst) = transform_tupleargs ~poly_box:false context vars tuple_expr in
   let (vars2, var_name) = Vars.add_temp_var vars1 It_pointer in
   (vars2,
     [Iexp_newclosure(iftype, name, ituptype, var_name);
      Iexp_fillclosure(ituptype, var_name, tuple_codelst);
-     Iexp_pushvar(It_pointer, var_name)])
+     Iexp_getvar(It_pointer, var_name)])
 
-and transform_expr_wrap ?wrap:(wrap = true) context vars expr =
+and transform_expr_box ?box:(box = true) context vars expr =
   let (vars1, code) = transform_expr context vars expr in
-  if wrap then
-    let (vars2, wrap_code) = transform_wrap context vars1 expr.texp_type in
-    (vars2, code @ wrap_code)
+  if box then
+    let (vars2, box_code) = transform_box context vars1 expr.texp_type in
+    (vars2, code @ box_code)
   else (vars1, code)
 
-and transform_wrap _context vars typ =
+and transform_box _context vars typ =
   let ityp = stoitype typ in
-  if itype_needs_wrap ityp then
-    let (vars1, unwrap_var) = Vars.add_temp_var vars ityp in
-    let (vars2, wrap_var) = Vars.add_temp_var vars1 It_poly in
+  if itype_needs_box ityp then
+    let (vars1, unbox_var) = Vars.add_temp_var vars ityp in
+    let (vars2, box_var) = Vars.add_temp_var vars1 It_poly in
     (vars2,
-      [Iexp_newvar(ityp, unwrap_var);
-      Iexp_wrap(ityp, unwrap_var, wrap_var);
-      Iexp_pushvar(It_poly, wrap_var)]
+      [Iexp_setvar(ityp, unbox_var);
+      Iexp_newbox(ityp, unbox_var, box_var);
+      Iexp_getvar(It_poly, box_var)]
     )
   else (vars, [])
 
-and transform_unwrap _context vars typ =
+and transform_unbox _context vars typ =
   let ityp = stoitype typ in
-  if itype_needs_wrap ityp then
-    let (vars1, wrap_var) = Vars.add_temp_var vars It_poly in
-    let (vars2, unwrap_var) = Vars.add_temp_var vars1 ityp in
+  if itype_needs_box ityp then
+    let (vars1, box_var) = Vars.add_temp_var vars It_poly in
+    let (vars2, unbox_var) = Vars.add_temp_var vars1 ityp in
     (vars2,
-      [Iexp_newvar(It_poly, wrap_var);
-      Iexp_unwrap(ityp, wrap_var, unwrap_var);
-      Iexp_pushvar(ityp, unwrap_var)]
+      [Iexp_setvar(It_poly, box_var);
+      Iexp_unbox(ityp, box_var, unbox_var);
+      Iexp_getvar(ityp, unbox_var)]
     )
   else (vars, [])
 
@@ -390,25 +390,25 @@ and transform_apply_closure context vars typ var_name args =
             let iatyp = stoitype atyp in
             let ibtyp = stoitype btyp in
             let (vrs1, closure_var) = Vars.add_temp_var vrs It_pointer in
-            let (vrs2, code) = transform_expr_wrap context vrs1 arg in
-            let (vrs3, unwrap_code) = transform_unwrap context vrs2 btyp in
+            let (vrs2, code) = transform_expr_box context vrs1 arg in
+            let (vrs3, unbox_code) = transform_unbox context vrs2 btyp in
             let (vrs4, final_code) = loop btyp vrs3 arg_list' in
             (vrs4,
-              [Iexp_newvar(It_pointer, closure_var);
+              [Iexp_setvar(It_pointer, closure_var);
               Iexp_callclosure((iatyp, ibtyp), closure_var, code)]
-              @ unwrap_code
+              @ unbox_code
               @ final_code
             )
         | _ -> raise (IntermediateFailure "Cannot apply non function type "))
   in
   let (vars', loop_code) = loop typ vars args in
-  (vars', (Iexp_pushvar(It_pointer, var_name)) :: loop_code)
+  (vars', (Iexp_getvar(It_pointer, var_name)) :: loop_code)
 
 and transform_construct context vars name ls =
   let constr = Option.value_exn (Context.find_constr context name) in
   let ituptype = List.map constr.args ~f:stoitype in
   let (vars1, var_name) = Vars.add_temp_var vars It_pointer in
-  let (vars2, tuple_codelst) = map_list ~f:(transform_expr_wrap ~wrap:true) context vars1 ls in
+  let (vars2, tuple_codelst) = map_list ~f:(transform_expr_box ~box:true) context vars1 ls in
   (vars2, [Iexp_pushconstruct(ituptype, var_name, constr.index, tuple_codelst)])
 
 
@@ -449,7 +449,7 @@ let transform_function context (fd : Functions.func_data) =
   let (vars', arg_code) = transform_pat context vars fd.fd_pat in
   let (vars'', expr_code) = transform_expr context vars' fd.fd_expr in
   let arg_type = stoitype fd.fd_pat.tpat_type in
-  (vars'', (Iexp_pushvar(arg_type, Vars.function_arg)) :: (arg_code @ expr_code))
+  (vars'', (Iexp_getvar(arg_type, Vars.function_arg)) :: (arg_code @ expr_code))
 
 let fix_globals global_vars local_vars code =
   let fix_var (scope, name) =
@@ -465,10 +465,10 @@ let fix_globals global_vars local_vars code =
   in
   let rec fix_instr instr =
     match instr with
-    | Iexp_newvar(t, name) ->
-        Iexp_newvar(t, fix_var name)
-    | Iexp_pushvar(t, name) ->
-        Iexp_pushvar(t, fix_var name)
+    | Iexp_setvar(t, name) ->
+        Iexp_setvar(t, fix_var name)
+    | Iexp_getvar(t, name) ->
+        Iexp_getvar(t, fix_var name)
     | Iexp_ifthenelse(bname, t, tcode, ecode_opt) ->
         let tcode' = fix_instr_list tcode in
         let ecode_opt' = Option.map ecode_opt ~f:fix_instr_list in

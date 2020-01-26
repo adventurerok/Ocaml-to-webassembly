@@ -36,7 +36,7 @@ let ituptype_to_string tt =
 
 exception BadType of string
 
-let itype_needs_wrap (it : itype) =
+let itype_needs_box (it : itype) =
   match it with
   | It_float -> true
   | _ -> false
@@ -124,10 +124,10 @@ let ivariable_to_string ((scope, name) : ivariable) =
 type iexpression =
 (* Create a new var, and pop to it from top of stack *)
 (* type of variable, name of variable *)
-| Iexp_newvar of itype * ivariable
+| Iexp_setvar of itype * ivariable
 (* Push var's value to the stack *)
 (* type of variable, name of variable *)
-| Iexp_pushvar of itype * ivariable
+| Iexp_getvar of itype * ivariable
 (* Unary operation using one stack value *)
 (* type of operand, unary operation *)
 (* TODO make it take the result type as an argument as well *)
@@ -177,15 +177,15 @@ type iexpression =
 (* Pop construct, push its id to the stack *)
 (* No parameters *)
 | Iexp_loadconstructid
-(* Wrap a value (on stack) of a type that needs boxing, or for a ref *)
-(* unwrapped type, unwrapped variable, variable to store wrapped result *)
-| Iexp_wrap of itype * ivariable * ivariable
-(* Update a wrapped value, useful for refs *)
-(* unwrapped type, unwrapped variable, wrapped variable *)
-| Iexp_update_wrap of itype * ivariable * ivariable
-(* Unwrap a value / dereference a ref *)
-(* unwrapped type, wrapped variable, unwrapped target variable *)
-| Iexp_unwrap of itype * ivariable * ivariable
+(* Box a value (on stack) of a type that needs boxing, or for a ref *)
+(* unboxed type, unboxped variable, variable to store boxed result *)
+| Iexp_newbox of itype * ivariable * ivariable
+(* Update a boxed value, useful for refs *)
+(* unboxed type, unboxped variable, boxed variable *)
+| Iexp_updatebox of itype * ivariable * ivariable
+(* Unbox a value / dereference a ref *)
+(* unboxped type, wrapped variable, unboxped target variable *)
+| Iexp_unbox of itype * ivariable * ivariable
 (* Fail *)
 (* No parameters *)
 | Iexp_fail
@@ -196,8 +196,8 @@ type iexpression =
 
 let rec iexpression_to_string (iexp : iexpression) =
   match iexp with
-  | Iexp_newvar (t, name) -> "newvar " ^ (itype_to_string t) ^ " " ^ (ivariable_to_string name)
-  | Iexp_pushvar (t, name) -> "pushvar " ^ (itype_to_string t) ^ " " ^ (ivariable_to_string name)
+  | Iexp_setvar (t, name) -> "setvar " ^ (itype_to_string t) ^ " " ^ (ivariable_to_string name)
+  | Iexp_getvar (t, name) -> "getvar " ^ (itype_to_string t) ^ " " ^ (ivariable_to_string name)
   | Iexp_unop (t, op) -> "unop " ^ (itype_to_string t) ^ " " ^ (iunop_to_string op)
   | Iexp_binop (t, op) -> "binop " ^ (itype_to_string t) ^ " " ^ (ibinop_to_string op)
   | Iexp_pushconst (t, v) -> "pushconst " ^ (itype_to_string t) ^ " " ^ v
@@ -233,12 +233,12 @@ let rec iexpression_to_string (iexp : iexpression) =
       tuple_codes_to_string codes
   | Iexp_loadconstructindex(itt, id) -> "loadconstructindex " ^ (ituptype_to_string itt) ^ " " ^ (Int.to_string id)
   | Iexp_loadconstructid -> "loadconstructid"
-  | Iexp_wrap(typ, unwrap, wrap) ->
-      "wrap " ^ (itype_to_string typ) ^ " " ^ (ivariable_to_string unwrap) ^ " " ^ (ivariable_to_string wrap)
-  | Iexp_update_wrap(typ, unwrap, wrap) ->
-      "update_wrap " ^ (itype_to_string typ) ^ " " ^ (ivariable_to_string unwrap) ^ " " ^ (ivariable_to_string wrap)
-  | Iexp_unwrap(typ, wrap, unwrap) ->
-      "unwrap " ^ (itype_to_string typ) ^ " " ^ (ivariable_to_string wrap) ^ " " ^ (ivariable_to_string unwrap)
+  | Iexp_newbox(typ, unbox, wrap) ->
+      "newbox " ^ (itype_to_string typ) ^ " " ^ (ivariable_to_string unbox) ^ " " ^ (ivariable_to_string wrap)
+  | Iexp_updatebox(typ, unbox, wrap) ->
+      "updatebox " ^ (itype_to_string typ) ^ " " ^ (ivariable_to_string unbox) ^ " " ^ (ivariable_to_string wrap)
+  | Iexp_unbox(typ, wrap, unbox) ->
+      "unbox " ^ (itype_to_string typ) ^ " " ^ (ivariable_to_string wrap) ^ " " ^ (ivariable_to_string unbox)
   | Iexp_fail -> "fail"
   | Iexp_drop(t) -> "drop " ^ (itype_to_string t)
 

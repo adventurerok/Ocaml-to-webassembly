@@ -97,8 +97,8 @@ let rec codegen_iexpr_list (wrap_table : string_int_map) lst =
 
 and codegen_iexpr (wrap_table : string_int_map) (expr : iexpression) =
   match expr with
-  | Iexp_newvar (_, (scope, name)) -> (iscope_to_string scope) ^ ".set " ^ name
-  | Iexp_pushvar (_, (scope, name)) -> (iscope_to_string scope) ^ ".get " ^ name
+  | Iexp_setvar (_, (scope, name)) -> (iscope_to_string scope) ^ ".set " ^ name
+  | Iexp_getvar (_, (scope, name)) -> (iscope_to_string scope) ^ ".get " ^ name
   | Iexp_unop (ityp, unop) -> codegen_unop ityp unop
   | Iexp_binop (ityp, binop) -> codegen_binop ityp binop
   | Iexp_pushconst (ityp, str_rep) -> codegen_const ityp str_rep
@@ -111,14 +111,14 @@ and codegen_iexpr (wrap_table : string_int_map) (expr : iexpression) =
   | Iexp_ifthenelse (name, ityp, tcode, ecode_opt) -> codegen_ifthenelse wrap_table name ityp tcode ecode_opt
   | Iexp_loop(break, continue, lst) -> codegen_loop wrap_table break continue lst
   | Iexp_pushtuple(itt, name, tuple_codelst) -> codegen_pushtuple wrap_table itt name tuple_codelst
-  | Iexp_loadtupleindex (itt, index) -> codegen_tupleindex ~wrapped:true itt index 0
+  | Iexp_loadtupleindex (itt, index) -> codegen_tupleindex ~boxed:true itt index 0
   | Iexp_pushconstruct (itt, name, id, tuple_codelst) ->
       codegen_pushtuple wrap_table (It_int :: itt) name ([Iexp_pushconst(It_int, Int.to_string id)] :: tuple_codelst)
-  | Iexp_loadconstructindex (itt, index) -> codegen_tupleindex ~wrapped:true (It_int :: itt) (index + 1) 0
-  | Iexp_loadconstructid -> codegen_tupleindex ~wrapped:false [It_int] 0 0
-  | Iexp_wrap(ityp, unwrap, wrap) -> codegen_wrap ityp unwrap wrap
-  | Iexp_update_wrap(ityp, unwrap, wrap) -> codegen_update_wrap ityp unwrap wrap
-  | Iexp_unwrap(ityp, wrap, unwrap) -> codegen_unwrap ityp wrap unwrap
+  | Iexp_loadconstructindex (itt, index) -> codegen_tupleindex ~boxed:true (It_int :: itt) (index + 1) 0
+  | Iexp_loadconstructid -> codegen_tupleindex ~boxed:false [It_int] 0 0
+  | Iexp_newbox(ityp, unbox, box) -> codegen_box ityp unbox box
+  | Iexp_updatebox(ityp, unbox, box) -> codegen_updatebox ityp unbox box
+  | Iexp_unbox(ityp, box, unbox) -> codegen_unbox ityp box unbox
   | Iexp_fail -> "unreachable"
   | Iexp_drop _ -> "drop"
 
@@ -184,7 +184,7 @@ and codegen_newclosure wrap_table _ift func_name itt (vscope, vname) =
   (itype_to_watype It_int) ^ ".store offset=0"
 
 and codegen_fillclosure wrap_table itt var tuple_codelst =
-  codegen_filltuple ~wrapped:false wrap_table itt var tuple_codelst (itype_size It_int)
+  codegen_filltuple ~boxed:false wrap_table itt var tuple_codelst (itype_size It_int)
 
 and codegen_callclosure wrap_table (vscope, vname) arg_code =
   let scope = iscope_to_string vscope in
@@ -227,10 +227,10 @@ and codegen_pushtuple wrap_table itt (scope_enum, name) tuple_codelst =
   "i32.const " ^ (Int.to_string tup_size) ^ "\n" ^
   "call " ^ malloc_id ^ "\n" ^
   scope ^ ".set " ^ name ^ "\n" ^
-  (codegen_filltuple ~wrapped:true wrap_table itt (scope_enum, name) tuple_codelst 0) ^ "\n" ^
+  (codegen_filltuple ~boxed:true wrap_table itt (scope_enum, name) tuple_codelst 0) ^ "\n" ^
   scope ^ ".get " ^ name
 
-and codegen_filltuple ~wrapped:wrapped wrap_table itt (scope_enum, name) tuple_codelst start_offset =
+and codegen_filltuple ~boxed:boxed wrap_table itt (scope_enum, name) tuple_codelst start_offset =
   let scope = iscope_to_string scope_enum in
   (
     let zipped_lst = List.zip_exn itt tuple_codelst in
@@ -238,55 +238,55 @@ and codegen_filltuple ~wrapped:wrapped wrap_table itt (scope_enum, name) tuple_c
       let item_wa =
         scope ^ ".get " ^ name ^ "\n" ^
         (codegen_iexpr_list wrap_table item_code) ^ "\n" ^
-        (if wrapped then poly_watype else (itype_to_watype it)) ^ ".store offset=" ^ (Int.to_string offset)
+        (if boxed then poly_watype else (itype_to_watype it)) ^ ".store offset=" ^ (Int.to_string offset)
       in
-      (offset + (if wrapped then poly_size else (itype_size it)), item_wa :: out_lst)
+      (offset + (if boxed then poly_size else (itype_size it)), item_wa :: out_lst)
   )
   in
   String.concat ~sep:"\n" (List.rev code_list_rev))
 
-and codegen_tupleindex ~wrapped:wrapped itt index offset =
+and codegen_tupleindex ~boxed:boxed itt index offset =
   (* Only types that occur before the one we want *)
   let itt_trim = List.take itt index in
   let final_offset = List.fold itt_trim ~init:offset ~f:(fun o ityp ->
-    o + (if wrapped then poly_size else (itype_size ityp)))
+    o + (if boxed then poly_size else (itype_size ityp)))
   in
   let watyp = itype_to_watype (List.nth_exn itt index) in
-  (if wrapped then poly_watype else watyp) ^ ".load offset=" ^ (Int.to_string final_offset)
+  (if boxed then poly_watype else watyp) ^ ".load offset=" ^ (Int.to_string final_offset)
 
-and codegen_wrap ityp unwrap_var (wrap_scope_enum, wrap_name) =
-  let wrap_size = itype_size ityp in
-  let wrap_scope = iscope_to_string wrap_scope_enum in
-  "i32.const " ^ (Int.to_string wrap_size) ^ "\n" ^
+and codegen_box ityp unbox_var (box_scope_enum, box_name) =
+  let box_size = itype_size ityp in
+  let box_scope = iscope_to_string box_scope_enum in
+  "i32.const " ^ (Int.to_string box_size) ^ "\n" ^
   "call " ^ malloc_id ^ "\n" ^
-  wrap_scope ^ ".set " ^ wrap_name ^ "\n" ^
-  (codegen_update_wrap ityp unwrap_var (wrap_scope_enum, wrap_name))
+  box_scope ^ ".set " ^ box_name ^ "\n" ^
+  (codegen_updatebox ityp unbox_var (box_scope_enum, box_name))
 
-and codegen_update_wrap ityp (unwrap_scope_enum, unwrap_name) (wrap_scope_enum, wrap_name) =
-  let unwrap_scope = iscope_to_string unwrap_scope_enum in
-  let wrap_scope = iscope_to_string wrap_scope_enum in
+and codegen_updatebox ityp (unbox_scope_enum, unbox_name) (box_scope_enum, box_name) =
+  let unbox_scope = iscope_to_string unbox_scope_enum in
+  let box_scope = iscope_to_string box_scope_enum in
   (match ityp with
   | It_float ->
-      wrap_scope ^ ".get " ^ wrap_name ^ "\n" ^
-      unwrap_scope ^ ".get " ^ unwrap_name ^ "\n" ^
+      box_scope ^ ".get " ^ box_name ^ "\n" ^
+      unbox_scope ^ ".get " ^ unbox_name ^ "\n" ^
       (itype_to_watype It_float) ^ ".store offset=0"
   | It_poly ->
-      wrap_scope ^ ".get " ^ wrap_name ^ "\n" ^
-      unwrap_scope ^ ".get " ^ unwrap_name ^ "\n" ^
+      box_scope ^ ".get " ^ box_name ^ "\n" ^
+      unbox_scope ^ ".get " ^ unbox_name ^ "\n" ^
       poly_watype ^ ".store offset=0"
-  | _ -> raise (CodegenFailure ("The type " ^ (itype_to_string ityp) ^ " cannot be wrapped")))
+  | _ -> raise (CodegenFailure ("The type " ^ (itype_to_string ityp) ^ " cannot be boxed")))
 
-and codegen_unwrap ityp (wrap_scope_enum, wrap_name) (unwrap_scope_enum, unwrap_name) =
-  let unwrap_scope = iscope_to_string unwrap_scope_enum in
-  let wrap_scope = iscope_to_string wrap_scope_enum in
+and codegen_unbox ityp (box_scope_enum, box_name) (unbox_scope_enum, unbox_name) =
+  let unbox_scope = iscope_to_string unbox_scope_enum in
+  let box_scope = iscope_to_string box_scope_enum in
   let watyp = itype_to_watype ityp in
   match ityp with
   | It_float
   | It_poly ->
-      wrap_scope ^ ".get " ^ wrap_name ^ "\n" ^
+      box_scope ^ ".get " ^ box_name ^ "\n" ^
       watyp ^ ".load offset=0\n" ^
-      unwrap_scope ^ ".set " ^ unwrap_name
-  | _ -> raise (CodegenFailure ("The type " ^ (itype_to_string ityp) ^ " cannot be unwrapped"))
+      unbox_scope ^ ".set " ^ unbox_name
+  | _ -> raise (CodegenFailure ("The type " ^ (itype_to_string ityp) ^ " cannot be unboxed"))
 
 
 (* Generate all closure types avoiding duplicates *)
@@ -354,18 +354,18 @@ let codegen_ifunction_wrapper (func : ifunction) =
   let (iarg, iret) = func.pf_type in
   let wa_arg_type = itype_to_watype iarg in
   let wa_result_type = itype_to_watype iret in
-  let arg_needs_unwrap = itype_needs_wrap iarg in
-  let result_needs_wrap = itype_needs_wrap iret in
+  let arg_needs_unbox = itype_needs_box iarg in
+  let result_needs_box = itype_needs_box iret in
   "(func " ^ wrapper_name ^ "\n" ^
   "(param $closure " ^ (itype_to_watype It_pointer) ^ ")\n" ^
   "(param $arg " ^ poly_watype ^ ")\n" ^
   "(result " ^ poly_watype ^ ")\n" ^
-  (if arg_needs_unwrap then
-    "(local $arg_unwrap " ^ wa_arg_type ^ ")\n"
+  (if arg_needs_unbox then
+    "(local $arg_unbox " ^ wa_arg_type ^ ")\n"
   else "") ^
-  (if result_needs_wrap then
-    "(local $result_unwrap " ^ wa_result_type ^ ")\n" ^
-    "(local $result_wrap " ^ poly_watype ^ ")\n"
+  (if result_needs_box then
+    "(local $result_unbox " ^ wa_result_type ^ ")\n" ^
+    "(local $result_box " ^ poly_watype ^ ")\n"
   else "") ^
   (
     let (_, itt) = List.unzip func.pf_cvars in
@@ -379,16 +379,16 @@ let codegen_ifunction_wrapper (func : ifunction) =
     in
     String.concat ~sep:"\n" load_cvar_codes
   ) ^ "\n" ^
-  (if arg_needs_unwrap then
-    (codegen_unwrap iarg (Local, "$arg") (Local, "$arg_unwrap")) ^ "\n" ^
-    "local.get $arg_unwrap\n"
+  (if arg_needs_unbox then
+    (codegen_unbox iarg (Local, "$arg") (Local, "$arg_unbox")) ^ "\n" ^
+    "local.get $arg_unbox\n"
   else
     "local.get $arg\n") ^
   "call " ^ func.pf_name ^ "\n" ^
-  (if result_needs_wrap then
-    "local.set $result_unwrap\n" ^
-    (codegen_wrap iret (Local, "$result_unwrap") (Local, "$result_wrap")) ^ "\n" ^
-    "local.get $result_wrap\n"
+  (if result_needs_box then
+    "local.set $result_unbox\n" ^
+    (codegen_box iret (Local, "$result_unbox") (Local, "$result_box")) ^ "\n" ^
+    "local.get $result_box\n"
   else "") ^
   ")"
 
