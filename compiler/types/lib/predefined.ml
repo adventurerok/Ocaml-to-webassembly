@@ -39,6 +39,7 @@ let ident_map = Map.Poly.of_alist_exn
     ("*.", f_fff);
     ("/.", f_fff);
     ("~-.", f_ff);
+    ("not", f_bb);
     ("ref", Forall(Set.Poly.singleton "a", T_func(T_var("a"), ref_a)));
     (":=", Forall(Set.Poly.singleton "a", T_func(ref_a, T_func(T_var("a"), v_unit))));
     ("!", Forall(Set.Poly.singleton "a", T_func(ref_a, T_var("a"))))

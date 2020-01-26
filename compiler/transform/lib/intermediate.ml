@@ -253,7 +253,12 @@ and transform_op context vars name args =
   let typ = ((List.hd_exn args).texp_type) in
   let ityp = stoitype typ in
   match name with
-  | "~-" -> (vars', [Iexp_pushconst(ityp, "0")] @ arg_code @ [Iexp_binop(ityp, Ibin_sub)])
+  | "~-" | "~-." ->
+      (match ityp with
+      | It_float ->
+          (vars', arg_code @ [Iexp_unop(ityp, Iun_neg)])
+      | _ ->
+          (vars', [Iexp_pushconst(ityp, "0")] @ arg_code @ [Iexp_binop(ityp, Ibin_sub)]))
   | "ref" ->
       let (vars2, wrap_code) = transform_wrap context vars' typ in
       let (vars3, data_var) = Vars.add_temp_var vars2 It_poly in
@@ -295,6 +300,8 @@ and transform_op context vars name args =
                  Iexp_update_wrap(It_poly, data_var, ref_var);
                  Iexp_pushconst(It_unit, "()")]
       )
+  | "not" ->
+      (vars', arg_code @ [Iexp_unop(ityp, Iun_eqz)])
   | _ ->
     let bop =
       (match name with

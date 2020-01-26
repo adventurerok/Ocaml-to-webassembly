@@ -1,0 +1,8 @@
+{
+  "globals": {
+    "v_true": true,
+    "v_false": false,
+    "vm_3": -3,
+    "vm_4_5": "-4.5f"
+  }
+}
