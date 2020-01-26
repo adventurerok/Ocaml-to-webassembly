@@ -55,6 +55,11 @@ let rec remove_apps name count =
     remove_apps (String.chop_suffix_exn name ~suffix:"-app") (count + 1)
   else (name, count)
 
+type state = {
+  mutable fnames : func_names;
+  mutable funcs : func_data list
+}
+
 (* Gives export names to the functions to export *)
 (* Current criteria: named functions with all their arguments (most -apps on the end), with no cvars *)
 let select_export_functions fnames funcs =
@@ -72,62 +77,52 @@ let select_export_functions fnames funcs =
     else
       func)
 
-(* TODO inconsistent naming with intermediate's transform_list which also concats the results *)
-let transform_list ~f:map fnames locals lst =
-  let (fnames', funcs_rev, result_rev) = List.fold lst ~init:(fnames, [], []) ~f:(fun (fn, f_lst, out_lst) item ->
-    let (fn', item_funcs, item_ast) = map fn locals item in
-    (fn', item_funcs :: f_lst, item_ast :: out_lst))
-  in
-  let funcs = List.concat (List.rev funcs_rev) in
-  (fnames', funcs, List.rev result_rev)
-
-
 (* So on an expression, we'll need the modified expression, and the map of id to function *)
 (* Globals: Not in closure (global variables or arguments), Locals: In closure *)
 
-let rec func_transform_expr ?next_name:(next_name=None) (fnames: func_names) (locals: type_map) (expr: texpression) =
-  let (fnames', funcs, desc) =
+let rec func_transform_expr ?next_name:(next_name=None) (state: state) (locals: type_map) (expr: texpression) =
+  let desc =
     match expr.texp_desc with
-    | Texp_ident(x) -> (fnames, [], Texp_ident(x))
-    | Texp_constant(c) -> (fnames, [], Texp_constant(c))
-    | Texp_let (rf, tvb_list, e) -> func_transform_let fnames locals rf tvb_list e
-    | Texp_fun (p, e) -> func_transform_func next_name fnames locals expr.texp_type p e
+    | Texp_ident(x) -> Texp_ident(x)
+    | Texp_constant(c) -> Texp_constant(c)
+    | Texp_let (rf, tvb_list, e) -> func_transform_let state locals rf tvb_list e
+    | Texp_fun (p, e) -> func_transform_func next_name state locals expr.texp_type p e
     | Texp_apply (a, blist) ->
-        let (fnames1, ft_a, a') = func_transform_expr fnames locals a in
-        let (fnames2, ft_b, blist') = transform_list ~f:func_transform_expr fnames1 locals blist in
-        (fnames2, ft_a @ ft_b, Texp_apply(a', blist'))
-    | Texp_match (e, cases) -> func_transform_match fnames locals e cases
+        let a' = func_transform_expr state locals a in
+        let blist' = List.map blist ~f:(func_transform_expr state locals) in
+        (Texp_apply(a', blist'))
+    | Texp_match (e, cases) -> func_transform_match state locals e cases
     | Texp_tuple(ls) ->
-        let (fnames1, fcs, ls') = transform_list fnames locals ls ~f:func_transform_expr in
-        (fnames1, fcs, Texp_tuple(ls'))
+        let ls' = List.map ls ~f:(func_transform_expr state locals) in
+        (Texp_tuple(ls'))
     | Texp_construct (name, ls) ->
-        let (fnames1, fcs, ls') = transform_list fnames locals ls ~f:func_transform_expr in
-        (fnames1, fcs, Texp_construct(name, ls'))
+        let ls' = List.map ls ~f:(func_transform_expr state locals) in
+        (Texp_construct(name, ls'))
     | Texp_ifthenelse (i, t, e_opt) ->
-        let (fnames1, ifuncs, i') = func_transform_expr fnames locals i in
-        let (fnames2, tfuncs, t') = func_transform_expr fnames1 locals t in
+        let i' = func_transform_expr state locals i in
+        let t' = func_transform_expr state locals t in
         (match e_opt with
         | Some(e) ->
-            let (fnames3, efuncs, e') = func_transform_expr fnames2 locals e in
-            (fnames3, ifuncs @ tfuncs @ efuncs, Texp_ifthenelse(i', t', Some(e')))
+            let e' = func_transform_expr state locals e in
+            (Texp_ifthenelse(i', t', Some(e')))
         | None ->
-            (fnames2, ifuncs @ tfuncs, Texp_ifthenelse(i', t', None)))
+            (Texp_ifthenelse(i', t', None)))
     | Texp_while(cond, inner) ->
-        let (fnames1, cfuncs, cond') = func_transform_expr fnames locals cond in
-        let (fnames2, ifuncs, inner') = func_transform_expr fnames1 locals inner in
-        (fnames2, cfuncs @ ifuncs, Texp_while(cond', inner'))
+        let cond' = func_transform_expr state locals cond in
+        let inner' = func_transform_expr state locals inner in
+        (Texp_while(cond', inner'))
     | Texp_for(var_opt, min, max, dir, inner) ->
-        let (fnames1, min_funcs, min') = func_transform_expr fnames locals min in
-        let (fnames2, max_funcs, max') = func_transform_expr fnames1 locals max in
-        let (fnames3, inner_funcs, inner') = func_transform_expr fnames2 locals inner in
-        (fnames3, min_funcs @ max_funcs @ inner_funcs, Texp_for(var_opt, min', max', dir, inner'))
+        let min' = func_transform_expr state locals min in
+        let max' = func_transform_expr state locals max in
+        let inner' = func_transform_expr state locals inner in
+        (Texp_for(var_opt, min', max', dir, inner'))
     | Texp_sequence(a, b) ->
-        let (fnames1, afuncs, a') = func_transform_expr fnames locals a in
-        let (fnames2, bfuncs, b') = func_transform_expr fnames1 locals b in
-        (fnames2, afuncs @ bfuncs, Texp_sequence(a', b'))
-  in (fnames', funcs, {expr with texp_desc = desc})
+        let a' = func_transform_expr state locals a in
+        let b' = func_transform_expr state locals b in
+        (Texp_sequence(a', b'))
+  in {expr with texp_desc = desc}
 
-and func_transform_value_bindings fnames locals rf tvb_list =
+and func_transform_value_bindings state locals rf tvb_list =
   let vars = List.concat (List.map tvb_list ~f:(fun tvb -> tvb.tvb_pat.tpat_vars)) in
   let locals' = List.fold ~init:locals ~f:(fun a (v, t) -> Map.Poly.set a ~key:v ~data:t) vars in
   let inner_locals =
@@ -135,31 +130,32 @@ and func_transform_value_bindings fnames locals rf tvb_list =
     | Asttypes.Nonrecursive -> locals
     | Asttypes.Recursive -> locals')
   in
-  let (fnames1, tvb_funcs, tvb_list') = transform_list fnames inner_locals tvb_list ~f:(fun fn _ tvb ->
+  let tvb_list' = List.map tvb_list ~f:(fun tvb ->
     let next_name =
       match tvb.tvb_pat.tpat_desc with
       | Tpat_var(name) -> Some(name)
       | _ -> None
     in
-    let (fn1, fcs, e') = func_transform_expr ~next_name:next_name fn inner_locals tvb.tvb_expr in
-    (fn1, fcs, {tvb with tvb_expr = e'}))
+    let e' = func_transform_expr ~next_name:next_name state inner_locals tvb.tvb_expr in
+    {tvb with tvb_expr = e'})
   in
-  (fnames1, tvb_funcs, locals', tvb_list')
+  (locals', tvb_list')
 
-and func_transform_let fnames locals rf tvb_list e =
-  let (fnames1, tvb_funcs, locals', tvb_list') = func_transform_value_bindings fnames locals rf tvb_list in
-  let (fnames2, e_funcs, e') = func_transform_expr fnames1 locals' e in
-  (fnames2, e_funcs @ tvb_funcs, Texp_let(rf, tvb_list', e'))
+and func_transform_let state locals rf tvb_list e =
+  let (locals', tvb_list') = func_transform_value_bindings state locals rf tvb_list in
+  let e' = func_transform_expr state locals' e in
+  (Texp_let(rf, tvb_list', e'))
 
-and func_transform_func next_name fnames locals typ pat expr =
+and func_transform_func next_name state locals typ pat expr =
   let (fnames1, fname, app_name) =
     match next_name with
-    | Some(name) -> add_named_func fnames name
-    | None -> add_anon_func fnames
+    | Some(name) -> add_named_func state.fnames name
+    | None -> add_anon_func state.fnames
   in
+  let () = state.fnames <- fnames1 in
   let locals' = List.fold ~init:locals ~f:(fun a (t, v) -> Map.Poly.set a ~key:t ~data:v) pat.tpat_vars in
   let next_name' = Some(app_name) in
-  let (fnames2, funcs, expr_trans) = func_transform_expr ~next_name:next_name' fnames1 locals' expr in
+  let expr_trans = func_transform_expr ~next_name:next_name' state locals' expr in
   let vars_used = texpression_free_vars expr in
   let closure_vars = Map.Poly.filter_keys vars_used ~f:(Map.Poly.mem locals) in
   let closure_list = Map.to_alist closure_vars in
@@ -191,29 +187,31 @@ and func_transform_func next_name fnames locals typ pat expr =
     texp_type = T_func(T_tuple(cvar_types), typ);
     texp_loc = Location.none
   }
-  in (fnames2, fdata :: funcs, Texp_apply(fident, [tuple]))
+  in
+  let () = state.funcs <- fdata :: state.funcs in
+  (Texp_apply(fident, [tuple]))
 
-and func_transform_structure_item fnames (si: tstructure_item) =
-  let (fnames', funcs, desc) =
+and func_transform_structure_item state (si: tstructure_item) =
+  let desc =
     match si.tstr_desc with
     | Tstr_eval(e) ->
-        let (fnames1, funcs, e') = func_transform_expr fnames Map.Poly.empty e in
-        (fnames1, funcs, Tstr_eval(e'))
+        let e' = func_transform_expr state Map.Poly.empty e in
+        (Tstr_eval(e'))
     | Tstr_value (rf, tvb_list) ->
-        let (fnames1, funcs, _, tvb_list') = func_transform_value_bindings fnames Map.Poly.empty rf tvb_list in
-        (fnames1, funcs, Tstr_value(rf, tvb_list'))
-    | Tstr_type -> (fnames, [], si.tstr_desc)
-  in (fnames', funcs, {si with tstr_desc = desc})
+        let (_, tvb_list') = func_transform_value_bindings state Map.Poly.empty rf tvb_list in
+        (Tstr_value(rf, tvb_list'))
+    | Tstr_type -> (si.tstr_desc)
+  in {si with tstr_desc = desc}
 
-and func_transform_match fnames locals e cases =
-  let (fnames1, efuncs, e') = func_transform_expr fnames locals e in
-  let (fnames2, funcs, cases') = transform_list fnames1 locals cases ~f:(fun fn _ case ->
+and func_transform_match state locals e cases =
+  let e' = func_transform_expr state locals e in
+  let cases' = List.map cases ~f:(fun case ->
     let locals' = List.fold ~init:locals ~f:(fun a (v, t) -> Map.Poly.set a ~key:v ~data:t) case.tc_lhs.tpat_vars in
-    let (fn', cfuncs, rhs') = func_transform_expr fn locals' case.tc_rhs in
-    (fn', cfuncs, {case with tc_rhs = rhs'})
+    let rhs' = func_transform_expr state locals' case.tc_rhs in
+    {case with tc_rhs = rhs'}
   )
   in
-  (fnames2, efuncs @ funcs, Texp_match(e', cases'))
+  (Texp_match(e', cases'))
 
 and func_transform_structure (struc: tstructure) =
   let fnames = {
@@ -221,10 +219,13 @@ and func_transform_structure (struc: tstructure) =
     names = Set.Poly.empty
   }
   in
-  let (fnames', funcs, si_list) = transform_list fnames 0 struc ~f:(fun fn _ item ->
-    func_transform_structure_item fn item)
+  let state = {
+    fnames = fnames;
+    funcs = []
+  }
   in
-  let funcs' = select_export_functions fnames' funcs in
+  let si_list = List.map struc ~f:(func_transform_structure_item state) in
+  let funcs' = select_export_functions state.fnames state.funcs in
   (funcs', si_list)
 
 
