@@ -94,6 +94,16 @@ let ibinop_to_string (ib : ibinop) =
   | Ibin_gt -> "gt"
   | Ibin_ge -> "ge"
 
+type iunop =
+  Iun_neg
+| Iun_eqz
+[@@deriving sexp_of, equal]
+
+let iunop_to_string (iu : iunop) =
+  match iu with
+  | Iun_neg -> "neg"
+  | Iun_eqz -> "eqz"
+
 type iscope =
 | Local
 | Global
@@ -118,6 +128,10 @@ type iexpression =
 (* Push var's value to the stack *)
 (* type of variable, name of variable *)
 | Iexp_pushvar of itype * ivariable
+(* Unary operation using one stack value *)
+(* type of operand, unary operation *)
+(* TODO make it take the result type as an argument as well *)
+| Iexp_unop of itype * iunop
 (* Binary operation using two stack values *)
 (* type of operands, binary operation *)
 | Iexp_binop of itype * ibinop
@@ -145,6 +159,9 @@ type iexpression =
 (* If then else *)
 (* name of block, result type (on stack top), if case code, optional else code *)
 | Iexp_ifthenelse of string * itype * iexpression list * iexpression list option
+(* Loop, loops until an exitblock or exitblockif *)
+(* Name of escape block (to break to), name of loop block (to continue to), code of block *)
+| Iexp_loop of string * string * iexpression list
 (* Create a tuple from the given code, push pointer to stack and put it in that variable *)
 (* type of tuple, name of variable, code to generate each part of tuple *)
 | Iexp_pushtuple of ituptype * ivariable * (iexpression list) list
@@ -181,6 +198,7 @@ let rec iexpression_to_string (iexp : iexpression) =
   match iexp with
   | Iexp_newvar (t, name) -> "newvar " ^ (itype_to_string t) ^ " " ^ (ivariable_to_string name)
   | Iexp_pushvar (t, name) -> "pushvar " ^ (itype_to_string t) ^ " " ^ (ivariable_to_string name)
+  | Iexp_unop (t, op) -> "unop " ^ (itype_to_string t) ^ " " ^ (iunop_to_string op)
   | Iexp_binop (t, op) -> "binop " ^ (itype_to_string t) ^ " " ^ (ibinop_to_string op)
   | Iexp_pushconst (t, v) -> "pushconst " ^ (itype_to_string t) ^ " " ^ v
   | Iexp_newclosure (ift, name, itt, var_name) ->
@@ -202,6 +220,10 @@ let rec iexpression_to_string (iexp : iexpression) =
   | Iexp_ifthenelse (name, t, ifl, ell) -> "ifthenelse " ^ name ^ " " ^ (itype_to_string t) ^ " if{\n" ^
       (String.concat ~sep:"\n" (List.map ifl ~f:iexpression_to_string)) ^ "\n}" ^
       Option.value (Option.map ell ~f:(fun ell_list -> " else {\n" ^ (String.concat ~sep:"\n" (List.map ell_list ~f:iexpression_to_string)) ^ "\n}")) ~default:""
+  | Iexp_loop(break, continue, ls) ->
+      "loop " ^ break ^ " " ^ continue ^ " {\n" ^
+      (String.concat ~sep:"\n" (List.map ls ~f:iexpression_to_string)) ^
+      "\n}"
   | Iexp_pushtuple(itt, name, codes) ->
       "pushtuple " ^ (ituptype_to_string itt) ^ " " ^ (ivariable_to_string name) ^ " " ^
       tuple_codes_to_string codes

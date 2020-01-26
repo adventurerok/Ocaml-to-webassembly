@@ -99,6 +99,7 @@ and codegen_iexpr (wrap_table : string_int_map) (expr : iexpression) =
   match expr with
   | Iexp_newvar (_, (scope, name)) -> (iscope_to_string scope) ^ ".set " ^ name
   | Iexp_pushvar (_, (scope, name)) -> (iscope_to_string scope) ^ ".get " ^ name
+  | Iexp_unop (ityp, unop) -> codegen_unop ityp unop
   | Iexp_binop (ityp, binop) -> codegen_binop ityp binop
   | Iexp_pushconst (ityp, str_rep) -> codegen_const ityp str_rep
   | Iexp_newclosure (ift, func_name, itt, var) -> codegen_newclosure wrap_table ift func_name itt var
@@ -108,6 +109,7 @@ and codegen_iexpr (wrap_table : string_int_map) (expr : iexpression) =
   | Iexp_exitblock(name) -> "br " ^ name
   | Iexp_exitblockif(name) -> "br_if " ^ name
   | Iexp_ifthenelse (name, ityp, tcode, ecode_opt) -> codegen_ifthenelse wrap_table name ityp tcode ecode_opt
+  | Iexp_loop(break, continue, lst) -> codegen_loop wrap_table break continue lst
   | Iexp_pushtuple(itt, name, tuple_codelst) -> codegen_pushtuple wrap_table itt name tuple_codelst
   | Iexp_loadtupleindex (itt, index) -> codegen_tupleindex ~wrapped:true itt index 0
   | Iexp_pushconstruct (itt, name, id, tuple_codelst) ->
@@ -119,6 +121,16 @@ and codegen_iexpr (wrap_table : string_int_map) (expr : iexpression) =
   | Iexp_unwrap(ityp, wrap, unwrap) -> codegen_unwrap ityp wrap unwrap
   | Iexp_fail -> "unreachable"
   | Iexp_drop _ -> "drop"
+
+and codegen_unop ityp unop =
+  let watyp = itype_to_watype ityp in
+  (* TODO neg isn't allowed on integers *)
+  let opname =
+    match unop with
+    | Iun_eqz -> "eqz"
+    | Iun_neg -> "neg"
+  in
+  watyp ^ "." ^ opname
 
 and codegen_binop ityp binop =
   let signed_ext =
@@ -199,6 +211,15 @@ and codegen_ifthenelse wrap_table name ityp tcode ecode_opt =
       "else\n" ^ wa_ecode ^ "\n"
   | None -> "") ^
   "end"
+
+and codegen_loop wrap_table break continue code_lst =
+  let wa_lst = codegen_iexpr_list wrap_table code_lst in
+  "block " ^ break ^ "\n" ^
+  "loop " ^ continue ^ "\n" ^
+  wa_lst ^ "\n" ^
+  "br " ^ continue ^ "\n" ^
+  "end " ^ continue ^ "\n" ^
+  "end " ^ break
 
 and codegen_pushtuple wrap_table itt (scope_enum, name) tuple_codelst =
   let tup_size = ituptype_size itt in

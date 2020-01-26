@@ -27,6 +27,8 @@ and texpression_desc =
 | Texp_tuple of texpression list
 | Texp_construct of string * texpression list
 | Texp_ifthenelse of texpression * texpression * texpression option
+| Texp_while of texpression * texpression
+| Texp_sequence of texpression * texpression
 (* No need for Texp_constraint *)
 
 and tvalue_binding = {
@@ -92,7 +94,13 @@ and texpression_to_string (texpr : texpression) =
   | Texp_ifthenelse (i, t, e_opt) ->
       "if " ^ (texpression_to_string i) ^
       " then " ^ (texpression_to_string t) ^
-      (Option.value_map e_opt ~default:"" ~f:(fun e -> " else " ^ (texpression_to_string e))))
+      (Option.value_map e_opt ~default:"" ~f:(fun e -> " else " ^ (texpression_to_string e)))
+  | Texp_while(cond, inner) ->
+      "while " ^ (texpression_to_string cond) ^ " do " ^
+      (texpression_to_string inner) ^ " done"
+  | Texp_sequence(a, b) ->
+      (texpression_to_string a) ^ "; " ^ (texpression_to_string b)
+  )
   ^ " : " ^ (string_of_scheme_type texpr.texp_type) ^ ")"
 
 and tvalue_bindings_to_string rf vbl =
@@ -147,6 +155,14 @@ let rec texpression_map_types sf stf texp =
         let texp' = texpression_map_types sf stf texp in
         let eexp_opt' = Option.map eexp_opt ~f:(texpression_map_types sf stf) in
         Texp_ifthenelse(iexp', texp', eexp_opt')
+    | Texp_while(cond, inner) ->
+        let cond' = texpression_map_types sf stf cond in
+        let inner' = texpression_map_types sf stf inner in
+        Texp_while(cond', inner')
+    | Texp_sequence(a, b) ->
+        let a' = texpression_map_types sf stf a in
+        let b' = texpression_map_types sf stf b in
+        Texp_sequence(a', b')
     | d -> d
   in {
     texp with
@@ -241,3 +257,7 @@ let rec texpression_free_vars (exp : texpression) =
       (match e_opt with
       | Some(e) -> merge_maps it_map (texpression_free_vars e)
       | None -> it_map)
+  | Texp_while(cond, inner) ->
+      merge_maps (texpression_free_vars cond) (texpression_free_vars inner)
+  | Texp_sequence(a, b) ->
+      merge_maps (texpression_free_vars a) (texpression_free_vars b)

@@ -114,6 +114,11 @@ let rec infer_expr (ctx : Context.context) (expr : expression) : (uni_pair list 
         let (ccs, ast) = infer_expr ctx expr in
         ((Uni(ast.texp_type, st)) :: ccs, ast.texp_type, ast.texp_desc)
     | Pexp_match(expr, cases) -> infer_match ctx expr cases
+    | Pexp_while(condition, inner) -> infer_while ctx condition inner
+    | Pexp_sequence(a, b) ->
+        let (acs, a_ast) = infer_expr ctx a in
+        let (bcs, b_ast) = infer_expr ctx b in
+        (acs @ bcs, b_ast.texp_type, Texp_sequence(a_ast, b_ast))
     | _ -> raise (TypeError "Unsupported expression")
   in (ccs, {
     texp_loc = expr.pexp_loc;
@@ -419,6 +424,10 @@ and infer_match ctx expr cases =
   let (ccs, tc_lst) = handle_cases cases restyp in
   (ecs @ ccs, restyp, Texp_match(e_ast, tc_lst))
 
+and infer_while ctx condition inner =
+  let (ccs, c_ast) = infer_expr ctx condition in
+  let (ics, i_ast) = infer_expr ctx inner in
+  ((Uni(c_ast.texp_type, v_bool)) :: (Uni(i_ast.texp_type, v_unit)) :: (ccs @ ics), v_unit, Texp_while(c_ast, i_ast))
 
 (* Infer the type and constraints, and then solve these to get just a type *)
 and type_expr (ctx : Context.context) (expr : expression) =

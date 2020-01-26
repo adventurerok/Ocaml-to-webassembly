@@ -61,6 +61,10 @@ let rec transform_expr (context: Context.context) (vars: Vars.vars) (expr: texpr
           (vars4, icode @ [Iexp_ifthenelse(block_name, ityp, tcode, Some(ecode))])
       | None ->
           (vars3, icode @ [Iexp_ifthenelse(block_name, ityp, tcode, None)]))
+  | Texp_while(cond, inner) ->
+      transform_while context vars cond inner
+  | Texp_sequence(a, b) ->
+      transform_sequence context vars a b
 
 
 and transform_value_bindings context vars rf tvb_list =
@@ -399,6 +403,26 @@ and transform_construct context vars name ls =
   let (vars1, var_name) = Vars.add_temp_var vars It_pointer in
   let (vars2, tuple_codelst) = map_list ~f:(transform_expr_wrap ~wrap:true) context vars1 ls in
   (vars2, [Iexp_pushconstruct(ituptype, var_name, constr.index, tuple_codelst)])
+
+
+and transform_while context vars cond inner =
+  let (vars1, cond_code) = transform_expr context vars cond in
+  let (vars2, inner_code) = transform_expr context vars1 inner in
+  let (vars3, break_block) = Vars.add_block vars2 in
+  let (vars4, continue_block) = Vars.add_block vars3 in
+  let loop_inside =
+    cond_code
+    @ [Iexp_unop(It_bool, Iun_eqz);
+       Iexp_exitblockif(break_block)]
+    @ inner_code
+    @ [Iexp_drop(It_unit)]
+  in
+  (vars4, [Iexp_loop(break_block, continue_block, loop_inside); Iexp_pushconst(It_unit, "()")])
+
+and transform_sequence context vars a b =
+  let (vars1, a_code) = transform_expr context vars a in
+  let (vars2, b_code) = transform_expr context vars1 b in
+  (vars2, a_code @ [Iexp_drop(stoitype a.texp_type)] @ b_code)
 
 let transform_structure_item context vars (si : tstructure_item) =
   match si.tstr_desc with

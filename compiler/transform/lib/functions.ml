@@ -110,6 +110,14 @@ let rec func_transform_expr ?next_name:(next_name=None) (fnames: func_names) (lo
             (fnames3, ifuncs @ tfuncs @ efuncs, Texp_ifthenelse(i', t', Some(e')))
         | None ->
             (fnames2, ifuncs @ tfuncs, Texp_ifthenelse(i', t', None)))
+    | Texp_while(cond, inner) ->
+        let (fnames1, cfuncs, cond') = func_transform_expr fnames locals cond in
+        let (fnames2, ifuncs, inner') = func_transform_expr fnames1 locals inner in
+        (fnames2, cfuncs @ ifuncs, Texp_while(cond', inner'))
+    | Texp_sequence(a, b) ->
+        let (fnames1, afuncs, a') = func_transform_expr fnames locals a in
+        let (fnames2, bfuncs, b') = func_transform_expr fnames1 locals b in
+        (fnames2, afuncs @ bfuncs, Texp_sequence(a', b'))
   in (fnames', funcs, {expr with texp_desc = desc})
 
 and func_transform_value_bindings fnames locals rf tvb_list =
