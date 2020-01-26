@@ -341,16 +341,27 @@ and infer_ctx_construct ctx name expr_opt =
   | Some(constr) ->
       let variant = Option.value_exn (Context.find_type ctx constr.type_name) in
       let subs = subs_to_fresh variant.args in
-      let constr_type = T_constr(variant.name, List.map variant.args ~f:(fun tv -> T_var(tv))) in
+      let constr_typ = T_constr(variant.name, List.map variant.args ~f:(fun tv -> T_var(tv))) in
       (match (expr_opt, List.is_empty constr.args) with
-      | (None, true) -> ([], substitute_list subs constr_type, Texp_construct(name, None))
+      | (None, true) -> ([], substitute_list subs constr_typ, Texp_construct(name, []))
       | (Some(expr), false) ->
           let (ccs, actual_ast) = infer_expr ctx expr in
-          let actual_type = actual_ast.texp_type in
-          let expected_type = substitute_list subs (list_to_single_or_tuple constr.args) in
-          let ccs' = (Uni(expected_type, actual_type)) :: ccs in
-          let subs_type = substitute_list subs constr_type in
-          (ccs', subs_type, Texp_construct(name, Some(actual_ast)))
+          let expected_typ = substitute_list subs (T_tuple(constr.args)) in
+          (* Our typed ast is actually different from the OCaml one for constructs *)
+          (* Theirs uses an optional tuple or other expression, while ours uses a list *)
+          if (List.length constr.args) = 1 then
+            let actual_typ = T_tuple([actual_ast.texp_type]) in
+            let ccs' = (Uni(expected_typ, actual_typ)) :: ccs in
+            let subs_typ = substitute_list subs constr_typ in
+            (ccs', subs_typ, Texp_construct(name, [actual_ast]))
+          else
+            let actual_typ = actual_ast.texp_type in
+            let ccs' = (Uni(expected_typ, actual_typ)) :: ccs in
+            let subs_typ = substitute_list subs constr_typ in
+            (match actual_ast.texp_desc with
+            | Texp_tuple(ls) ->
+                (ccs', subs_typ, Texp_construct(name, ls))
+            | _ -> raise (TypeError ("Expecting a tuple for constructor aruments " ^ name)))
       | (_, true) -> raise (TypeError ("No arguments expected for constructor " ^ name))
       | (_, false) -> raise (TypeError ("Arguments expected for constructor " ^ name)))
   | _ -> raise (TypeError ("Unknown constructor " ^ name))
@@ -362,17 +373,30 @@ and infer_pattern_ctx_construct ctx name pat_opt =
   | Some(constr) ->
       let variant = Option.value_exn (Context.find_type ctx constr.type_name) in
       let subs = subs_to_fresh variant.args in
-      let constr_type = T_constr(variant.name, List.map variant.args ~f:(fun tv -> T_var(tv))) in
+      let constr_typ = T_constr(variant.name, List.map variant.args ~f:(fun tv -> T_var(tv))) in
       (match (pat_opt, List.is_empty constr.args) with
-      | (None, true) -> (substitute_list subs constr_type, [], Tpat_construct(name, None))
+      | (None, true) -> (substitute_list subs constr_typ, [], Tpat_construct(name, []))
       | (Some(pat), false) ->
           let p_ast = infer_pattern ctx pat in
-          let actual_type = p_ast.tpat_type in
+          let expected_typ = substitute_list subs (T_tuple(constr.args)) in
           let vars = p_ast.tpat_vars in
-          let expected_type = substitute_list subs (list_to_single_or_tuple constr.args) in
-          let subs' = unify expected_type actual_type in
-          let vars' = List.map vars ~f:(fun (v,t) -> (v, substitute_list subs' t)) in
-          (substitute_list subs' constr_type, vars', Tpat_construct(name, Some(tpattern_substitute subs' p_ast)))
+          if (List.length constr.args) = 1 then
+            let actual_typ = T_tuple([p_ast.tpat_type]) in
+            let subs' = unify expected_typ actual_typ in
+            let vars' = List.map vars ~f:(fun (v,t) -> (v, substitute_list subs' t)) in
+            let subs_typ = substitute_list subs' constr_typ in
+            let subs_ast_lst = [tpattern_substitute subs' p_ast] in
+            (subs_typ, vars', Tpat_construct(name, subs_ast_lst))
+          else
+            let actual_typ = p_ast.tpat_type in
+            let subs' = unify expected_typ actual_typ in
+            let vars' = List.map vars ~f:(fun (v,t) -> (v, substitute_list subs' t)) in
+            let subs_typ = substitute_list subs' constr_typ in
+            (match p_ast.tpat_desc with
+            | Tpat_tuple(ls) ->
+                let subs_ast_lst = List.map ls ~f:(tpattern_substitute subs') in
+                (subs_typ, vars', Tpat_construct(name, subs_ast_lst))
+            | _ -> raise (TypeError ("Expecting a tuple for constructor arguments " ^ name)))
       | (_, true) -> raise (TypeError ("No arguments expected for constructor " ^ name))
       | (_, false) -> raise (TypeError ("Arguments expected for constructor " ^ name)))
   | _ -> raise (TypeError ("Unknown constructor " ^ name))

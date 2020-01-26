@@ -25,7 +25,7 @@ and texpression_desc =
 | Texp_apply of texpression * texpression list
 | Texp_match of texpression * tcase list
 | Texp_tuple of texpression list
-| Texp_construct of string * texpression option
+| Texp_construct of string * texpression list
 | Texp_ifthenelse of texpression * texpression * texpression option
 (* No need for Texp_constraint *)
 
@@ -52,7 +52,7 @@ and tpattern_desc =
 | Tpat_var of string
 | Tpat_constant of string
 | Tpat_tuple of tpattern list
-| Tpat_construct of string * tpattern option
+| Tpat_construct of string * tpattern list
 
 and tstructure = tstructure_item list
 
@@ -87,7 +87,8 @@ and texpression_to_string (texpr : texpression) =
   | Texp_apply (a, b) -> String.concat ~sep:" " (List.map (a :: b) ~f:texpression_to_string)
   | Texp_match (e, m) -> "match " ^ (texpression_to_string e) ^ " with " ^ (tcases_to_string m)
   | Texp_tuple (ls) -> "(" ^ (String.concat ~sep:", " (List.map ls ~f:texpression_to_string)) ^ ")"
-  | Texp_construct (name, expropt) -> name ^ (Option.value_map expropt ~default:"" ~f:texpression_to_string)
+  | Texp_construct (name, ls) ->
+      name ^ "(" ^ (String.concat ~sep:", " (List.map ls ~f:texpression_to_string)) ^ ")"
   | Texp_ifthenelse (i, t, e_opt) ->
       "if " ^ (texpression_to_string i) ^
       " then " ^ (texpression_to_string t) ^
@@ -108,8 +109,9 @@ and tpattern_to_string pat =
   | Tpat_var(str) -> str
   | Tpat_constant(const) -> const
   | Tpat_tuple(ls) -> "(" ^ (String.concat ~sep:", " (List.map ls ~f:tpattern_to_string)) ^ ")"
-  | Tpat_construct(name, patopt) -> name ^ (Option.value_map patopt ~default:"" ~f:tpattern_to_string))
-  ^ " : " ^ (string_of_scheme_type pat.tpat_type) ^ ")"
+  | Tpat_construct(name, ls) ->
+      name ^ "(" ^ (String.concat ~sep:", " (List.map ls ~f:tpattern_to_string)) ^ ")" ^
+      " : " ^ (string_of_scheme_type pat.tpat_type) ^ ")")
 
 and tcases_to_string cases =
   String.concat ~sep:" | " (List.map cases ~f:tcase_to_string)
@@ -138,9 +140,8 @@ let rec texpression_map_types sf stf texp =
         let c_lst' = tcases_map_types sf stf c_lst in
         Texp_match(mexp', c_lst')
     | Texp_tuple (ls) -> Texp_tuple(List.map ls ~f:(texpression_map_types sf stf))
-    | Texp_construct (name, exp_opt) ->
-        let exp_opt' = Option.map exp_opt ~f:(texpression_map_types sf stf) in
-        Texp_construct(name, exp_opt')
+    | Texp_construct (name, ls) ->
+        Texp_construct(name, List.map ls ~f:(texpression_map_types sf stf))
     | Texp_ifthenelse (iexp, texp, eexp_opt) ->
         let iexp' = texpression_map_types sf stf iexp in
         let texp' = texpression_map_types sf stf texp in
@@ -157,9 +158,8 @@ and tpattern_map_types sf stf tpat =
   let desc =
     match tpat.tpat_desc with
     | Tpat_tuple (ls) -> Tpat_tuple(List.map ls ~f:(tpattern_map_types sf stf))
-    | Tpat_construct (name, pat_opt) ->
-        let pat_opt' = Option.map pat_opt ~f:(tpattern_map_types sf stf) in
-        Tpat_construct(name, pat_opt')
+    | Tpat_construct (name, ls) ->
+        Tpat_construct(name, List.map ls ~f:(tpattern_map_types sf stf))
     | d -> d
   in {
     tpat with
@@ -234,10 +234,8 @@ let rec texpression_free_vars (exp : texpression) =
         List.fold ~init:cexp_vars ~f:(fun a (v, _) -> Map.Poly.remove a v) case.tc_lhs.tpat_vars)
       in merge_map_list (emap :: cmaps)
   | Texp_tuple(ls) -> merge_map_list (List.map ls ~f:texpression_free_vars)
-  | Texp_construct (_, expr_opt) ->
-      (match expr_opt with
-      | Some(e) -> texpression_free_vars e
-      | None -> Map.Poly.empty)
+  | Texp_construct (_, ls) ->
+      merge_map_list (List.map ls ~f:texpression_free_vars)
   | Texp_ifthenelse (i, t, e_opt) ->
       let it_map = merge_maps (texpression_free_vars i) (texpression_free_vars t) in
       (match e_opt with

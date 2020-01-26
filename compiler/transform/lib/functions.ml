@@ -98,12 +98,9 @@ let rec func_transform_expr ?next_name:(next_name=None) (fnames: func_names) (lo
     | Texp_tuple(ls) ->
         let (fnames1, fcs, ls') = transform_list fnames locals ls ~f:func_transform_expr in
         (fnames1, fcs, Texp_tuple(ls'))
-    | Texp_construct (name, e_opt) ->
-        (match e_opt with
-        | Some(e) ->
-            let (fnames1, funcs, e') = func_transform_expr fnames locals e in
-            (fnames1, funcs, Texp_construct(name, Some(e')))
-        | None -> (fnames, [], Texp_construct(name, None)))
+    | Texp_construct (name, ls) ->
+        let (fnames1, fcs, ls') = transform_list fnames locals ls ~f:func_transform_expr in
+        (fnames1, fcs, Texp_construct(name, ls'))
     | Texp_ifthenelse (i, t, e_opt) ->
         let (fnames1, ifuncs, i') = func_transform_expr fnames locals i in
         let (fnames2, tfuncs, t') = func_transform_expr fnames1 locals t in

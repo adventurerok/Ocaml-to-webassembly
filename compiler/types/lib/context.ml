@@ -98,8 +98,7 @@ let empty_with_lists =
   add_constr with_nil "::" [T_var("a"); T_constr("list", [T_var("a")])] "list"
 
 let empty_lists_refs =
-  let ref_type = add_type empty_with_lists "ref" ["a"] in
-  add_constr ref_type "ref" [T_var("a")] "ref"
+  add_type empty_with_lists "ref" ["a"]
 
 exception InvalidType of scheme_type * string
 

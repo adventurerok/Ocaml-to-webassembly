@@ -7,7 +7,7 @@ open Intermediate_program
 
 exception IntermediateFailure of string
 
-
+(* Transform and flatten a list *)
 let transform_listi (context : Context.context) ~f:mapi (vars : Vars.vars) lst =
   let (vars', code_list_rev) = List.foldi lst ~init:(vars, []) ~f:(fun pos (vrs, c_lst) item ->
     let (vrs', code) = mapi context vrs pos item in
@@ -15,6 +15,15 @@ let transform_listi (context : Context.context) ~f:mapi (vars : Vars.vars) lst =
   in
   let full_code = List.concat (List.rev code_list_rev) in
   (vars', full_code)
+
+(* Transform a list without flattening *)
+let map_list (context : Context.context) ~f:map (vars: Vars.vars) lst =
+  let (vars', code_list_rev) = List.fold lst ~init:(vars, []) ~f:(fun (vrs, c_lst) item ->
+    let (vrs', code) = map context vrs item in
+    (vrs', code :: c_lst))
+  in
+  let mapped_code = (List.rev code_list_rev) in
+  (vars', mapped_code)
 
 let transform_list context ~f:map vars lst =
   transform_listi context vars lst ~f:(fun ctx vrs _ item -> map ctx vrs item)
@@ -41,7 +50,7 @@ let rec transform_expr (context: Context.context) (vars: Vars.vars) (expr: texpr
       let (vars2, var_name) = Vars.add_temp_var vars1 It_pointer in
       let ituptype = tupletoitype expr.texp_type in
       (vars2, [Iexp_pushtuple(ituptype, var_name, tuple_codelst)])
-  | Texp_construct (name, expr_opt) -> transform_construct context vars name expr_opt
+  | Texp_construct (name, ls) -> transform_construct context vars name ls
   | Texp_ifthenelse (i, t, e_opt) ->
       let (vars1, block_name) = Vars.add_block vars in
       let (vars2, icode) = transform_expr context vars1 i in
@@ -122,7 +131,7 @@ and transform_pat ?check:(check = true)
         (vrs', (Iexp_pushvar(It_pointer, var_name) :: Iexp_loadtupleindex(ituptype, pos) :: pat_code)))
       in
       (vars2, Iexp_newvar(It_pointer, var_name) :: code)
-  | Tpat_construct (name, tpat_opt) ->
+  | Tpat_construct (name, plist) ->
       let (vars1, var_name) = Vars.add_temp_var vars It_pointer in
       let construct = Option.value_exn (Context.find_constr context name) in
       let check_code =
@@ -135,19 +144,10 @@ and transform_pat ?check:(check = true)
         else []
       in
       let (vars2, destruct_code) =
-        (match(tpat_opt) with
-        | Some(tpat) ->
-            let plist =
-              if (List.length construct.args > 1) then
-                pat_tuple_list tpat
-              else
-                [tpat]
-            in
-            let ituptype = List.map plist ~f:(fun p -> stoitype p.tpat_type) in
-            transform_listi context vars1 plist ~f:(fun _ vrs pos cpat ->
-              let (vrs', pat_code) = transform_pat ~check:check ~escape:escape ~wrapped:true context vrs cpat in
-              (vrs', (Iexp_pushvar(It_pointer, var_name) :: Iexp_loadconstructindex(ituptype, pos) :: pat_code)))
-        | None -> (vars1, []))
+        let ituptype = List.map plist ~f:(fun p -> stoitype p.tpat_type) in
+        transform_listi context vars1 plist ~f:(fun _ vrs pos cpat ->
+          let (vrs', pat_code) = transform_pat ~check:check ~escape:escape ~wrapped:true context vrs cpat in
+          (vrs', (Iexp_pushvar(It_pointer, var_name) :: Iexp_loadconstructindex(ituptype, pos) :: pat_code)))
       in
       (vars2, Iexp_newvar(It_pointer, var_name) :: (check_code @ destruct_code))
 
@@ -393,22 +393,12 @@ and transform_apply_closure context vars typ var_name args =
   let (vars', loop_code) = loop typ vars args in
   (vars', (Iexp_pushvar(It_pointer, var_name)) :: loop_code)
 
-and transform_construct context vars name expr_opt =
+and transform_construct context vars name ls =
   let constr = Option.value_exn (Context.find_constr context name) in
   let ituptype = List.map constr.args ~f:stoitype in
   let (vars1, var_name) = Vars.add_temp_var vars It_pointer in
-  match expr_opt with
-  | Some(expr) ->
-      (* We need to watch out for if there is one argument only, but it is a tuple *)
-      if ((List.length ituptype) > 1) then
-        let (vars2, tuple_codelst) = transform_tupleargs ~poly_wrap:true context vars1 expr in
-        (vars2, [Iexp_pushconstruct(ituptype, var_name, constr.index, tuple_codelst)])
-      else
-        let (vars2, expr_code) = transform_expr_wrap ~wrap:true context vars1 expr in
-        (vars2, [Iexp_pushconstruct(ituptype, var_name, constr.index, [expr_code])])
-  | None ->
-      (vars1, [Iexp_pushconstruct(ituptype, var_name, constr.index, [])])
-
+  let (vars2, tuple_codelst) = map_list ~f:(transform_expr_wrap ~wrap:true) context vars1 ls in
+  (vars2, [Iexp_pushconstruct(ituptype, var_name, constr.index, tuple_codelst)])
 
 let transform_structure_item context vars (si : tstructure_item) =
   match si.tstr_desc with
