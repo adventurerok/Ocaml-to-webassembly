@@ -69,12 +69,6 @@ let ct_to_st_with_check (ctx : Context.context) (ct: core_type) =
   let () = Context.check_type ctx st in
   st
 
-let list_to_single_or_tuple st_lst =
-  match st_lst with
-  | [] -> raise (TypeError "Expecting nonempty list of types")
-  | [single] -> single
-  | _ -> T_tuple(st_lst)
-
 let type_constant (const : constant) =
   match const with
   | Pconst_integer(str, _) -> (v_int, str)
