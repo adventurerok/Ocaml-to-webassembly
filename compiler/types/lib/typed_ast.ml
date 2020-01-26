@@ -28,6 +28,7 @@ and texpression_desc =
 | Texp_construct of string * texpression list
 | Texp_ifthenelse of texpression * texpression * texpression option
 | Texp_while of texpression * texpression
+| Texp_for of string option * texpression * texpression * Asttypes.direction_flag * texpression
 | Texp_sequence of texpression * texpression
 (* No need for Texp_constraint *)
 
@@ -98,6 +99,16 @@ and texpression_to_string (texpr : texpression) =
   | Texp_while(cond, inner) ->
       "while " ^ (texpression_to_string cond) ^ " do " ^
       (texpression_to_string inner) ^ " done"
+  | Texp_for(name, min, max, dir, inner) ->
+      let name' = Option.value name ~default:"_" in
+      let dirword =
+        match dir with
+        | Asttypes.Upto -> "to"
+        | Asttypes.Downto -> "downto"
+      in
+      "for " ^ name' ^ " = " ^ (texpression_to_string min) ^ " " ^
+      dirword ^ " " ^ (texpression_to_string max) ^ " do " ^ (texpression_to_string inner) ^
+      " done"
   | Texp_sequence(a, b) ->
       (texpression_to_string a) ^ "; " ^ (texpression_to_string b)
   )
@@ -159,6 +170,11 @@ let rec texpression_map_types sf stf texp =
         let cond' = texpression_map_types sf stf cond in
         let inner' = texpression_map_types sf stf inner in
         Texp_while(cond', inner')
+    | Texp_for(name, min, max, dir, inner) ->
+        let min' = texpression_map_types sf stf min in
+        let max' = texpression_map_types sf stf max in
+        let inner' = texpression_map_types sf stf inner in
+        Texp_for(name, min', max', dir, inner')
     | Texp_sequence(a, b) ->
         let a' = texpression_map_types sf stf a in
         let b' = texpression_map_types sf stf b in
@@ -259,5 +275,11 @@ let rec texpression_free_vars (exp : texpression) =
       | None -> it_map)
   | Texp_while(cond, inner) ->
       merge_maps (texpression_free_vars cond) (texpression_free_vars inner)
+  | Texp_for(_, min, max, _, inner) ->
+      merge_map_list [
+        (texpression_free_vars min);
+        (texpression_free_vars max);
+        (texpression_free_vars inner)
+      ]
   | Texp_sequence(a, b) ->
       merge_maps (texpression_free_vars a) (texpression_free_vars b)

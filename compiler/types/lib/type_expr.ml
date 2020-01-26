@@ -115,6 +115,7 @@ let rec infer_expr (ctx : Context.context) (expr : expression) : (uni_pair list 
         ((Uni(ast.texp_type, st)) :: ccs, ast.texp_type, ast.texp_desc)
     | Pexp_match(expr, cases) -> infer_match ctx expr cases
     | Pexp_while(condition, inner) -> infer_while ctx condition inner
+    | Pexp_for(pat, min, max, dir, inner) -> infer_for ctx pat min max dir inner
     | Pexp_sequence(a, b) ->
         let (acs, a_ast) = infer_expr ctx a in
         let (bcs, b_ast) = infer_expr ctx b in
@@ -428,6 +429,24 @@ and infer_while ctx condition inner =
   let (ccs, c_ast) = infer_expr ctx condition in
   let (ics, i_ast) = infer_expr ctx inner in
   ((Uni(c_ast.texp_type, v_bool)) :: (Uni(i_ast.texp_type, v_unit)) :: (ccs @ ics), v_unit, Texp_while(c_ast, i_ast))
+
+and infer_for ctx pat min max dir inner =
+  let (inner_ctx, var_opt) =
+    match pat.ppat_desc with
+    | Ppat_any -> (ctx, None)
+    | Ppat_var(ident) ->
+        let varname = ident.txt in
+        let ctx' = Context.add_var ctx varname (Forall(Set.Poly.empty, v_int)) in
+        (ctx', Some(varname))
+    | _ -> raise (TypeError("For loop index must be variable or _"))
+  in
+  let (min_cs, min_ast) = infer_expr ctx min in
+  let (max_cs, max_ast) = infer_expr ctx max in
+  let (inner_cs, inner_ast) = infer_expr inner_ctx inner in
+  let for_cs = [(Uni(min_ast.texp_type, v_int));
+                (Uni(max_ast.texp_type, v_int));
+                (Uni(inner_ast.texp_type, v_unit))]
+  in (min_cs @ max_cs @ inner_cs @ for_cs, v_unit, Texp_for(var_opt, min_ast, max_ast, dir, inner_ast))
 
 (* Infer the type and constraints, and then solve these to get just a type *)
 and type_expr (ctx : Context.context) (expr : expression) =

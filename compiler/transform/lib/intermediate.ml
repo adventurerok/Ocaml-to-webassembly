@@ -63,6 +63,8 @@ let rec transform_expr (context: Context.context) (vars: Vars.vars) (expr: texpr
           (vars3, icode @ [Iexp_ifthenelse(block_name, ityp, tcode, None)]))
   | Texp_while(cond, inner) ->
       transform_while context vars cond inner
+  | Texp_for(var_opt, min, max, dir, inner) ->
+      transform_for context vars var_opt min max dir inner
   | Texp_sequence(a, b) ->
       transform_sequence context vars a b
 
@@ -425,6 +427,44 @@ and transform_while context vars cond inner =
     @ [Iexp_drop(It_unit)]
   in
   (vars4, [Iexp_loop(break_block, continue_block, loop_inside); Iexp_pushconst(It_unit, "()")])
+
+and transform_for context vars var_opt min max dir inner =
+  let (vars1, for_var) =
+    match var_opt with
+    | Some(var_name) -> Vars.add_named_var vars var_name It_int
+    | None -> Vars.add_temp_var vars It_int
+  in
+  let (vars2, min_code) = transform_expr context vars1 min in
+  let (vars3, max_var) = Vars.add_temp_var vars2 It_int in
+  let (vars4, max_code) = transform_expr context vars3 max in
+  let (vars5, inner_code) = transform_expr context vars4 inner in
+  let (vars6, break_block) = Vars.add_block vars5 in
+  let (vars7, continue_block) = Vars.add_block vars6 in
+  let is_forwards =
+    match dir with
+    | Asttypes.Upto -> true
+    | Asttypes.Downto -> false
+  in
+  let pre_loop =
+    min_code
+    @ [Iexp_setvar(It_int, for_var)]
+    @ max_code
+    @ [Iexp_setvar(It_int, max_var)]
+  in
+  let loop_inside =
+    [Iexp_getvar(It_int, for_var);
+     Iexp_getvar(It_int, max_var);
+     Iexp_binop(It_int, if is_forwards then Ibin_gt else Ibin_lt);
+     Iexp_exitblockif(break_block)]
+    @ inner_code
+    @ [Iexp_drop(It_unit);
+       Iexp_getvar(It_int, for_var);
+       Iexp_pushconst(It_int, "1");
+       Iexp_binop(It_int, if is_forwards then Ibin_add else Ibin_sub);
+       Iexp_setvar(It_int, for_var)]
+  in
+  (vars7, pre_loop @ [Iexp_loop(break_block, continue_block, loop_inside); Iexp_pushconst(It_unit, "()")])
+
 
 and transform_sequence context vars a b =
   let (vars1, a_code) = transform_expr context vars a in

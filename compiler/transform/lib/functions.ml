@@ -72,6 +72,7 @@ let select_export_functions fnames funcs =
     else
       func)
 
+(* TODO inconsistent naming with intermediate's transform_list which also concats the results *)
 let transform_list ~f:map fnames locals lst =
   let (fnames', funcs_rev, result_rev) = List.fold lst ~init:(fnames, [], []) ~f:(fun (fn, f_lst, out_lst) item ->
     let (fn', item_funcs, item_ast) = map fn locals item in
@@ -79,6 +80,7 @@ let transform_list ~f:map fnames locals lst =
   in
   let funcs = List.concat (List.rev funcs_rev) in
   (fnames', funcs, List.rev result_rev)
+
 
 (* So on an expression, we'll need the modified expression, and the map of id to function *)
 (* Globals: Not in closure (global variables or arguments), Locals: In closure *)
@@ -114,6 +116,11 @@ let rec func_transform_expr ?next_name:(next_name=None) (fnames: func_names) (lo
         let (fnames1, cfuncs, cond') = func_transform_expr fnames locals cond in
         let (fnames2, ifuncs, inner') = func_transform_expr fnames1 locals inner in
         (fnames2, cfuncs @ ifuncs, Texp_while(cond', inner'))
+    | Texp_for(var_opt, min, max, dir, inner) ->
+        let (fnames1, min_funcs, min') = func_transform_expr fnames locals min in
+        let (fnames2, max_funcs, max') = func_transform_expr fnames1 locals max in
+        let (fnames3, inner_funcs, inner') = func_transform_expr fnames2 locals inner in
+        (fnames3, min_funcs @ max_funcs @ inner_funcs, Texp_for(var_opt, min', max', dir, inner'))
     | Texp_sequence(a, b) ->
         let (fnames1, afuncs, a') = func_transform_expr fnames locals a in
         let (fnames2, bfuncs, b') = func_transform_expr fnames1 locals b in
