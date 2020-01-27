@@ -17,10 +17,12 @@ type texpression = {
   texp_type: scheme_type
 }
 
+and tlet = Asttypes.rec_flag * tvalue_binding list * texpression
+
 and texpression_desc =
   Texp_ident of string
 | Texp_constant of string
-| Texp_let of (Asttypes.rec_flag [@sexp.opaque]) * tvalue_binding list * texpression
+| Texp_let of tlet
 | Texp_fun of tpattern * texpression
 | Texp_apply of texpression * texpression list
 | Texp_match of texpression * tcase list
