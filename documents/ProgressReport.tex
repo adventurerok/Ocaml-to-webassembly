@@ -1,0 +1,78 @@
+%%%%%%%%%%%%%%% Updated by MR March 2007 %%%%%%%%%%%%%%%%
+\documentclass[12pt]{article}
+\usepackage{a4wide}
+
+\newcommand{\al}{$<$}
+\newcommand{\ar}{$>$}
+
+\usepackage{minted}
+%\usemintedstyle{colorful}
+\setmintedinline{breaklines}
+
+\newcommand{\textinline}{\mintinline{text}}
+\newcommand{\cinline}{\mintinline{C}}
+\newcommand{\camlinline}{\mintinline{OCaml}}
+
+\parindent 0pt
+%\parskip 6pt
+
+\hyphenpenalty=1000
+
+\begin{document}
+	
+	
+	\rightline{\large{Paul Durbaba}}
+	\medskip
+	\rightline{\large{Robinson}}
+	\medskip
+	\rightline{\large{pd452}}
+	
+	\vspace{0.5in}
+	
+	\centerline{\large Progress Report}
+	\vspace{0.4in}
+	\centerline{\Large\bf Compiling OCaml to WebAssembly}
+	\vspace{0.3in}
+	\centerline{\large{Thursday 30\textsuperscript{th} January 2020}}
+	
+	\vspace{0.5in}
+	
+	{\bf Project Supervisor:} Tobias Kohn
+	
+	\vspace{0.2in}
+	
+	{\bf Director of Studies:}  Alan Mycroft
+	
+	\vspace{0.2in}
+	
+	{\bf Overseers:} Pietro Lio' and Robert Mullins
+	
+	\vspace{0.2in}
+	
+	\subsection*{Progress Report}
+	My project aims to build a compiler from a subset of OCaml to WebAssembly (a binary instruction format for the web) by creating a type-checker for the abstract syntax tree, translating the resulting typed-AST to an intermediate representation, and performing code generation to WebAssembly Text Format which can then be converted to the Binary Format, making use of the OCaml compiler's parser and the WebAssembly Binary Toolkit.
+	\\\\
+	I have met the success criterion. I implemented a Hindley-Milner polymorphic type inference system, which translates the untyped AST to my own typed AST. I then perform closure conversion (lifting function definitions to the top-level and putting a make-closure operation where they were originally defined). This is then translated to my intermediate representation, which is then translated directly to the WebAssembly Text Format.
+	\\\\
+	After compilation to the WebAssembly Binary Format, the WebAssembly modules can be correctly executed from a web or NodeJS environment, where global values can be inspected, and top-level functions can be executed (although passing in complex type like a  tuple requires manually modifying the WebAssembly memory and then passing a pointer, and it is impossible due to WebAssembly to create a closure that will call a function defined outside of the WebAssembly module).
+	\\\\
+	The subset of OCaml I support for the success criterion is as follows:
+	\begin{itemize}
+		\item types: int, bool, float, tuple, function and variant (datatypes) values.
+		\item let expressions with support for the usual arithmetic and logical operations, and pattern matching on the left hand side for tuples
+		\item function definitions supporting multiple curried and pattern matched arguments
+		\item if/then/else and basic pattern matching on variants
+	\end{itemize}
+    I additionally support the following:
+    \begin{itemize}
+    	\item list syntax (as opposed to having to define a list variant type)
+    	\item polymorphism
+    	\item full pattern matching for let expressions and match statements
+    	\item references, while and for loops
+    \end{itemize}
+	Based on my timeline, I believe I am on schedule, however I have gone slightly out of order. In the last two weeks of January I was supposed to investigate adding some optimisations, which I have not yet done. However, my tasks for the whole of February are to create an end to end tester, which I already have (although I could make it more thorough) and passing JavaScript values to WebAssembly, which I can already do and was much easier than expected.
+	\\\\
+	Thus I will change my timeline for February to spend the first two weeks working on optimisations, with the remaining two weeks split between improving the testing I do, both in the end to end tester (e.g. by adding negative tests), and investigating where some unit tests might be useful if there are areas that are difficult for the end to end tester to cover; and other improvements such as some JavaScript functions to facilitate the passing of complex values to WebAssembly, and string support (which will require those functions).
+	
+	
+\end{document}

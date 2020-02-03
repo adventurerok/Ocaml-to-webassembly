@@ -341,7 +341,7 @@ Actually in OCaml there are two types of let-binding: the non-recursive one and 
 
 \subsection{Issues}
 \begin{itemize}
-	\item MAJOR: Once you use a polymorphic function, it gets bound to those types. Need to implement generalization and instantiation. \camlinline{let id x = x in (id 1, id true)} Possible solutions:
+	\item (Solved) MAJOR: Once you use a polymorphic function, it gets bound to those types. Need to implement generalization and instantiation. \camlinline{let id x = x in (id 1, id true)} Possible solutions:
 	\begin{itemize}
 		\item A forall type. I like this solution better. After we make a function, all unique type variables in it are forall.
 		\item Schemes. Forall type but explicit.
@@ -351,17 +351,56 @@ Actually in OCaml there are two types of let-binding: the non-recursive one and 
 			\item Let x =: weak
 		\end{itemize}
 	\end{itemize}
-    \item MAJOR: Occurs check. \camlinline{let f x = x x in f}
-    \item MAJOR: Error messages and unification. Can this be done with unification at the end? Should unification be done at the end like it is?
+    \item (Solved) MAJOR: Occurs check. \camlinline{let f x = x x in f} (done!)
+    \item (Stretch Goal) MAJOR: Error messages and unification. Can this be done with unification at the end? Should unification be done at the end like it is?
+    \item MAJOR: Additional checks. Plenty of things typecheck that shouldn't
+    \begin{itemize}
+    	\item (Solved) Check that type constructors use valid types as arguments (done!)
+    	\item (Solved) Occurs check
+    	\item (Solved) Check that constraints use valid types (sounds like we need a function which takes a context and a type and checks if it is valid) (done!)
+    	\item (Will come back to if/when it affects code generation) Let rec restrictions, e.g. prevent cycles
+    \end{itemize}
 \end{itemize}
 
 \subsection{Still Needs Doing}
 \begin{itemize}
-	\item Various other expression types e.g. if, match
-	\item Let binding structures
-	\item Type structures and custom data types
+	\item (Done) Various other expression types e.g. if, match
+	\item (Done) Let binding structures
+	\item (Done) Type structures and custom data types
 	\item Strong a tree of the partial type data. We would then do a substitution pass over this at the end with the final substitution.
-	\item Decent error messages i.e. not `UnificationFailure'
+	\item (Stretch Goal) Decent error messages i.e. not `UnificationFailure'
+	\item Write some Unit Tests. Potentially would be more possible when I know the final signatures
+\end{itemize}
+
+\section{Intermediate Representation}
+\subsection{Closure Conversion}
+Many programming languages only allow top-level functions, but of course OCaml allows nested functions, and anonymous functions. We also need to deal with closures. This is fairly standard except recursive closures contain a reference to themselves.
+
+\subsection{Match Statements}
+We use the block feature of the IR, with one large block to enable escaping from the entire match without checking additional cases, and individual blocks for each case so that we can jump out of a case as soon as we don't match it and move on to the next case.
+
+\subsection{Recursive Closures}
+This is probably the trickiest case, but here's what we (will) do
+\begin{itemize}
+	\item Get a list of the function names
+	\item Make named vars for each of these
+	\item Make empty closures for each of these, and assign that to the var
+	\item Fill these closures one by one
+\end{itemize}
+
+REMEMBER YOU DIDN'T FINISH SOME CASES LOL
+
+\subsection{Success Criterion and changes}
+
+\begin{itemize}
+	\item Use i32 instead of i64: JavaScript doesn't support getting/setting 64-bit WA values
+\end{itemize}
+
+\subsection{Exporting Functions}
+At the moment the global variable is the closure. Two options:
+\begin{itemize}
+	\item Provide a way to call closures from JS, would require extra JS API
+	\item Make global variable function, with a weird name for the closure. Probably needs more code, but would make exported WebAssembly module much cleaner and more portable / easier to use
 \end{itemize}
 
 \end{document}
