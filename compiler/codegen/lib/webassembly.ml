@@ -20,12 +20,12 @@ let runtime =
   ")"
 
 let closure_call_export =
-  "(func $call_closure_i32_i32 (export \"call_closure_i32_i32\") (param $closure i32) (param $arg i32) (result i32)\n" ^
+  "(func $call_closure (export \"call_closure\") (param $closure i32) (param $arg i32) (result i32)\n" ^
   "local.get $closure\n" ^
   "local.get $arg\n" ^
   "local.get $closure\n" ^
   "i32.load offset=0\n" ^
-  "call_indirect (type $type-i32-i32-i32)\n" ^
+  "call_indirect (param i32 i32) (result i32)\n" ^
   ")"
 
 exception CodegenFailure of string
@@ -62,13 +62,6 @@ let poly_watype = itype_to_watype It_poly
 let ituptype_size itt =
   Option.value ~default:0 (List.reduce (List.map itt ~f:itype_size) ~f:(+))
 
-
-let closure_type_name ((iarg, iret) : iftype) =
-  "$type-" ^ (itype_to_watype It_pointer) ^ "-" ^
-  (itype_to_watype iarg) ^ "-" ^
-  (match iret with
-  | It_none -> "none"
-  | _ -> itype_to_watype iret)
 
 let wrapper_func_name func_name =
   "$wrap-" ^ (String.chop_prefix_exn func_name ~prefix:"$")
@@ -192,7 +185,7 @@ and codegen_callclosure wrap_table (vscope, vname) arg_code =
   (codegen_iexpr_list wrap_table arg_code) ^ "\n" ^
   scope ^ ".get " ^ vname ^ "\n" ^
   (itype_to_watype It_int) ^ ".load offset=0\n" ^
-  "call_indirect (type $type-i32-i32-i32)"
+  "call_indirect (param i32 i32) (result i32)"
 
 and codegen_block wrap_table name ityp code_lst =
   let wa_lst = codegen_iexpr_list wrap_table code_lst in
@@ -288,27 +281,6 @@ and codegen_unbox ityp (box_scope_enum, box_name) (unbox_scope_enum, unbox_name)
       unbox_scope ^ ".set " ^ unbox_name
   | _ -> raise (CodegenFailure ("The type " ^ (itype_to_string ityp) ^ " cannot be unboxed"))
 
-
-(* Generate all closure types avoiding duplicates *)
-let codegen_types () =
-  let type_map = List.fold all_of_iftype ~init:Map.Poly.empty ~f:(fun map (iarg, iret) ->
-    match iarg with
-    | It_none -> map
-    | _ ->
-      let type_name = closure_type_name (iarg, iret) in
-      let wa_sig =
-        "(func (param " ^
-        (itype_to_watype It_pointer) ^ " " ^
-        (itype_to_watype iarg) ^ ") " ^
-        (itype_to_waresult iret) ^ ")"
-      in
-      Map.Poly.set map ~key:type_name ~data:wa_sig)
-  in
-  let type_list = Map.Poly.to_alist type_map in
-  let module_types = List.map type_list ~f:(fun (name, wa_sig) ->
-    "(type " ^ name ^ " " ^ wa_sig ^ ")")
-  in
-  String.concat ~sep:"\n" module_types
 
 let codegen_wrapper_table iprog =
   let func_names = Map.Poly.keys (Map.Poly.remove iprog.prog_functions iprog.prog_initfunc) in
@@ -417,7 +389,6 @@ let iprogram_to_module (prog : iprogram) =
     (if not (Map.Poly.is_empty wrap_table) then
       closure_call_export ^ "\n"
     else "") ^
-    (codegen_types ()) ^ "\n" ^
     wrap_code ^ "\n" ^
     (codegen_globals prog.prog_globals) ^ "\n" ^
     (let (_, func_list) = List.unzip (Map.Poly.to_alist prog.prog_functions) in

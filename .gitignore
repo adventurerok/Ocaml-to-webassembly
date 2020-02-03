@@ -4,6 +4,9 @@ _minted*
 *.synctex.gz
 *.aux
 *.toc
+*.nav
+*.out
+*.snm
 _build
 .merlin
 compiler/samples/*.wast
