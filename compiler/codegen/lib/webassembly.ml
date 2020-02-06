@@ -84,38 +84,69 @@ let codegen_local_vars vars ret_typ cvar_count =
   in
   String.concat ~sep:"\n" strs
 
-let rec codegen_iexpr_list (wrap_table : string_int_map) lst =
-  let codes = List.map lst ~f:(codegen_iexpr wrap_table) in
+type state = {
+  wrap_table: string_int_map;
+  mutable vars: Vars.vars
+}
+
+(* Helper function for updating vars *)
+let update_vars (state : state) (vars, thing) =
+  state.vars <- vars;
+  thing
+
+let codegen_setvar (scope, name) =
+  (iscope_to_string scope) ^ ".set " ^ name
+
+let codegen_getvar (scope, name) =
+  (iscope_to_string scope) ^ ".get " ^ name
+
+let rec codegen_iexpr_list (state : state) lst =
+  let codes = List.map lst ~f:(codegen_iexpr state) in
   String.concat ~sep:"\n" codes
 
-and codegen_iexpr (wrap_table : string_int_map) (expr : iexpression) =
+and codegen_iexpr (state : state) (expr : iexpression) =
   match expr with
-  | Iexp_setvar (_, (scope, name)) -> (iscope_to_string scope) ^ ".set " ^ name
-  | Iexp_getvar (_, (scope, name)) -> (iscope_to_string scope) ^ ".get " ^ name
-  | Iexp_unop (ityp, unop) -> codegen_unop ityp unop
-  | Iexp_binop (ityp, binop) -> codegen_binop ityp binop
-  | Iexp_pushconst (ityp, str_rep) -> codegen_const ityp str_rep
-  | Iexp_newclosure (ift, func_name, itt, var) -> codegen_newclosure wrap_table ift func_name itt var
-  | Iexp_fillclosure(itt, var, tuple_codelst) -> codegen_fillclosure wrap_table itt var tuple_codelst
-  | Iexp_callclosure(_, var, arg_code) -> codegen_callclosure wrap_table var arg_code
-  | Iexp_block (name, typ, lst) -> codegen_block wrap_table name typ lst
+  | Iexp_setvar (ityp, var, str_rep) ->
+      (codegen_const ityp str_rep) ^ "\n" ^
+      (codegen_setvar var)
+  | Iexp_copyvar(_, res, arg) ->
+      (codegen_getvar arg) ^ "\n" ^
+      (codegen_setvar res)
+  | Iexp_return(_, arg) ->
+      (codegen_getvar arg)
+  | Iexp_unop (ityp, unop, res, arg) -> codegen_unop ityp unop res arg
+  | Iexp_binop (ityp, binop, res, arg1, arg2) -> codegen_binop ityp binop res arg1 arg2
+  | Iexp_newclosure (ift, func_name, itt, var) -> codegen_newclosure state ift func_name itt var
+  | Iexp_fillclosure(itt, var, arg_lst) -> codegen_fillclosure state itt var arg_lst
+  | Iexp_callclosure(_, res, clo, arg) -> codegen_callclosure res clo arg
+  | Iexp_startblock (name) ->
+      "block " ^ name
+  | Iexp_endblock(name) ->
+      "end " ^ name
   | Iexp_exitblock(name) -> "br " ^ name
-  | Iexp_exitblockif(name) -> "br_if " ^ name
-  | Iexp_ifthenelse (name, ityp, tcode, ecode_opt) -> codegen_ifthenelse wrap_table name ityp tcode ecode_opt
-  | Iexp_loop(break, continue, lst) -> codegen_loop wrap_table break continue lst
-  | Iexp_pushtuple(itt, name, tuple_codelst) -> codegen_pushtuple wrap_table itt name tuple_codelst
-  | Iexp_loadtupleindex (itt, index) -> codegen_tupleindex ~boxed:true itt index 0
-  | Iexp_pushconstruct (itt, name, id, tuple_codelst) ->
-      codegen_pushtuple wrap_table (It_int :: itt) name ([Iexp_pushconst(It_int, Int.to_string id)] :: tuple_codelst)
-  | Iexp_loadconstructindex (itt, index) -> codegen_tupleindex ~boxed:true (It_int :: itt) (index + 1) 0
-  | Iexp_loadconstructid -> codegen_tupleindex ~boxed:false [It_int] 0 0
+  | Iexp_exitblockif(name, cond) ->
+      (codegen_getvar cond) ^ "\n" ^
+      "br_if " ^ name
+  | Iexp_startif(name, cond) ->
+      (codegen_getvar cond) ^ "\n" ^
+      "if " ^ name
+  | Iexp_else(name) ->
+      "else " ^ name
+  | Iexp_endif(name) ->
+      "end " ^ name
+  | Iexp_loop(break, continue, lst) -> codegen_loop state break continue lst
+  | Iexp_pushtuple(itt, res, args) -> codegen_pushtuple state itt res args
+  | Iexp_loadtupleindex (itt, index, res, arg) -> codegen_tupleindex ~boxed:true itt index 0 res arg
+  | Iexp_pushconstruct (itt, res, id, arg_vars) ->
+      codegen_construct state itt res id arg_vars
+  | Iexp_loadconstructindex (itt, index, res, arg) -> codegen_tupleindex ~boxed:true (It_int :: itt) (index + 1) 0 res arg
+  | Iexp_loadconstructid(res, arg) -> codegen_tupleindex ~boxed:false [It_int] 0 0 res arg
   | Iexp_newbox(ityp, unbox, box) -> codegen_box ityp unbox box
   | Iexp_updatebox(ityp, unbox, box) -> codegen_updatebox ityp unbox box
   | Iexp_unbox(ityp, box, unbox) -> codegen_unbox ityp box unbox
   | Iexp_fail -> "unreachable"
-  | Iexp_drop _ -> "drop"
 
-and codegen_unop ityp unop =
+and codegen_unop ityp unop res arg =
   let watyp = itype_to_watype ityp in
   (* TODO neg isn't allowed on integers *)
   let opname =
@@ -123,9 +154,11 @@ and codegen_unop ityp unop =
     | Iun_eqz -> "eqz"
     | Iun_neg -> "neg"
   in
-  watyp ^ "." ^ opname
+  (codegen_getvar arg) ^ "\n" ^
+  watyp ^ "." ^ opname ^ "\n" ^
+  (codegen_setvar res)
 
-and codegen_binop ityp binop =
+and codegen_binop ityp binop res arg1 arg2 =
   let signed_ext =
     match ityp with
     | It_int -> "_s"
@@ -148,7 +181,10 @@ and codegen_binop ityp binop =
     | Ibin_ge -> "ge" ^ signed_ext
   in
   let watyp = itype_to_watype ityp in
-  watyp ^ "." ^ opname
+  (codegen_getvar arg1) ^ "\n" ^
+  (codegen_getvar arg2) ^ "\n" ^
+  watyp ^ "." ^ opname ^ "\n" ^
+  (codegen_setvar res)
 
 and codegen_const ityp str_rep =
   match ityp with
@@ -164,49 +200,48 @@ and codegen_const ityp str_rep =
       let watyp = itype_to_watype ityp in
       watyp ^ ".const " ^ str_rep
 
-and codegen_newclosure wrap_table _ift func_name itt (vscope, vname) =
+and codegen_newclosure state _ift func_name itt clo =
   let closure_tuple = It_int :: itt in
   let tup_size = ituptype_size closure_tuple in
-  let scope = iscope_to_string vscope in
-  let func_id = Map.Poly.find_exn wrap_table func_name in
+  let func_id = Map.Poly.find_exn state.wrap_table func_name in
   "i32.const " ^ (Int.to_string tup_size) ^ "\n" ^
   "call " ^ malloc_id ^ "\n" ^
-  scope ^ ".set " ^ vname ^ "\n" ^
-  scope ^ ".get " ^ vname ^ "\n" ^
+  (codegen_setvar clo) ^ "\n" ^
+  (codegen_getvar clo) ^ "\n" ^
   (itype_to_watype It_int) ^ ".const " ^ (Int.to_string func_id) ^ "\n" ^
   (itype_to_watype It_int) ^ ".store offset=0"
 
-and codegen_fillclosure wrap_table itt var tuple_codelst =
-  codegen_filltuple ~boxed:false wrap_table itt var tuple_codelst (itype_size It_int)
+and codegen_fillclosure state itt var var_lst =
+  codegen_filltuple ~boxed:false state itt var var_lst (itype_size It_int)
 
-and codegen_callclosure wrap_table (vscope, vname) arg_code =
-  let scope = iscope_to_string vscope in
-  scope ^ ".get " ^ vname ^ "\n" ^
-  (codegen_iexpr_list wrap_table arg_code) ^ "\n" ^
-  scope ^ ".get " ^ vname ^ "\n" ^
+and codegen_callclosure res clo arg =
+  (codegen_getvar clo) ^ "\n" ^
+  (codegen_getvar arg) ^ "\n" ^
+  (codegen_getvar clo) ^ "\n" ^
   (itype_to_watype It_int) ^ ".load offset=0\n" ^
-  "call_indirect (param i32 i32) (result i32)"
+  "call_indirect (param i32 i32) (result i32)\n" ^
+  (codegen_setvar res)
 
-and codegen_block wrap_table name ityp code_lst =
-  let wa_lst = codegen_iexpr_list wrap_table code_lst in
-  let wa_result = itype_to_waresult ityp in
-  "block " ^ name ^ " " ^ wa_result ^ "\n" ^
+and codegen_block state name code_lst =
+  let wa_lst = codegen_iexpr_list state code_lst in
+  "block " ^ name ^ "\n" ^
   wa_lst ^ "\n" ^
   "end " ^ name
 
-and codegen_ifthenelse wrap_table name ityp tcode ecode_opt =
-  let wa_tcode = codegen_iexpr_list wrap_table tcode in
-  "if " ^ name ^ " " ^ (itype_to_waresult ityp) ^ "\n" ^
+and codegen_ifthenelse state name cond tcode ecode_opt =
+  let wa_tcode = codegen_iexpr_list state tcode in
+  (codegen_getvar cond) ^ "\n" ^
+  "if " ^ name ^ "\n" ^
   wa_tcode ^ "\n" ^
   (match ecode_opt with
   | Some(ecode) ->
-      let wa_ecode = codegen_iexpr_list wrap_table ecode in
+      let wa_ecode = codegen_iexpr_list state ecode in
       "else\n" ^ wa_ecode ^ "\n"
   | None -> "") ^
   "end"
 
-and codegen_loop wrap_table break continue code_lst =
-  let wa_lst = codegen_iexpr_list wrap_table code_lst in
+and codegen_loop state break continue code_lst =
+  let wa_lst = codegen_iexpr_list state code_lst in
   "block " ^ break ^ "\n" ^
   "loop " ^ continue ^ "\n" ^
   wa_lst ^ "\n" ^
@@ -214,38 +249,47 @@ and codegen_loop wrap_table break continue code_lst =
   "end " ^ continue ^ "\n" ^
   "end " ^ break
 
-and codegen_pushtuple wrap_table itt (scope_enum, name) tuple_codelst =
+and codegen_pushtuple state itt res args =
   let tup_size = ituptype_size itt in
-  let scope = iscope_to_string scope_enum in
   "i32.const " ^ (Int.to_string tup_size) ^ "\n" ^
   "call " ^ malloc_id ^ "\n" ^
-  scope ^ ".set " ^ name ^ "\n" ^
-  (codegen_filltuple ~boxed:true wrap_table itt (scope_enum, name) tuple_codelst 0) ^ "\n" ^
-  scope ^ ".get " ^ name
+  (codegen_setvar res) ^ "\n" ^
+  (codegen_filltuple ~boxed:true state itt res args 0)
 
-and codegen_filltuple ~boxed:boxed wrap_table itt (scope_enum, name) tuple_codelst start_offset =
-  let scope = iscope_to_string scope_enum in
-  (
-    let zipped_lst = List.zip_exn itt tuple_codelst in
-    let (_, code_list_rev) = List.fold zipped_lst ~init:(start_offset, []) ~f:(fun (offset, out_lst) (it, item_code) ->
-      let item_wa =
-        scope ^ ".get " ^ name ^ "\n" ^
-        (codegen_iexpr_list wrap_table item_code) ^ "\n" ^
-        (if boxed then poly_watype else (itype_to_watype it)) ^ ".store offset=" ^ (Int.to_string offset)
-      in
-      (offset + (if boxed then poly_size else (itype_size it)), item_wa :: out_lst)
+and codegen_construct state itt res id args =
+  let tup_size = ituptype_size itt + (itype_size It_int) in
+  "i32.const " ^ (Int.to_string tup_size) ^ "\n" ^
+  "call " ^ malloc_id ^ "\n" ^
+  (codegen_setvar res) ^ "\n" ^
+  (codegen_getvar res) ^ "\n" ^
+  "i32.const " ^ (Int.to_string id) ^ "\n" ^
+  "i32.store offset=0\n" ^
+  (codegen_filltuple ~boxed:true state itt res args (itype_size It_int))
+
+
+and codegen_filltuple ~boxed:boxed _state itt var arg_lst start_offset =
+  let zipped_lst = List.zip_exn itt arg_lst in
+  let (_, code_list_rev) = List.fold zipped_lst ~init:(start_offset, []) ~f:(fun (offset, out_lst) (it, arg) ->
+    let item_wa =
+      (codegen_getvar var) ^ "\n" ^
+      (codegen_getvar arg) ^ "\n" ^
+      (if boxed then poly_watype else (itype_to_watype it)) ^ ".store offset=" ^ (Int.to_string offset)
+    in
+    (offset + (if boxed then poly_size else (itype_size it)), item_wa :: out_lst)
   )
   in
-  String.concat ~sep:"\n" (List.rev code_list_rev))
+  String.concat ~sep:"\n" (List.rev code_list_rev)
 
-and codegen_tupleindex ~boxed:boxed itt index offset =
+and codegen_tupleindex ~boxed:boxed itt index offset res arg =
   (* Only types that occur before the one we want *)
   let itt_trim = List.take itt index in
   let final_offset = List.fold itt_trim ~init:offset ~f:(fun o ityp ->
     o + (if boxed then poly_size else (itype_size ityp)))
   in
   let watyp = itype_to_watype (List.nth_exn itt index) in
-  (if boxed then poly_watype else watyp) ^ ".load offset=" ^ (Int.to_string final_offset)
+  (codegen_getvar arg) ^ "\n" ^
+  (if boxed then poly_watype else watyp) ^ ".load offset=" ^ (Int.to_string final_offset) ^ "\n" ^
+  (codegen_setvar res)
 
 and codegen_box ityp unbox_var (box_scope_enum, box_name) =
   let box_size = itype_size ityp in
@@ -309,6 +353,12 @@ let codegen_globals (globals : Vars.vars) =
 
 let codegen_ifunction_core (wrap_table : string_int_map) (func : ifunction) =
   let (_, ret_typ) = func.pf_type in
+  let state = {
+    wrap_table = wrap_table;
+    vars = func.pf_vars
+  }
+  in
+  let func_code = codegen_iexpr_list state func.pf_code in
   let cvar_count = List.length func.pf_cvars in
   let export =
     match func.pf_export_name with
@@ -316,8 +366,8 @@ let codegen_ifunction_core (wrap_table : string_int_map) (func : ifunction) =
     | None -> ""
   in
   "(func " ^ func.pf_name ^ export ^ "\n"
-  ^ (codegen_local_vars func.pf_vars ret_typ cvar_count) ^ "\n"
-  ^ (codegen_iexpr_list wrap_table func.pf_code) ^ "\n"
+  ^ (codegen_local_vars state.vars ret_typ cvar_count) ^ "\n"
+  ^ func_code ^ "\n"
   ^ ")"
 
 (* Wrapper function takes two arguments: closure and function argument *)

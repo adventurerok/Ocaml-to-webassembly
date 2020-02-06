@@ -122,61 +122,69 @@ let ivariable_to_string ((scope, name) : ivariable) =
   (iscope_to_string scope) ^ "." ^ name
 
 type iexpression =
-(* Create a new var, and pop to it from top of stack *)
+(* Create a new var from a constant *)
 (* type of variable, name of variable *)
-| Iexp_setvar of itype * ivariable
-(* Push var's value to the stack *)
+| Iexp_setvar of itype * ivariable * string
+(* Copy a variable into another *)
+(* type of variable, name of new variable, name of old variable *)
+| Iexp_copyvar of itype * ivariable * ivariable
+(* Return var *)
 (* type of variable, name of variable *)
-| Iexp_getvar of itype * ivariable
+| Iexp_return of itype * ivariable
 (* Unary operation using one stack value *)
-(* type of operand, unary operation *)
-(* TODO make it take the result type as an argument as well *)
-| Iexp_unop of itype * iunop
+(* type of operand, unary operation, result var, input var *)
+| Iexp_unop of itype * iunop * ivariable * ivariable
 (* Binary operation using two stack values *)
 (* type of operands, binary operation *)
-| Iexp_binop of itype * ibinop
-(* Push a constant to the stack *)
-(* type of constant, string rep of constant *)
-| Iexp_pushconst of itype * string
+| Iexp_binop of itype * ibinop * ivariable * ivariable * ivariable
 (* Make a new closure for specified function and tuple type, and put it in given variable *)
 (* type of function, name of function, type of closure variables, variable to put closure in *)
 | Iexp_newclosure of iftype * string * ituptype * ivariable
 (* Fill a closure in the named variable using the code to generate those values *)
-(* type of closure variables, name of variable *)
-| Iexp_fillclosure of ituptype * ivariable * (iexpression list) list
+(* type of closure variables, name of variable, list of variables to copy in *)
+| Iexp_fillclosure of ituptype * ivariable * ivariable list
 (* Call closure in variable using argument generated from code *)
-(* type of function, variable to use to help call, code to generate argument *)
-| Iexp_callclosure of iftype * ivariable * (iexpression list)
-(* A block of instructions, locally scoped *)
-(* name of block, result type, list of instructions *)
-| Iexp_block of string * itype * iexpression list
+(* type of function, output variable, closure variable, variable for argument *)
+| Iexp_callclosure of iftype * ivariable * ivariable * ivariable
+(* Start a block *)
+(* name of block *)
+| Iexp_startblock of string
+(* End a block *)
+(* name of block *)
+| Iexp_endblock of string
 (* Exit from the named block *)
 (* name of block *)
 | Iexp_exitblock of string
-(* Exit from the named block if top of stack is true *)
+(* Exit from the named block if variable is true *)
 (* name of block *)
-| Iexp_exitblockif of string
-(* If then else *)
-(* name of block, result type (on stack top), if case code, optional else code *)
-| Iexp_ifthenelse of string * itype * iexpression list * iexpression list option
+| Iexp_exitblockif of string * ivariable
+(* Start an if statement *)
+(* name of block, condition var *)
+| Iexp_startif of string * ivariable
+(* Else clause of an if statement *)
+(* name of block *)
+| Iexp_else of string
+(* End an if statement *)
+(* name of block *)
+| Iexp_endif of string
 (* Loop, loops until an exitblock or exitblockif *)
 (* Name of escape block (to break to), name of loop block (to continue to), code of block *)
 | Iexp_loop of string * string * iexpression list
 (* Create a tuple from the given code, push pointer to stack and put it in that variable *)
 (* type of tuple, name of variable, code to generate each part of tuple *)
-| Iexp_pushtuple of ituptype * ivariable * (iexpression list) list
+| Iexp_pushtuple of ituptype * ivariable * ivariable list
 (* Pop tuple, push its value at index i to the stack *)
-(* type of tuple, index in tuple *)
-| Iexp_loadtupleindex of ituptype * int
+(* type of tuple, index in tuple, output var, tuple var *)
+| Iexp_loadtupleindex of ituptype * int * ivariable * ivariable
 (* Create a construct from the given code, push pointer to stack and put it in variable *)
 (* type of construct arguments, name of variable, id of construct, code to generate each part of construct *)
-| Iexp_pushconstruct of ituptype * ivariable * int * (iexpression list) list
+| Iexp_pushconstruct of ituptype * ivariable * int * ivariable list
 (* Pop construct, push its value at index i to the stack *)
-(* type of construct arguments, index in arguments *)
-| Iexp_loadconstructindex of ituptype * int
+(* type of construct arguments, index in arguments, output variable, tuple variable *)
+| Iexp_loadconstructindex of ituptype * int * ivariable * ivariable
 (* Pop construct, push its id to the stack *)
-(* No parameters *)
-| Iexp_loadconstructid
+(* output variable, construct variable *)
+| Iexp_loadconstructid of ivariable * ivariable
 (* Box a value (on stack) of a type that needs boxing, or for a ref *)
 (* unboxed type, unboxped variable, variable to store boxed result *)
 | Iexp_newbox of itype * ivariable * ivariable
@@ -189,50 +197,60 @@ type iexpression =
 (* Fail *)
 (* No parameters *)
 | Iexp_fail
-(* Drop top of stack *)
-(* type of thing on top of stack *)
-| Iexp_drop of itype
 [@@deriving sexp_of]
 
 let rec iexpression_to_string (iexp : iexpression) =
   match iexp with
-  | Iexp_setvar (t, name) -> "setvar " ^ (itype_to_string t) ^ " " ^ (ivariable_to_string name)
-  | Iexp_getvar (t, name) -> "getvar " ^ (itype_to_string t) ^ " " ^ (ivariable_to_string name)
-  | Iexp_unop (t, op) -> "unop " ^ (itype_to_string t) ^ " " ^ (iunop_to_string op)
-  | Iexp_binop (t, op) -> "binop " ^ (itype_to_string t) ^ " " ^ (ibinop_to_string op)
-  | Iexp_pushconst (t, v) -> "pushconst " ^ (itype_to_string t) ^ " " ^ v
+  | Iexp_setvar (t, name, con) ->
+      "setvar " ^ (itype_to_string t) ^ " " ^ (ivariable_to_string name) ^ " " ^ con
+  | Iexp_copyvar(t, res, arg) ->
+      "copyvar " ^ (itype_to_string t) ^ " " ^ (ivariable_to_string res) ^ " " ^
+      (ivariable_to_string arg)
+  | Iexp_return (t, name) -> "return " ^ (itype_to_string t) ^ " " ^ (ivariable_to_string name)
+  | Iexp_unop (t, op, res, arg) ->
+      "unop " ^ (itype_to_string t) ^ " " ^ (iunop_to_string op) ^
+      " " ^ (ivariable_to_string res) ^ " " ^ (ivariable_to_string arg)
+  | Iexp_binop (t, op, res, arg1, arg2) ->
+      "binop " ^ (itype_to_string t) ^ " " ^ (ibinop_to_string op) ^
+      " " ^ (ivariable_to_string res) ^ " " ^ (ivariable_to_string arg1) ^
+      " " ^ (ivariable_to_string arg2)
   | Iexp_newclosure (ift, name, itt, var_name) ->
       "newclosure " ^ (iftype_to_string ift) ^ " " ^ name ^ " " ^ (ituptype_to_string itt) ^ " " ^
       (ivariable_to_string var_name)
-  | Iexp_fillclosure(itt, name, codes) ->
+  | Iexp_fillclosure(itt, name, vars) ->
       "fillclosure " ^ (ituptype_to_string itt) ^ " " ^ (ivariable_to_string name) ^ " " ^
-      tuple_codes_to_string codes
-  | Iexp_callclosure(ift, var, code) ->
-      "callclosure " ^ (iftype_to_string ift) ^ " " ^ (ivariable_to_string var) ^ "(\n" ^
-      (iexpression_list_to_string code) ^ "\n" ^
-      ")"
-  | Iexp_block(name, t, ls) ->
-      "block " ^ name ^ " " ^ (itype_to_string t) ^ " {\n" ^
-      (String.concat ~sep:"\n" (List.map ls ~f:iexpression_to_string)) ^
-      "\n}"
+      vars_to_string vars
+  | Iexp_callclosure(ift, res, clo, arg) ->
+      "callclosure " ^ (iftype_to_string ift) ^ " " ^ (ivariable_to_string res) ^
+      " " ^ (ivariable_to_string clo) ^ " " ^ (ivariable_to_string arg)
+  | Iexp_startblock(name) ->
+      "startblock " ^ name
+  | Iexp_endblock(name) ->
+      "endblock " ^ name
   | Iexp_exitblock(name) -> "exitblock " ^ name
-  | Iexp_exitblockif(name) -> "exitblockif " ^ name
-  | Iexp_ifthenelse (name, t, ifl, ell) -> "ifthenelse " ^ name ^ " " ^ (itype_to_string t) ^ " if{\n" ^
-      (String.concat ~sep:"\n" (List.map ifl ~f:iexpression_to_string)) ^ "\n}" ^
-      Option.value (Option.map ell ~f:(fun ell_list -> " else {\n" ^ (String.concat ~sep:"\n" (List.map ell_list ~f:iexpression_to_string)) ^ "\n}")) ~default:""
+  | Iexp_exitblockif(name, var) -> "exitblockif " ^ name ^ " " ^ (ivariable_to_string var)
+  | Iexp_startif(name, cond) -> "startif " ^ name ^ " " ^ (ivariable_to_string cond)
+  | Iexp_else(name) -> "else " ^ name
+  | Iexp_endif(name) -> "endif " ^ name
   | Iexp_loop(break, continue, ls) ->
       "loop " ^ break ^ " " ^ continue ^ " {\n" ^
       (String.concat ~sep:"\n" (List.map ls ~f:iexpression_to_string)) ^
       "\n}"
-  | Iexp_pushtuple(itt, name, codes) ->
+  | Iexp_pushtuple(itt, name, vars) ->
       "pushtuple " ^ (ituptype_to_string itt) ^ " " ^ (ivariable_to_string name) ^ " " ^
-      tuple_codes_to_string codes
-  | Iexp_loadtupleindex (itt, id) -> "loadtupleindex " ^ (ituptype_to_string itt) ^ " " ^ (Int.to_string id)
-  | Iexp_pushconstruct(itt, name, id, codes) ->
-      "pushconstruct " ^ (ituptype_to_string itt) ^ " " ^ (ivariable_to_string name) ^ " " ^ (Int.to_string id) ^ " " ^
-      tuple_codes_to_string codes
-  | Iexp_loadconstructindex(itt, id) -> "loadconstructindex " ^ (ituptype_to_string itt) ^ " " ^ (Int.to_string id)
-  | Iexp_loadconstructid -> "loadconstructid"
+      vars_to_string vars
+  | Iexp_loadtupleindex (itt, id, res, arg) ->
+      "loadtupleindex " ^ (ituptype_to_string itt) ^ " " ^ (Int.to_string id) ^
+      " " ^ (ivariable_to_string res) ^ " " ^ (ivariable_to_string arg)
+  | Iexp_pushconstruct(itt, name, id, vars) ->
+      "pushconstruct " ^ (ituptype_to_string itt) ^ " " ^ (ivariable_to_string name) ^
+      " " ^ (Int.to_string id) ^ " " ^
+      vars_to_string vars
+  | Iexp_loadconstructindex(itt, id, res, arg) ->
+      "loadconstructindex " ^ (ituptype_to_string itt) ^ " " ^ (Int.to_string id) ^
+      " " ^ (ivariable_to_string res) ^ " " ^ (ivariable_to_string arg)
+  | Iexp_loadconstructid(res, arg) ->
+      "loadconstructid " ^ (ivariable_to_string res) ^ (ivariable_to_string arg)
   | Iexp_newbox(typ, unbox, wrap) ->
       "newbox " ^ (itype_to_string typ) ^ " " ^ (ivariable_to_string unbox) ^ " " ^ (ivariable_to_string wrap)
   | Iexp_updatebox(typ, unbox, wrap) ->
@@ -240,7 +258,6 @@ let rec iexpression_to_string (iexp : iexpression) =
   | Iexp_unbox(typ, wrap, unbox) ->
       "unbox " ^ (itype_to_string typ) ^ " " ^ (ivariable_to_string wrap) ^ " " ^ (ivariable_to_string unbox)
   | Iexp_fail -> "fail"
-  | Iexp_drop(t) -> "drop " ^ (itype_to_string t)
 
 
 and iexpression_list_to_string ls =
@@ -249,3 +266,7 @@ and iexpression_list_to_string ls =
 and tuple_codes_to_string codes =
   let str_parts = List.map codes ~f:(fun c -> "(" ^ (iexpression_list_to_string c) ^ ")") in
   "(\n" ^ (String.concat ~sep:"\n" str_parts) ^ "\n)"
+
+and vars_to_string vars =
+  let parts = List.map vars ~f:ivariable_to_string in
+  "(" ^ (String.concat ~sep:" " parts) ^ ")"
