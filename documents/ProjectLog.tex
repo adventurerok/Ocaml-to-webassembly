@@ -403,4 +403,27 @@ At the moment the global variable is the closure. Two options:
 	\item Make global variable function, with a weird name for the closure. Probably needs more code, but would make exported WebAssembly module much cleaner and more portable / easier to use
 \end{itemize}
 
+\subsection{Stack Based IR Code Length}
+\begin{minted}{text}
+67 samples/arithmetic.wast
+273 samples/basic.wast
+132 samples/closure_basic.wast
+420 samples/construct.wast
+756 samples/core_subset.wast
+76 samples/float_construct.wast
+142 samples/floats.wast
+148 samples/for.wast
+507 samples/functions.wast
+454 samples/match.wast
+426 samples/poly-advanced.wast
+263 samples/poly-basic.wast
+728 samples/poly-construct.wast
+119 samples/rec.wast
+142 samples/refs.wast
+67 samples/tuple.wast
+41 samples/unop.wast
+132 samples/while.wast
+4893 total
+\end{minted}
+
 \end{document}

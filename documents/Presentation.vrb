@@ -1,0 +1,15 @@
+\frametitle{Testing}
+		\begin{columns}
+			\column{0.6\linewidth}
+			\begin{itemize}
+				\item End-to-end tester compiles samples and checks their globals computed at runtime
+			\end{itemize}
+			\column{0.4\linewidth}
+			\begin{center}
+				\includegraphics[width=0.55\linewidth]{for-sample}
+			\end{center}
+			
+		\end{columns}
+		\begin{center}
+			\includegraphics[width=0.6\linewidth]{e2e-output}
+		\end{center}
