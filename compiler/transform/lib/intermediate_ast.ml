@@ -167,9 +167,12 @@ type iexpression =
 (* End an if statement *)
 (* name of block *)
 | Iexp_endif of string
-(* Loop, loops until an exitblock or exitblockif *)
-(* Name of escape block (to break to), name of loop block (to continue to), code of block *)
-| Iexp_loop of string * string * iexpression list
+(* Starts a loop, loops until an exitblock or exitblockif *)
+(* Name of escape block (to break to), name of loop block (to continue to) *)
+| Iexp_startloop of string * string
+(* Ends a loop *)
+(* Name of break block, name of continue block *)
+| Iexp_endloop of string * string
 (* Create a tuple from the given code, push pointer to stack and put it in that variable *)
 (* type of tuple, name of variable, code to generate each part of tuple *)
 | Iexp_pushtuple of ituptype * ivariable * ivariable list
@@ -232,10 +235,8 @@ let rec iexpression_to_string (iexp : iexpression) =
   | Iexp_startif(name, cond) -> "startif " ^ name ^ " " ^ (ivariable_to_string cond)
   | Iexp_else(name) -> "else " ^ name
   | Iexp_endif(name) -> "endif " ^ name
-  | Iexp_loop(break, continue, ls) ->
-      "loop " ^ break ^ " " ^ continue ^ " {\n" ^
-      (String.concat ~sep:"\n" (List.map ls ~f:iexpression_to_string)) ^
-      "\n}"
+  | Iexp_startloop(break, cont) -> "startloop " ^ break ^ " " ^ cont
+  | Iexp_endloop(break, cont) -> "endloop " ^ break ^ " " ^ cont
   | Iexp_pushtuple(itt, name, vars) ->
       "pushtuple " ^ (ituptype_to_string itt) ^ " " ^ (ivariable_to_string name) ^ " " ^
       vars_to_string vars
@@ -263,10 +264,66 @@ let rec iexpression_to_string (iexp : iexpression) =
 and iexpression_list_to_string ls =
   String.concat ~sep:"\n" (List.map ls ~f:iexpression_to_string)
 
-and tuple_codes_to_string codes =
-  let str_parts = List.map codes ~f:(fun c -> "(" ^ (iexpression_list_to_string c) ^ ")") in
-  "(\n" ^ (String.concat ~sep:"\n" str_parts) ^ "\n)"
-
 and vars_to_string vars =
   let parts = List.map vars ~f:ivariable_to_string in
   "(" ^ (String.concat ~sep:" " parts) ^ ")"
+
+
+let iexpression_map_vars ~f:map_var (iexp : iexpression) =
+  match iexp with
+  | Iexp_setvar(t, name, str) ->
+      Iexp_setvar(t, map_var name, str)
+  | Iexp_copyvar(t, res, arg) ->
+      Iexp_copyvar(t, map_var res, map_var arg)
+  | Iexp_return(t, res) ->
+      Iexp_return(t, map_var res)
+  | Iexp_unop(t, un, res, arg) ->
+      Iexp_unop(t, un, map_var res, map_var arg)
+  | Iexp_binop(t, un, res, arg1, arg2) ->
+      Iexp_binop(t, un, map_var res, map_var arg1, map_var arg2)
+  | Iexp_newclosure(ift, fname, itt, var) ->
+      Iexp_newclosure(ift, fname, itt, map_var var)
+  | Iexp_fillclosure(itt, name, var_lst) ->
+      Iexp_fillclosure(itt, map_var name, List.map ~f:map_var var_lst)
+  | Iexp_callclosure(ift, res, clo, arg) ->
+      Iexp_callclosure(ift, map_var res, map_var clo, map_var arg)
+  | Iexp_startblock(name) ->
+      Iexp_startblock(name)
+  | Iexp_endblock(name) ->
+      Iexp_endblock(name)
+  | Iexp_exitblock(str) ->
+      Iexp_exitblock(str)
+  | Iexp_exitblockif(str, cond) ->
+      Iexp_exitblockif(str, map_var cond)
+  | Iexp_startif(name, cond) ->
+      Iexp_startif(name, map_var cond)
+  | Iexp_else(name) ->
+      Iexp_else(name)
+  | Iexp_endif(name) ->
+      Iexp_endif(name)
+  | Iexp_startloop(break, cont) ->
+      Iexp_startloop(break, cont)
+  | Iexp_endloop(break, cont) ->
+      Iexp_endloop(break, cont)
+  | Iexp_pushtuple(itt, name, var_lst) ->
+      Iexp_pushtuple(itt, map_var name, List.map ~f:map_var var_lst)
+  | Iexp_loadtupleindex(itt, id, res, tup) ->
+      Iexp_loadtupleindex(itt, id, map_var res, map_var tup)
+  | Iexp_pushconstruct(itt, name, id, var_lst) ->
+      Iexp_pushconstruct(itt, map_var name, id, List.map ~f:map_var var_lst)
+  | Iexp_loadconstructindex(itt, id, res, con) ->
+      Iexp_loadconstructindex(itt, id, map_var res, map_var con)
+  | Iexp_loadconstructid(res, con) ->
+      Iexp_loadconstructid(map_var res, map_var con)
+  | Iexp_newbox(t, unbox, box) ->
+      Iexp_newbox(t, map_var unbox, map_var box)
+  | Iexp_updatebox(t, unbox, box) ->
+      Iexp_updatebox(t, map_var unbox, map_var box)
+  | Iexp_unbox(t, boxed, unboxed) ->
+      Iexp_unbox(t, map_var boxed, map_var unboxed)
+  | Iexp_fail ->
+      Iexp_fail
+
+
+let iexpression_list_map_vars ~f:map_vars lst =
+  List.map ~f:(iexpression_map_vars ~f:map_vars) lst

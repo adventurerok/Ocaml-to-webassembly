@@ -433,8 +433,10 @@ and transform_while state cond inner =
   in
   let final_var = quick_temp_var state It_unit in
   (final_var,
-    [Iexp_loop(break_block, continue_block, loop_inside);
-    Iexp_setvar(It_unit, final_var, "()")]
+    [Iexp_startloop(break_block, continue_block)]
+    @ loop_inside
+    @ [Iexp_endloop(break_block, continue_block);
+       Iexp_setvar(It_unit, final_var, "()")]
   )
 
 and transform_for state var_opt min max dir inner =
@@ -470,8 +472,10 @@ and transform_for state var_opt min max dir inner =
   let final_var = quick_temp_var state It_unit in
   (final_var,
     pre_loop
-    @ [Iexp_loop(break_block, continue_block, loop_inside);
-      Iexp_setvar(It_unit, final_var, "()")]
+    @ [Iexp_startloop(break_block, continue_block)]
+    @ loop_inside
+    @ [Iexp_endloop(break_block, continue_block);
+       Iexp_setvar(It_unit, final_var, "()")]
   )
 
 
@@ -517,62 +521,18 @@ let fix_globals global_vars local_vars code =
         | None -> (Global, name)
         | _ -> (Local, name))
   in
-  let fix_var_lst ls = List.map ls ~f:fix_var in
-  let rec fix_instr instr =
-    match instr with
-    | Iexp_setvar(t, name, str) ->
-        Iexp_setvar(t, fix_var name, str)
-    | Iexp_copyvar(t, res, arg) ->
-        Iexp_copyvar(t, fix_var res, fix_var arg)
-    | Iexp_return(t, res) ->
-        Iexp_return(t, fix_var res)
-    | Iexp_unop(t, un, res, arg) ->
-        Iexp_unop(t, un, fix_var res, fix_var arg)
-    | Iexp_binop(t, un, res, arg1, arg2) ->
-        Iexp_binop(t, un, fix_var res, fix_var arg1, fix_var arg2)
-    | Iexp_newclosure(ift, fname, itt, var) ->
-        Iexp_newclosure(ift, fname, itt, fix_var var)
-    | Iexp_fillclosure(itt, name, var_lst) ->
-        Iexp_fillclosure(itt, fix_var name, fix_var_lst var_lst)
-    | Iexp_callclosure(ift, res, clo, arg) ->
-        Iexp_callclosure(ift, fix_var res, fix_var clo, fix_var arg)
-    | Iexp_startblock(name) ->
-        Iexp_startblock(name)
-    | Iexp_endblock(name) ->
-        Iexp_endblock(name)
-    | Iexp_exitblock(str) ->
-        Iexp_exitblock(str)
-    | Iexp_exitblockif(str, cond) ->
-        Iexp_exitblockif(str, fix_var cond)
-    | Iexp_startif(name, cond) ->
-        Iexp_startif(name, fix_var cond)
-    | Iexp_else(name) ->
-        Iexp_else(name)
-    | Iexp_endif(name) ->
-        Iexp_endif(name)
-    | Iexp_loop(break, cont, code) ->
-        Iexp_loop(break, cont, fix_instr_list code)
-    | Iexp_pushtuple(itt, name, var_lst) ->
-        Iexp_pushtuple(itt, fix_var name, fix_var_lst var_lst)
-    | Iexp_loadtupleindex(itt, id, res, tup) ->
-        Iexp_loadtupleindex(itt, id, fix_var res, fix_var tup)
-    | Iexp_pushconstruct(itt, name, id, var_lst) ->
-        Iexp_pushconstruct(itt, fix_var name, id, fix_var_lst var_lst)
-    | Iexp_loadconstructindex(itt, id, res, con) ->
-        Iexp_loadconstructindex(itt, id, fix_var res, fix_var con)
-    | Iexp_loadconstructid(res, con) ->
-        Iexp_loadconstructid(fix_var res, fix_var con)
-    | Iexp_newbox(t, unbox, box) ->
-        Iexp_newbox(t, fix_var unbox, fix_var box)
-    | Iexp_updatebox(t, unbox, box) ->
-        Iexp_updatebox(t, fix_var unbox, fix_var box)
-    | Iexp_unbox(t, boxed, unboxed) ->
-        Iexp_unbox(t, fix_var boxed, fix_var unboxed)
-    | Iexp_fail ->
-        Iexp_fail
-  and fix_instr_list lst = List.map lst ~f:fix_instr
+  iexpression_list_map_vars ~f:fix_var code
+
+let fix_init_code init_vars global_vars code =
+  let fix_var (_, name) =
+    match Vars.lookup_var global_vars name with
+    | Some(gvar) -> gvar
+    | None ->
+        (match Vars.lookup_var init_vars name with
+        | Some (ivar) -> ivar
+        | None -> raise (IntermediateFailure ("Missing init var " ^ name)))
   in
-  fix_instr_list code
+  iexpression_list_map_vars ~f:fix_var code
 
 let transform_program ?debug:(debug = false) context structure =
   let (funcs, fast) = Functions.func_transform_structure structure in
@@ -598,10 +558,12 @@ let transform_program ?debug:(debug = false) context structure =
       pf_export_name = fd.fd_export_name
     }))
   in
+  let (corrected_globals, init_vars) = Vars.make_init_vars global_vars in
+  let corrected_init_code = fix_init_code init_vars corrected_globals init_code in
   let init_func = {
     pf_name = "$init";
-    pf_vars = Vars.make_init_vars global_vars;
-    pf_code = init_code;
+    pf_vars = init_vars;
+    pf_code = corrected_init_code;
     pf_type = (It_none, It_none);
     pf_cvars = [];
     pf_export_name = None
@@ -611,11 +573,11 @@ let transform_program ?debug:(debug = false) context structure =
   let corrected_funcs = List.map all_funcs ~f:(fun (name, f) ->
     (name, {
       f with
-      pf_code = fix_globals global_vars f.pf_vars f.pf_code
+      pf_code = fix_globals corrected_globals f.pf_vars f.pf_code
     }))
   in
   {
     prog_functions = Map.Poly.of_alist_exn corrected_funcs;
-    prog_globals = global_vars;
+    prog_globals = corrected_globals;
     prog_initfunc = "$init"
   }

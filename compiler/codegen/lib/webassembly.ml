@@ -134,7 +134,8 @@ and codegen_iexpr (state : state) (expr : iexpression) =
       "else " ^ name
   | Iexp_endif(name) ->
       "end " ^ name
-  | Iexp_loop(break, continue, lst) -> codegen_loop state break continue lst
+  | Iexp_startloop(break, continue) -> codegen_startloop state break continue
+  | Iexp_endloop(break, continue) -> codegen_endloop state break continue
   | Iexp_pushtuple(itt, res, args) -> codegen_pushtuple state itt res args
   | Iexp_loadtupleindex (itt, index, res, arg) -> codegen_tupleindex ~boxed:true itt index 0 res arg
   | Iexp_pushconstruct (itt, res, id, arg_vars) ->
@@ -240,11 +241,11 @@ and codegen_ifthenelse state name cond tcode ecode_opt =
   | None -> "") ^
   "end"
 
-and codegen_loop state break continue code_lst =
-  let wa_lst = codegen_iexpr_list state code_lst in
+and codegen_startloop _state break continue =
   "block " ^ break ^ "\n" ^
-  "loop " ^ continue ^ "\n" ^
-  wa_lst ^ "\n" ^
+  "loop " ^ continue
+
+and codegen_endloop _state break continue =
   "br " ^ continue ^ "\n" ^
   "end " ^ continue ^ "\n" ^
   "end " ^ break
