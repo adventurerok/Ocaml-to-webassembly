@@ -82,6 +82,24 @@ let add_block (vrs : vars) =
   } in
   (vrs', block_name)
 
+
+let remove_var (vrs : vars) (n : string) =
+  let rec loop data =
+    match data with
+    | [] -> []
+    | vi :: data' ->
+        if (String.equal n vi.vi_code_name) then
+          data'
+        else
+          vi :: (loop data')
+  in
+  let newdata = loop vrs.data in
+  {
+    vrs with
+    data = newdata
+  }
+
+
 let lookup_var (vrs : vars) (n : string) =
   let rec loop data =
     match data with

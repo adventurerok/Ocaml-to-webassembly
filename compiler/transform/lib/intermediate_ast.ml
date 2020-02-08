@@ -107,7 +107,7 @@ let iunop_to_string (iu : iunop) =
 type iscope =
 | Local
 | Global
-[@@deriving sexp_of]
+[@@deriving sexp_of, equal]
 
 let iscope_to_string (is : iscope) =
   match is with
@@ -116,7 +116,7 @@ let iscope_to_string (is : iscope) =
 
 (* name, is global *)
 type ivariable = iscope * string
-[@@deriving sexp_of]
+[@@deriving sexp_of, equal]
 
 let ivariable_to_string ((scope, name) : ivariable) =
   (iscope_to_string scope) ^ "." ^ name

@@ -587,8 +587,10 @@ let transform_program ?debug:(debug = false) context structure =
     let strs = List.map ~f:Analysis.func_analysis_to_string fa_lst in
     List.iter ~f:Stdio.print_endline strs)
   in
-  {
+  let prog = {
     prog_functions = Map.Poly.of_alist_exn corrected_funcs;
     prog_globals = global_vars;
     prog_initfunc = "$init"
   }
+  in
+  Optimise.optimise prog
