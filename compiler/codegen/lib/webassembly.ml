@@ -11,12 +11,29 @@ let malloc_id = "$malloc"
 let runtime =
   "(memory (export \"memory\") 1)\n" ^
   "(global $mem_idx (export \"mem_idx\") (mut i32) (i32.const 4))\n" ^
+  "(global $mem_max (export \"mem_max\") (mut i32) (i32.const 65535))\n" ^
   "(func " ^ malloc_id ^ " (export \"malloc\") (param $size i32) (result i32)\n" ^
   "global.get $mem_idx\n" ^
   "global.get $mem_idx\n" ^
   "local.get $size\n" ^
   "i32.add\n" ^
   "global.set $mem_idx\n" ^
+  "global.get $mem_idx\n" ^
+  "global.get $mem_max\n" ^
+  "i32.ge_u\n" ^
+  "if\n" ^
+  "i32.const 1\n" ^
+  "memory.grow\n" ^
+  "i32.const 0\n" ^
+  "i32.le_s\n" ^
+  "if\n" ^
+  "unreachable\n" ^
+  "end\n" ^
+  "i32.const 65536\n" ^
+  "global.get $mem_max\n" ^
+  "i32.add\n" ^
+  "global.set $mem_max\n" ^
+  "end\n" ^
   ")"
 
 let closure_call_export =

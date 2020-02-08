@@ -36,6 +36,14 @@ let empty_global_vars = {
   scope = Global
 }
 
+let empty_init_vars = {
+  base_empty_vars with
+  count = 1;
+  scope = Local;
+  data = [{vi_original_name = "$init_arg"; vi_code_name = "$init_arg"; vi_itype = It_none; vi_temp = false}];
+  var_names = Set.Poly.singleton "$init_arg";
+}
+
 let add_var_mapping (vrs : vars) (n : string) (vn : string) (t : itype) (temp : bool) =
   {
     vrs with
@@ -81,6 +89,17 @@ let lookup_var (vrs : vars) (n : string) =
     | vi :: data' ->
         if (String.equal n vi.vi_original_name) || (String.equal n vi.vi_code_name) then
           Some((vrs.scope, vi.vi_code_name))
+        else loop data'
+  in
+  loop vrs.data
+
+let lookup_var_info (vrs: vars) (n : string) =
+  let rec loop data =
+    match data with
+    | [] -> None
+    | vi :: data' ->
+        if (String.equal n vi.vi_original_name) || (String.equal n vi.vi_code_name) then
+          Some(vi)
         else loop data'
   in
   loop vrs.data

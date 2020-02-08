@@ -31,6 +31,7 @@ let ident_map = Map.Poly.of_alist_exn
     ("<=", f_aab);
     (">=", f_aab);
     ("=", f_aab);
+    ("!=", f_aab);
     ("&&", f_bbb);
     ("||", f_bbb);
     ("~-", f_ii);

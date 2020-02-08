@@ -16,12 +16,23 @@ let transform_list ~f:map lst =
 
 type state = {
   context: Context.context;
-  mutable vars: Vars.vars
+  mutable vars: Vars.vars;
+  mutable globals: Vars.vars
 }
 
 let update_vars (state : state) (vars, thing) =
   state.vars <- vars;
   thing
+
+let add_named_var ?global:(global = false) (state : state) name typ =
+  if global then
+    let (globals', var) = Vars.add_named_var state.globals name typ in
+    state.globals <- globals';
+    var
+  else
+    let (vars', var) = Vars.add_named_var state.vars name typ in
+    state.vars <- vars';
+    var
 
 let quick_temp_var (state : state) typ =
   update_vars state (Vars.add_temp_var state.vars typ)
@@ -83,15 +94,15 @@ let rec transform_expr (state: state) (expr: texpression) =
       transform_sequence state a b
 
 
-and transform_value_bindings state rf tvb_list =
+and transform_value_bindings ?global:(global = false) state rf tvb_list =
   match rf with
-  | Asttypes.Nonrecursive -> transform_value_bindings_nonrecursive state tvb_list
-  | Asttypes.Recursive -> transform_value_bindings_recursive state tvb_list
+  | Asttypes.Nonrecursive -> transform_value_bindings_nonrecursive ~global:global state tvb_list
+  | Asttypes.Recursive -> transform_value_bindings_recursive ~global:global state tvb_list
 
-and transform_value_bindings_nonrecursive state tvb_list =
+and transform_value_bindings_nonrecursive ?global:(global = false) state tvb_list =
   let code_list = List.concat (List.map tvb_list ~f:(fun tvb ->
     let (var, expr_code) = transform_expr state tvb.tvb_expr in
-    let pat_code = transform_pat state tvb.tvb_pat var in
+    let pat_code = transform_pat ~global:global state tvb.tvb_pat var in
     expr_code @ pat_code
   ))
   in
@@ -100,6 +111,7 @@ and transform_value_bindings_nonrecursive state tvb_list =
 and transform_pat ?check:(check = true)
                   ?escape:(escape = [Iexp_fail])
                   ?boxed:(boxed = false)
+                  ?global:(global = false)
                   state
                   (pat :tpattern)
                   var
@@ -108,7 +120,7 @@ and transform_pat ?check:(check = true)
   | Tpat_any -> []
   | Tpat_var(name) ->
       let ityp = stoitype pat.tpat_type in
-      let named_var = update_vars state (Vars.add_named_var state.vars name ityp) in
+      let named_var = add_named_var ~global:global state name ityp in
       if (boxed && (itype_needs_box ityp)) then
         [Iexp_unbox(ityp, var, named_var)]
       else
@@ -121,7 +133,7 @@ and transform_pat ?check:(check = true)
         let test_var = quick_temp_var state It_bool in
         let escape_block = update_vars state (Vars.add_block state.vars) in
         if (boxed && (itype_needs_box ityp)) then
-          let unbox_var = update_vars state (Vars.add_temp_var state.vars ityp) in
+          let unbox_var = quick_temp_var state ityp in
             [Iexp_unbox(ityp, var, unbox_var);
             Iexp_setvar(ityp, const_var, const);
             Iexp_binop(ityp, Ibin_ne, test_var, unbox_var, const_var);
@@ -139,7 +151,7 @@ and transform_pat ?check:(check = true)
       let ituptype = tupletoitype pat.tpat_type in
       let code = transform_listi plist ~f:(fun pos tpat ->
         let pvar = quick_temp_var state It_poly in
-        let pat_code = transform_pat ~check:check ~escape:escape ~boxed:true state tpat pvar in
+        let pat_code = transform_pat ~check:check ~escape:escape ~boxed:true ~global:global state tpat pvar in
         (Iexp_loadtupleindex(ituptype, pos, pvar, var) :: pat_code))
       in
       code
@@ -163,13 +175,13 @@ and transform_pat ?check:(check = true)
         let ituptype = List.map plist ~f:(fun p -> stoitype p.tpat_type) in
         transform_listi plist ~f:(fun pos cpat ->
           let pvar = quick_temp_var state It_poly in
-          let pat_code = transform_pat ~check:check ~escape:escape ~boxed:true state cpat pvar in
+          let pat_code = transform_pat ~check:check ~escape:escape ~boxed:true ~global:global state cpat pvar in
           (Iexp_loadconstructindex(ituptype, pos, pvar, var) :: pat_code))
       in
       (check_code @ destruct_code)
 
 
-and transform_value_bindings_recursive state tvb_list =
+and transform_value_bindings_recursive ?global:(global = false) state tvb_list =
   (* Make a var for each recursive function *)
   let details = List.map tvb_list ~f:(fun tvb ->
     let rec_name =
@@ -198,13 +210,18 @@ and transform_value_bindings_recursive state tvb_list =
   in
   let new_closure_code = transform_list details
                                     ~f:(fun (rec_name, func_name, iftype, ituptype, _) ->
-    let var_name = update_vars state (Vars.add_named_var state.vars rec_name It_pointer) in
+    let var_name = add_named_var ~global:global state rec_name It_pointer in
     [Iexp_newclosure(iftype, func_name, ituptype, var_name)]
   )
   in
   let fill_closure_code = transform_list details
                                     ~f:(fun (rec_name, _, _, ituptype, tuple_expr) ->
-    let var_name = Option.value_exn (Vars.lookup_var state.vars rec_name) in
+    let var_name =
+      if global then
+        Option.value_exn (Vars.lookup_var state.globals rec_name)
+      else
+        Option.value_exn (Vars.lookup_var state.vars rec_name)
+    in
     let (tuple_varlst, tuple_codelst) = transform_tupleargs ~poly_box:false state tuple_expr in
     let tuple_lincode = List.concat tuple_codelst in
     tuple_lincode @ [Iexp_fillclosure(ituptype, var_name, tuple_varlst)]
@@ -328,6 +345,7 @@ and transform_op state name args =
       | "<=" -> (Ibin_le, It_bool)
       | ">=" -> (Ibin_ge, It_bool)
       | "=" -> (Ibin_eq, It_bool)
+      | "!=" -> (Ibin_ne, It_bool)
       | "&&" -> (Ibin_and, It_bool)
       | "||" -> (Ibin_or, It_bool)
       | _ -> raise (IntermediateFailure "Unsupported binary operation"))
@@ -490,18 +508,19 @@ let transform_structure_item state (si : tstructure_item) =
       let (_, code) = transform_expr state e in
       (* We need to drop the resulting value on the stack *)
       code
-  | Tstr_value (rf, tvb_list) -> transform_value_bindings state rf tvb_list
+  | Tstr_value (rf, tvb_list) -> transform_value_bindings ~global:true state rf tvb_list
   | Tstr_type -> []
 
 
 let transform_structure state (st : tstructure) =
   transform_list st ~f:(transform_structure_item state)
 
-let transform_function context (fd : Functions.func_data) =
+let transform_function globals context (fd : Functions.func_data) =
   let vars = Vars.make_local_vars fd in
   let state = {
     context = context;
-    vars = vars
+    vars = vars;
+    globals = globals
   }
   in
   let arg_code = transform_pat state fd.fd_pat Vars.function_arg in
@@ -509,28 +528,18 @@ let transform_function context (fd : Functions.func_data) =
   let return_type = stoitype fd.fd_expr.texp_type in
   (state.vars, (arg_code @ expr_code @ [Iexp_return(return_type, result_var)]))
 
-let fix_globals global_vars local_vars code =
+
+let fix_globals globals locals code =
   let fix_var (scope, name) =
     match scope with
     | Global ->
-        (match Vars.lookup_var global_vars name with
+        (match Vars.lookup_var globals name with
         | Some(gvar) -> gvar
         | None -> raise (IntermediateFailure ("Missing global variable " ^ name)))
     | Local ->
-      (match Vars.lookup_var local_vars name with
-        | None -> (Global, name)
-        | _ -> (Local, name))
-  in
-  iexpression_list_map_vars ~f:fix_var code
-
-let fix_init_code init_vars global_vars code =
-  let fix_var (_, name) =
-    match Vars.lookup_var global_vars name with
-    | Some(gvar) -> gvar
-    | None ->
-        (match Vars.lookup_var init_vars name with
-        | Some (ivar) -> ivar
-        | None -> raise (IntermediateFailure ("Missing init var " ^ name)))
+        (match Vars.lookup_var locals name with
+        | Some(_) -> (Local, name)
+        | None -> raise (IntermediateFailure ("Missing local variable " ^ name)))
   in
   iexpression_list_map_vars ~f:fix_var code
 
@@ -542,28 +551,27 @@ let transform_program ?debug:(debug = false) context structure =
   in
   let global_state = {
     context = context;
-    vars = Vars.empty_global_vars
+    vars = Vars.empty_init_vars;
+    globals = Vars.empty_global_vars
   }
   in
   let init_code = transform_structure global_state fast in
-  let global_vars = global_state.vars in
+  let global_vars = global_state.globals in
   let ifuncs = List.map funcs ~f:(fun fd ->
-    let (vars, code) = transform_function context fd in
+    let (vars, code) = transform_function global_state.globals context fd in
     (fd.fd_name, {
       pf_name = fd.fd_name;
       pf_vars = vars;
-      pf_code = code;
+      pf_code = fix_globals global_vars vars code;
       pf_type = functoitype fd.fd_type;
       pf_cvars = List.map fd.fd_cvars ~f:(fun (name,st) -> (name, stoitype st));
       pf_export_name = fd.fd_export_name
     }))
   in
-  let (corrected_globals, init_vars) = Vars.make_init_vars global_vars in
-  let corrected_init_code = fix_init_code init_vars corrected_globals init_code in
   let init_func = {
     pf_name = "$init";
-    pf_vars = init_vars;
-    pf_code = corrected_init_code;
+    pf_vars = global_state.vars;
+    pf_code = fix_globals global_vars global_state.vars init_code;
     pf_type = (It_none, It_none);
     pf_cvars = [];
     pf_export_name = None
@@ -571,13 +579,16 @@ let transform_program ?debug:(debug = false) context structure =
   in
   let all_funcs = ("$init", init_func) :: ifuncs in
   let corrected_funcs = List.map all_funcs ~f:(fun (name, f) ->
-    (name, {
-      f with
-      pf_code = fix_globals corrected_globals f.pf_vars f.pf_code
-    }))
+    (name, f))
+  in
+  let () = if debug then (
+    let (_, only_funcs) = List.unzip corrected_funcs in
+    let fa_lst = List.map ~f:Analysis.analyse_function only_funcs in
+    let strs = List.map ~f:Analysis.func_analysis_to_string fa_lst in
+    List.iter ~f:Stdio.print_endline strs)
   in
   {
     prog_functions = Map.Poly.of_alist_exn corrected_funcs;
-    prog_globals = corrected_globals;
+    prog_globals = global_vars;
     prog_initfunc = "$init"
   }
