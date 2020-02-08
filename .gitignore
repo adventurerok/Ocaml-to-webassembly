@@ -9,5 +9,7 @@ _minted*
 *.snm
 _build
 .merlin
+compiler/samples/**/*.wast
+compiler/samples/**/*.wasm
 compiler/samples/*.wast
 compiler/samples/*.wasm

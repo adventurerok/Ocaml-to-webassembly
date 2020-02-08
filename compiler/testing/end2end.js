@@ -5,7 +5,7 @@ const fs = require("fs");
 const readFile = util.promisify(fs.readFile);
 const exec = util.promisify(require('child_process').exec);
 
-const samplesDir = "samples/"
+let samplesDir = "samples/"
 
 const wat2wasmPath = "wat2wasm"
 const compilerPath = "_build/default/toplevel.exe"
@@ -15,6 +15,12 @@ const debug = false;
 async function testFile(path) {
   let pathWithoutExtension = path.substring(0, path.lastIndexOf("."));
   let wastPath = pathWithoutExtension + ".wast";
+
+  // Load the test file first
+  let testFileContents;
+  try {
+    testFileContents = await readFile(pathWithoutExtension + ".json", "utf8");
+  } catch(e) {}
 
   // Compile to wast
   let command = compilerPath + " " + path + " -output " + wastPath;
@@ -75,16 +81,11 @@ async function testFile(path) {
     console.log("instantiated for " + path);
   }
 
-  let testFileContents;
-
-  try {
-    testFileContents = await readFile(pathWithoutExtension + ".json", "utf8");
-  } catch(e) {}
 
   if(testFileContents) {
     const testJson = JSON.parse(testFileContents);
 
-    return runInstanceTests(path, instance, testJson);
+    return await runInstanceTests(path, instance, testJson);
   } else {
     console.log("No json for " + path);
     return {
@@ -94,9 +95,11 @@ async function testFile(path) {
   }
 }
 
-function runInstanceTests(path, instance, testJson) {
+async function runInstanceTests(path, instance, testJson) {
   let failures = [];
+  let benchResults = [];
 
+  // test globals
   if(testJson.globals) {
     for(let global in testJson.globals) {
       let expected = testJson.globals[global].toString();
@@ -108,10 +111,48 @@ function runInstanceTests(path, instance, testJson) {
     }
   }
 
+  // benchmark
+  if(testJson.benchmarks) {
+    for(let benchName in testJson.benchmarks) {
+      let bench = testJson.benchmarks[benchName];
+
+      let start = (new Date()).getTime();
+      for(let i = 0; i < bench.iterations; i++) {
+        instance.exports[bench.func](0);
+      }
+      let ourTime = ((new Date()).getTime() - start) / bench.iterations;
+
+      let ocamlEcho = "let start = Sys.time() in let () = (for iter = 1 to "
+                      + bench.iterations + " do " + bench.func + "() done) in Sys.time() -. start;;";
+      let ocamlCmd = "echo \"" + ocamlEcho + "\" | ocaml -init " + path;
+
+      let ocamlTime;
+
+      try {
+        let res = await exec(ocamlCmd);
+        let regex = /^- : float = ([0-9]+\.[0-9]+(?:e-[0-9]+)?)$/gm;
+        let regMatch = regex.exec(res.stdout);
+        let time = parseFloat(regMatch[1]) * 1000 / bench.iterations;
+        ocamlTime = time;
+      } catch(e) {
+        return {
+          path: path,
+          result: false,
+          message: "Failed OCaml REPL Benchmark",
+          detail: e.stderr
+        }
+      }
+
+      benchResults.push(benchName + ": otwa = " + ourTime + " ms, ocaml = " + ocamlTime + "ms");
+
+    }
+  }
+
   if(failures.length == 0) {
     return {
       path: path,
-      result: true
+      result: true,
+      bench: benchResults
     }
   } else {
     return {
@@ -144,6 +185,10 @@ let canExit = false;
 
 let promises;
 let allPromise;
+
+if(process.argv.length > 2) {
+  samplesDir = process.argv[2];
+}
 
 const run = async () => {
   const samplesFiles = fs.readdirSync(samplesDir).filter((name) => {
@@ -178,6 +223,16 @@ const run = async () => {
 
   if(success) {
     console.log("Success! All " + fullResults.length + " tests passed!");
+
+    for(let result of fullResults) {
+      if(result.bench && result.bench.length > 0) {
+        console.log("\n");
+        console.log("Benchmarks for " + result.path);
+        for(let benchItem of result.bench) {
+          console.log(benchItem);
+        }
+      }
+    }
   } else {
     console.log("Failure! See above for details!");
   }

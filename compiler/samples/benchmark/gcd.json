@@ -1,0 +1,24 @@
+{
+  "globals": {
+    "rv_3": 3,
+    "iv_3": 3
+  },
+  "benchmarks": {
+    "rec100": {
+      "func": "benchmark",
+      "iterations": 100
+    },
+    "rec1000": {
+      "func": "benchmark",
+      "iterations": 1000
+    },
+    "looprec": {
+      "func": "loop_benchmark",
+      "iterations": 1
+    },
+    "imp1000": {
+      "func": "imp_benchmark",
+      "iterations": 1000
+    }
+  }
+}
