@@ -5,6 +5,20 @@ open Intermediate_program
 type func_analysis = {
   fa_name: string;
   fa_var_stats: (string, var_stats) Hashtbl.t;
+
+  (* from line, to lines (including next line if possible) *)
+  fa_jump_table: (int, int list) Hashtbl.t;
+
+  (* start line number -> code for block *)
+  mutable fa_basic_blocks: (int, basic_block) Map.Poly.t
+}
+
+and basic_block = {
+  bb_start_line: int;
+  bb_end_line: int;
+  mutable bb_code: iexpression list;
+  mutable bb_next: int list;
+  mutable bb_pred: int list;
 }
 
 and var_stats = {
@@ -21,6 +35,8 @@ and var_stats = {
   mutable vs_use_locs: int list;
 }
 
+exception AnalysisFailure of string
+
 let var_stats_to_string vs =
   "{ var name = " ^ vs.vs_name ^ "\n" ^
   "type = " ^ (itype_to_string vs.vs_type) ^ "\n" ^
@@ -34,10 +50,21 @@ let var_stats_to_string vs =
   "assign_locs = " ^ (String.concat ~sep:"," (List.map ~f:Int.to_string vs.vs_assign_locs)) ^ "\n" ^
   "use_locs = " ^ (String.concat ~sep:"," (List.map ~f:Int.to_string vs.vs_use_locs)) ^ " }\n"
 
+let basic_block_to_string bb =
+  "{ bb\n" ^
+  "start_line = " ^ (Int.to_string bb.bb_start_line) ^ "\n" ^
+  "end_line = " ^ (Int.to_string bb.bb_end_line) ^ "\n" ^
+  "next = " ^ (String.concat ~sep:"," (List.map ~f:Int.to_string bb.bb_next)) ^ "\n" ^
+  "pred = " ^ (String.concat ~sep:"," (List.map ~f:Int.to_string bb.bb_pred)) ^ "\n" ^
+  "code = \n" ^
+  (iexpression_list_to_string bb.bb_code) ^ "\n}\n\n"
+
 let func_analysis_to_string fa =
   "Function Analysis for " ^ fa.fa_name ^ "\n" ^
   "Variables: \n" ^
-  (String.concat (List.map ~f:var_stats_to_string (Hashtbl.data fa.fa_var_stats))) ^ "\n"
+  (String.concat (List.map ~f:var_stats_to_string (Hashtbl.data fa.fa_var_stats))) ^ "\n" ^
+  "Basic Blocks: \n" ^
+  (String.concat (List.map ~f:basic_block_to_string (Map.Poly.data fa.fa_basic_blocks))) ^ "\n"
 
 let new_var_stats name typ temp () =
   {
@@ -81,6 +108,8 @@ let update_line_vars func state line assigned used =
   List.iter ~f:(var_assigned func state line) assigned_names;
   List.iter ~f:(var_used func state line) used_names
 
+
+(* Variable analysis on instructions *)
 let analyse_instr func state line (iexpr : iexpression) =
   let ulv_filled = update_line_vars func state line in
   match iexpr with
@@ -111,14 +140,105 @@ let analyse_instr func state line (iexpr : iexpression) =
   | Iexp_unbox (_, arg, res) -> ulv_filled [res] [arg]
   | Iexp_fail -> ()
 
-let analyse_function (func : ifunction) =
+
+let analyse_function_block func code =
   let fa = {
     fa_name = func.pf_name;
     fa_var_stats = Hashtbl.create (module String);
+    fa_jump_table = Hashtbl.create (module Int);
+    fa_basic_blocks = Map.Poly.empty;
   }
   in
-  List.iteri ~f:(analyse_instr func fa) func.pf_code;
+  List.iteri ~f:(analyse_instr func fa) code;
   fa
+
+
+let find_block_end name code =
+  let opt = List.findi code ~f:(fun _ instr ->
+    match instr with
+    | Iexp_else(n) -> String.equal name n
+    | Iexp_endif(n) -> String.equal name n
+    | Iexp_endblock(n) -> String.equal name n
+    | Iexp_endloop(n, _) -> String.equal name n
+    | _ -> false)
+  in
+  match opt with
+  | Some(id, _) -> id
+  | None -> raise (AnalysisFailure ("Can't find end of " ^ name ^ " block"))
+
+let compute_jump_table func fa =
+  let rec loop line code =
+    match code with
+    | [] -> ()
+    | instr :: code' ->
+        let () =
+          (match instr with
+          | Iexp_startif(block, _) ->
+              let offset = find_block_end block code' in
+              Hashtbl.set fa.fa_jump_table ~key:line ~data:[line + 1; line + offset + 2]
+          | Iexp_else(block) ->
+              let offset = find_block_end block code' in
+              Hashtbl.add_multi fa.fa_jump_table ~key:line ~data:(line + offset + 2)
+          | Iexp_startloop(break, _) ->
+              let offset = find_block_end break code' in
+              Hashtbl.add_multi fa.fa_jump_table ~key:(line + offset + 1) ~data:line
+          | Iexp_exitblock(block) ->
+              let offset = find_block_end block code' in
+              Hashtbl.add_multi fa.fa_jump_table ~key:line ~data:(line + offset + 2)
+          | Iexp_exitblockif(block, _) ->
+            let offset = find_block_end block code' in
+            Hashtbl.set fa.fa_jump_table ~key:line ~data:[line + 1; line + offset + 2]
+          | _ -> ()
+          )
+        in loop (line + 1) code'
+  in loop 0 func.pf_code
+
+let compute_basic_blocks func fa =
+  compute_jump_table func fa;
+  let jump_offsets = Set.Poly.of_list (List.map ~f:(fun x -> x + 1) (Hashtbl.keys fa.fa_jump_table)) in
+  let receive_offsets = Set.Poly.of_list (List.concat (Hashtbl.data fa.fa_jump_table)) in
+  let block_offsets = Set.Poly.union jump_offsets receive_offsets in
+  let pred_table = Hashtbl.create (module Int) in
+  let add_basic_block start code_rev =
+    let end_line = start + (List.length code_rev) - 1 in
+    let bb = {
+      bb_start_line = start;
+      bb_end_line = end_line;
+      bb_code = List.rev code_rev;
+      bb_next = Option.value (Hashtbl.find fa.fa_jump_table end_line) ~default:[end_line + 1];
+      bb_pred = []
+    }
+    in
+    fa.fa_basic_blocks <- Map.Poly.set fa.fa_basic_blocks ~key:start ~data:bb
+  in
+  let rec loop line code block_start block_rev =
+    match code with
+    | [] ->
+        add_basic_block block_start block_rev
+    | instr :: code' ->
+        let () =
+          (if Hashtbl.mem fa.fa_jump_table line then
+            List.iter (Hashtbl.find_multi fa.fa_jump_table line) ~f:(fun target ->
+              Hashtbl.add_multi pred_table ~key:target ~data:block_start))
+        in
+        if Set.Poly.mem block_offsets line then
+          let () = add_basic_block block_start block_rev in
+          loop (line + 1) code' line [instr]
+        else
+          loop (line + 1) code' block_start (instr :: block_rev)
+  in
+  loop 1 (List.tl_exn func.pf_code) 0 [List.hd_exn func.pf_code];
+  fa.fa_basic_blocks <- Map.Poly.map fa.fa_basic_blocks ~f:(fun no_pred ->
+    {
+      no_pred with
+      bb_pred = Hashtbl.find_multi pred_table no_pred.bb_start_line
+    }
+  );
+  fa
+
+let analyse_function (func : ifunction) =
+  let fa = analyse_function_block func func.pf_code in
+  compute_basic_blocks func fa
 
 
 let temp_to_named (func : ifunction) (fa : func_analysis) =
