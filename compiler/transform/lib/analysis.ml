@@ -16,7 +16,7 @@ type func_analysis = {
 and basic_block = {
   bb_start_line: int;
   bb_end_line: int;
-  mutable bb_code: iexpression list;
+  bb_code: iexpression array;
   mutable bb_next: int list;
   mutable bb_pred: int list;
 }
@@ -57,7 +57,7 @@ let basic_block_to_string bb =
   "next = " ^ (String.concat ~sep:"," (List.map ~f:Int.to_string bb.bb_next)) ^ "\n" ^
   "pred = " ^ (String.concat ~sep:"," (List.map ~f:Int.to_string bb.bb_pred)) ^ "\n" ^
   "code = \n" ^
-  (iexpression_list_to_string bb.bb_code) ^ "\n}\n\n"
+  (iexpression_list_to_string (Array.to_list bb.bb_code)) ^ "\n}\n\n"
 
 let func_analysis_to_string fa =
   "Function Analysis for " ^ fa.fa_name ^ "\n" ^
@@ -204,7 +204,7 @@ let compute_basic_blocks func fa =
     let bb = {
       bb_start_line = start;
       bb_end_line = end_line;
-      bb_code = List.rev code_rev;
+      bb_code = Array.of_list (List.rev code_rev);
       bb_next = Option.value (Hashtbl.find fa.fa_jump_table end_line) ~default:[end_line + 1];
       bb_pred = []
     }
