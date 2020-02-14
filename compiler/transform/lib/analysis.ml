@@ -148,6 +148,7 @@ let analyse_instr func globals state line (iexpr : iexpression) =
   | Iexp_newclosure (_, _, _, res) -> ulv_filled [res] []
   | Iexp_fillclosure (_, a1, alst) -> ulv_filled [] (a1 :: alst)
   | Iexp_callclosure (_, res, clo, arg) -> ulv_filled [res] [clo; arg]
+  | Iexp_calldirect(res, _, _, args) -> ulv_filled [res] args
   | Iexp_startblock _ -> ()
   | Iexp_endblock _ -> ()
   | Iexp_exitblock _ -> ()

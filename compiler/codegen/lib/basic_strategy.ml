@@ -40,6 +40,7 @@ and codegen_iexpr (state : state) (expr : iexpression) =
   | Iexp_newclosure (ift, func_name, itt, var) -> codegen_newclosure state ift func_name itt var
   | Iexp_fillclosure(itt, var, arg_lst) -> codegen_fillclosure state itt var arg_lst
   | Iexp_callclosure(_, res, clo, arg) -> codegen_callclosure res clo arg
+  | Iexp_calldirect(res, name, itt, arg) -> codegen_calldirect state res name itt arg
   | Iexp_startblock (name) ->
       "block " ^ name
   | Iexp_endblock(name) ->
@@ -142,6 +143,12 @@ and codegen_callclosure res clo arg =
   (codegen_getvar clo) ^ "\n" ^
   (itype_to_watype It_int) ^ ".load offset=0\n" ^
   "call_indirect (param i32 i32) (result i32)\n" ^
+  (codegen_setvar res)
+
+and codegen_calldirect _state res name _itt args =
+  let load_args = String.concat ~sep:"\n" (List.map args ~f:codegen_getvar) in
+  load_args ^ "\n" ^
+  "call " ^ name ^ "\n" ^
   (codegen_setvar res)
 
 and codegen_block state name code_lst =

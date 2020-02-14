@@ -35,6 +35,7 @@ let load_variable_order (iexpr : iexpression) =
   | Iexp_newclosure (_, _, _, _) -> []
   | Iexp_fillclosure (_, clo, arg_lst) -> (Lv_var(clo)) :: (lv_stack_list arg_lst)
   | Iexp_callclosure (_, _, clo, arg) -> [Lv_var(clo); Lv_stack(arg)]
+  | Iexp_calldirect(_, _, _, arg_lst) -> (lv_stack_list arg_lst)
   | Iexp_startblock _ -> []
   | Iexp_endblock _ -> []
   | Iexp_exitblock _ -> []
@@ -65,6 +66,7 @@ let variable_result (iexpr : iexpression) =
   | Iexp_newclosure (_, _, _, res) -> Some(Lv_var(res))
   | Iexp_fillclosure (_, res, _) -> Some(Lv_var(res))
   | Iexp_callclosure (_, res, _, _) -> Some(Lv_stack(res))
+  | Iexp_calldirect (res, _, _, _) -> Some(Lv_stack(res))
   | Iexp_startblock _ -> None
   | Iexp_endblock _ -> None
   | Iexp_exitblock _ -> None
@@ -133,6 +135,7 @@ let rec codegen_iexpression_core (state : state) lvo (expr : iexpression) =
   | Iexp_newclosure (ift, func_name, itt, var) -> codegen_newclosure state ift func_name itt var
   | Iexp_fillclosure(itt, var, _) -> codegen_fillclosure state lvo itt var
   | Iexp_callclosure(_, _, clo, _) -> codegen_callclosure state lvo clo
+  | Iexp_calldirect(_, name, _, _) -> codegen_calldirect state name lvo
   | Iexp_startblock (name) ->
       "block " ^ name ^ "\n"
   | Iexp_endblock(name) ->
@@ -257,6 +260,10 @@ and codegen_callclosure state lvo clo =
   (itype_to_watype It_int) ^ ".load offset=0\n" ^
   "call_indirect (param i32 i32) (result i32)\n"
 
+and codegen_calldirect _state name lvo =
+  let load_args = String.concat ~sep:"\n" lvo in
+  load_args ^ "\n" ^
+  "call " ^ name ^ "\n"
 
 and codegen_pushtuple state lvo itt res =
   let tup_size = ituptype_size itt in

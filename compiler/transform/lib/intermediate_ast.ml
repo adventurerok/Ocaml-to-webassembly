@@ -159,6 +159,9 @@ type iexpression =
 (* Call closure in variable using argument generated from code *)
 (* type of function, output variable, closure variable, variable for argument *)
 | Iexp_callclosure of iftype * ivariable * ivariable * ivariable
+(* Directly call a function *)
+(* output variable, name of function, type of args, arg vars *)
+| Iexp_calldirect of ivariable * string * ituptype * (ivariable list)
 (* Start a block *)
 (* name of block *)
 | Iexp_startblock of string
@@ -239,6 +242,9 @@ let rec iexpression_to_string (iexp : iexpression) =
   | Iexp_callclosure(ift, res, clo, arg) ->
       "callclosure " ^ (iftype_to_string ift) ^ " " ^ (ivariable_to_string res) ^
       " " ^ (ivariable_to_string clo) ^ " " ^ (ivariable_to_string arg)
+  | Iexp_calldirect(res, name, itt, arg_lst) ->
+      "calldirect " ^ (ivariable_to_string res) ^ " " ^ name ^ " " ^
+      (ituptype_to_string itt) ^ " " ^ (vars_to_string arg_lst)
   | Iexp_startblock(name) ->
       "startblock " ^ name
   | Iexp_endblock(name) ->
@@ -300,6 +306,8 @@ let iexpression_map_vars ~f:map_var (iexp : iexpression) =
       Iexp_fillclosure(itt, map_var name, List.map ~f:map_var var_lst)
   | Iexp_callclosure(ift, res, clo, arg) ->
       Iexp_callclosure(ift, map_var res, map_var clo, map_var arg)
+  | Iexp_calldirect(res, name, itt, arg_lst) ->
+      Iexp_calldirect(map_var res, name, itt, List.map ~f:map_var arg_lst)
   | Iexp_startblock(name) ->
       Iexp_startblock(name)
   | Iexp_endblock(name) ->
