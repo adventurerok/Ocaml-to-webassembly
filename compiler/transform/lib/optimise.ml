@@ -22,8 +22,8 @@ let eliminate_redundant_copies code =
           Some(iexpr)
     | _ -> Some(iexpr))
 
-let rec eliminate_temp_to_named func =
-  let fa = Analysis.analyse_function func in
+let rec eliminate_temp_to_named globals func =
+  let fa = Analysis.analyse_function globals func in
   let map = Analysis.temp_to_named func fa in
   if List.is_empty map then
     func
@@ -43,13 +43,13 @@ let rec eliminate_temp_to_named func =
       pf_code = code2
     }
     in
-    eliminate_temp_to_named func1
+    eliminate_temp_to_named globals func1
 
-let optimise_function (func : ifunction) =
-  eliminate_temp_to_named func
+let optimise_function (prog : iprogram) (func : ifunction) =
+  eliminate_temp_to_named prog.prog_globals func
 
 let optimise (prog : iprogram) =
   {
     prog with
-    prog_functions = Map.Poly.map ~f:optimise_function prog.prog_functions
+    prog_functions = Map.Poly.map ~f:(optimise_function prog) prog.prog_functions
   }

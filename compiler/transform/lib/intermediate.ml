@@ -581,16 +581,16 @@ let transform_program ?debug:(debug = false) context structure =
   let corrected_funcs = List.map all_funcs ~f:(fun (name, f) ->
     (name, f))
   in
-  let () = if debug then (
-    let (_, only_funcs) = List.unzip corrected_funcs in
-    let fa_lst = List.map ~f:Analysis.analyse_function only_funcs in
-    let strs = List.map ~f:Analysis.func_analysis_to_string fa_lst in
-    List.iter ~f:Stdio.print_endline strs)
-  in
   let prog = {
     prog_functions = Map.Poly.of_alist_exn corrected_funcs;
     prog_globals = global_vars;
     prog_initfunc = "$init"
   }
+  in
+  let () = if debug then (
+    let (_, only_funcs) = List.unzip corrected_funcs in
+    let fa_lst = List.map ~f:(Analysis.analyse_function prog.prog_globals) only_funcs in
+    let strs = List.map ~f:Analysis.func_analysis_to_string fa_lst in
+    List.iter ~f:Stdio.print_endline strs)
   in
   Optimise.optimise prog

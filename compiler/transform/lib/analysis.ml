@@ -4,7 +4,7 @@ open Intermediate_program
 
 type func_analysis = {
   fa_name: string;
-  fa_var_stats: (string, var_stats) Hashtbl.t;
+  fa_var_stats: (ivariable, var_stats) Hashtbl.t;
 
   (* from line, to lines (including next line if possible) *)
   fa_jump_table: (int, int list) Hashtbl.t;
@@ -23,6 +23,8 @@ and basic_block = {
 
 and var_stats = {
   vs_name: string;
+  vs_scope: iscope;
+  vs_var: ivariable;
   vs_type: itype;
   vs_temp: bool;
   mutable vs_use_count: int;
@@ -31,9 +33,34 @@ and var_stats = {
   mutable vs_last_assign: int;
   mutable vs_first_use: int;
   mutable vs_last_use: int;
-  mutable vs_assign_locs: int list;
-  mutable vs_use_locs: int list;
+  mutable vs_assign_locs: Int.Set.t;
+  mutable vs_use_locs: Int.Set.t;
 }
+
+let variable_next_use fa name line =
+  match Hashtbl.find fa.fa_var_stats name with
+  | Some(vs) ->
+      Set.binary_search vs.vs_use_locs ~compare:Int.compare `First_strictly_greater_than line
+  | None -> None
+
+let variable_previous_use fa name line =
+  match Hashtbl.find fa.fa_var_stats name with
+  | Some(vs) ->
+      Set.binary_search vs.vs_use_locs ~compare:Int.compare `Last_strictly_less_than line
+  | None -> None
+
+let variable_next_assign fa name line =
+  match Hashtbl.find fa.fa_var_stats name with
+  | Some(vs) ->
+      Set.binary_search vs.vs_assign_locs ~compare:Int.compare `First_strictly_greater_than line
+  | None -> None
+
+let variable_previous_assign fa name line =
+  match Hashtbl.find fa.fa_var_stats name with
+  | Some(vs) ->
+      Set.binary_search vs.vs_assign_locs ~compare:Int.compare `Last_strictly_less_than line
+  | None -> None
+
 
 exception AnalysisFailure of string
 
@@ -47,8 +74,8 @@ let var_stats_to_string vs =
   "last_assign = " ^ (Int.to_string vs.vs_last_assign) ^ "\n" ^
   "first_use = " ^ (Int.to_string vs.vs_first_use) ^ "\n" ^
   "last_use = " ^ (Int.to_string vs.vs_last_use) ^ "\n" ^
-  "assign_locs = " ^ (String.concat ~sep:"," (List.map ~f:Int.to_string vs.vs_assign_locs)) ^ "\n" ^
-  "use_locs = " ^ (String.concat ~sep:"," (List.map ~f:Int.to_string vs.vs_use_locs)) ^ " }\n"
+  "assign_locs = " ^ (String.concat ~sep:"," (List.map ~f:Int.to_string (Set.to_list vs.vs_assign_locs))) ^ "\n" ^
+  "use_locs = " ^ (String.concat ~sep:"," (List.map ~f:Int.to_string (Set.to_list vs.vs_use_locs))) ^ " }\n"
 
 let basic_block_to_string bb =
   "{ bb\n" ^
@@ -66,9 +93,11 @@ let func_analysis_to_string fa =
   "Basic Blocks: \n" ^
   (String.concat (List.map ~f:basic_block_to_string (Map.Poly.data fa.fa_basic_blocks))) ^ "\n"
 
-let new_var_stats name typ temp () =
+let new_var_stats (scope, name) typ temp () =
   {
     vs_name = name;
+    vs_scope = scope;
+    vs_var = (scope, name);
     vs_type = typ;
     vs_temp = temp;
     vs_use_count = 0;
@@ -77,41 +106,39 @@ let new_var_stats name typ temp () =
     vs_last_assign = -1;
     vs_first_use = -1;
     vs_last_use = -1;
-    vs_assign_locs = [];
-    vs_use_locs = [];
+    vs_assign_locs = Int.Set.empty;
+    vs_use_locs = Int.Set.empty;
   }
 
-let var_assigned func state line name =
-  let vi = Option.value_exn (Vars.lookup_var_info func.pf_vars name) in
-  let vs = Hashtbl.find_or_add state.fa_var_stats name ~default:(new_var_stats name vi.vi_itype vi.vi_temp) in
+let lookup_var_info func globals (scope, name) =
+  match scope with
+  | Global -> Vars.lookup_var_info globals name
+  | Local -> Vars.lookup_var_info func.pf_vars name
+
+let var_assigned func globals state line var =
+  let vi = Option.value_exn (lookup_var_info func globals var) in
+  let vs = Hashtbl.find_or_add state.fa_var_stats var ~default:(new_var_stats var vi.vi_itype vi.vi_temp) in
   vs.vs_assign_count <- vs.vs_assign_count + 1;
   (if vs.vs_first_assign = -1 then vs.vs_first_assign <- line);
   vs.vs_last_assign <- line;
-  vs.vs_assign_locs <- line :: vs.vs_assign_locs
+  vs.vs_assign_locs <- Set.add vs.vs_assign_locs line
 
-let var_used func state line name =
-  let vi = Option.value_exn (Vars.lookup_var_info func.pf_vars name) in
-  let vs = Hashtbl.find_or_add state.fa_var_stats name ~default:(new_var_stats name vi.vi_itype vi.vi_temp) in
+let var_used func globals state line var =
+  let vi = Option.value_exn (lookup_var_info func globals var) in
+  let vs = Hashtbl.find_or_add state.fa_var_stats var ~default:(new_var_stats var vi.vi_itype vi.vi_temp) in
   vs.vs_use_count <- vs.vs_use_count + 1;
   (if vs.vs_first_use = -1 then vs.vs_first_use <- line);
   vs.vs_last_use <- line;
-  vs.vs_use_locs <- line :: vs.vs_use_locs
+  vs.vs_use_locs <- Set.add vs.vs_use_locs line
 
-let update_line_vars func state line assigned used =
-  let local_only (scope,name) =
-    match scope with
-    | Local -> Some(name)
-    | Global -> None
-  in
-  let assigned_names = List.filter_map ~f:local_only assigned in
-  let used_names = List.filter_map ~f:local_only used in
-  List.iter ~f:(var_assigned func state line) assigned_names;
-  List.iter ~f:(var_used func state line) used_names
+let update_line_vars func globals state line assigned used =
+  List.iter ~f:(var_assigned func globals state line) assigned;
+  List.iter ~f:(var_used func globals state line) used
 
 
 (* Variable analysis on instructions *)
-let analyse_instr func state line (iexpr : iexpression) =
-  let ulv_filled = update_line_vars func state line in
+let analyse_instr func globals state line (iexpr : iexpression) =
+  let ulv_filled = update_line_vars func globals state line in
   match iexpr with
   | Iexp_setvar (_, res, _) -> ulv_filled [res] []
   | Iexp_copyvar (_, res, arg) -> ulv_filled [res] [arg]
@@ -141,15 +168,15 @@ let analyse_instr func state line (iexpr : iexpression) =
   | Iexp_fail -> ()
 
 
-let analyse_function_block func code =
+let analyse_function_block func globals code =
   let fa = {
     fa_name = func.pf_name;
-    fa_var_stats = Hashtbl.create (module String);
+    fa_var_stats = Hashtbl.create (module IVariable);
     fa_jump_table = Hashtbl.create (module Int);
     fa_basic_blocks = Map.Poly.empty;
   }
   in
-  List.iteri ~f:(analyse_instr func fa) code;
+  List.iteri ~f:(analyse_instr func globals fa) code;
   fa
 
 
@@ -236,8 +263,8 @@ let compute_basic_blocks func fa =
   );
   fa
 
-let analyse_function (func : ifunction) =
-  let fa = analyse_function_block func func.pf_code in
+let analyse_function (globals : Vars.vars) (func : ifunction) =
+  let fa = analyse_function_block func globals func.pf_code in
   compute_basic_blocks func fa
 
 
@@ -246,8 +273,8 @@ let temp_to_named (func : ifunction) (fa : func_analysis) =
   List.filter_mapi func.pf_code ~f:(fun _ iexpr ->
     match iexpr with
     | Iexp_copyvar (_, (Local, rname), (Local, aname)) ->
-        let rstats = Hashtbl.find_exn fa.fa_var_stats rname in
-        let astats = Hashtbl.find_exn fa.fa_var_stats aname in
+        let rstats = Hashtbl.find_exn fa.fa_var_stats (Local, rname) in
+        let astats = Hashtbl.find_exn fa.fa_var_stats (Local, aname) in
         (* Both assigned once *)
         if rstats.vs_assign_count = 1 && astats.vs_assign_count = 1 then
           if astats.vs_temp then

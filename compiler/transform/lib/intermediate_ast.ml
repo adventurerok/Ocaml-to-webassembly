@@ -107,7 +107,7 @@ let iunop_to_string (iu : iunop) =
 type iscope =
 | Local
 | Global
-[@@deriving sexp_of, equal]
+[@@deriving sexp_of, equal, hash, compare, sexp]
 
 let iscope_to_string (is : iscope) =
   match is with
@@ -116,10 +116,23 @@ let iscope_to_string (is : iscope) =
 
 (* name, is global *)
 type ivariable = iscope * string
-[@@deriving sexp_of, equal]
+[@@deriving sexp_of, equal, hash, compare, sexp]
 
 let ivariable_to_string ((scope, name) : ivariable) =
   (iscope_to_string scope) ^ "." ^ name
+
+module IVariable = struct
+  module T = struct
+    type t = ivariable
+    let compare = compare_ivariable
+    let sexp_of_t = sexp_of_ivariable
+    let t_of_sexp = ivariable_of_sexp
+    let hash = hash_ivariable
+  end
+
+  include T
+  include Comparable.Make(T)
+end
 
 type iexpression =
 (* Create a new var from a constant *)

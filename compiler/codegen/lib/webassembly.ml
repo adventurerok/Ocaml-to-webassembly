@@ -4,7 +4,7 @@ open Intermediate_ast
 open Intermediate_program
 open Wa_base
 (* open Basic_strategy *)
-open Graph_strategy
+open Stack_strategy
 
 let runtime =
   "(memory (export \"memory\") 1)\n" ^
@@ -88,9 +88,9 @@ let codegen_globals (globals : Vars.vars) =
   in
   String.concat ~sep:"\n" global_wa_list
 
-let codegen_ifunction_core (wrap_table : string_int_map) (func : ifunction) =
+let codegen_ifunction_core (wrap_table : string_int_map) (globals : Vars.vars) (func : ifunction) =
   let (_, ret_typ) = func.pf_type in
-  let (vars1, func_code) = codegen_ifunction_code wrap_table func in
+  let (vars1, func_code) = codegen_ifunction_code wrap_table globals func in
   let cvar_count = List.length func.pf_cvars in
   let export =
     match func.pf_export_name with
@@ -158,18 +158,18 @@ let codegen_ifunction_wrapper (func : ifunction) =
   ) ^
   ")"
 
-let codegen_ifunction (wrap_table : string_int_map) init_func (func : ifunction) =
+let codegen_ifunction (wrap_table : string_int_map) globals init_func (func : ifunction) =
   (if not (String.equal init_func func.pf_name) then
     (codegen_ifunction_wrapper func) ^ "\n"
    else "") ^
-  (codegen_ifunction_core wrap_table func)
+  (codegen_ifunction_core wrap_table globals func)
 
 let pretty_indent str =
   let lines = String.split_lines str in
   let no_empty = List.filter lines ~f:(fun s -> not (String.is_empty s)) in
   let fixed_lines = List.folding_map no_empty ~init:0 ~f:(fun indent line ->
-    let lbracket_count = String.count line ~f:(fun c -> c = '(') in
-    let rbracket_count = String.count line ~f:(fun c -> c = ')') in
+    let lbracket_count = String.count line ~f:(fun c -> Char.equal c '(') in
+    let rbracket_count = String.count line ~f:(fun c -> Char.equal c ')') in
     let new_indent = indent + lbracket_count - rbracket_count in
     let line_indent = if String.is_prefix line ~prefix:")" then new_indent else indent in
     (new_indent, (String.make (2 * line_indent) ' ') ^ line))
@@ -187,7 +187,7 @@ let iprogram_to_module (prog : iprogram) =
     wrap_code ^ "\n" ^
     (codegen_globals prog.prog_globals) ^ "\n" ^
     (let (_, func_list) = List.unzip (Map.Poly.to_alist prog.prog_functions) in
-    let func_codes = List.map func_list ~f:(codegen_ifunction wrap_table prog.prog_initfunc) in
+    let func_codes = List.map func_list ~f:(codegen_ifunction wrap_table prog.prog_globals prog.prog_initfunc) in
     String.concat ~sep:"\n" func_codes) ^ "\n" ^
     "(start " ^ prog.prog_initfunc ^ ")\n" ^
     ")"
