@@ -28,12 +28,12 @@ let rec eliminate_temp_to_named globals func =
   if List.is_empty map then
     func
   else
-    let vars1 = List.fold map ~init:func.pf_vars ~f:(fun vrs (ovar, _) ->
+    let vars1 = List.fold map ~init:func.pf_vars ~f:(fun vrs ((_, ovar), _) ->
       Vars.remove_var vrs ovar)
     in
     let code1 = List.fold map ~init:func.pf_code ~f:(fun code (ovar, nvar) ->
-      Stdio.print_endline ("Elim var " ^ ovar ^ " " ^ nvar);
-      replace_var (Local, ovar) (Local, nvar) code)
+      Stdio.print_endline ("Elim var " ^ (ivariable_to_string ovar) ^ " " ^ (ivariable_to_string nvar));
+      replace_var ovar nvar code)
     in
     let code2 = eliminate_redundant_copies code1
     in

@@ -272,22 +272,28 @@ let temp_to_named (func : ifunction) (fa : func_analysis) =
   (* We are assuming that no variable is used before it is assigned *)
   List.filter_mapi func.pf_code ~f:(fun _ iexpr ->
     match iexpr with
-    | Iexp_copyvar (_, (Local, rname), (Local, aname)) ->
-        let rstats = Hashtbl.find_exn fa.fa_var_stats (Local, rname) in
-        let astats = Hashtbl.find_exn fa.fa_var_stats (Local, aname) in
+    | Iexp_copyvar (_, ((Local, _) as rvar), ((Local, _) as avar)) ->
+        let rstats = Hashtbl.find_exn fa.fa_var_stats rvar in
+        let astats = Hashtbl.find_exn fa.fa_var_stats avar in
         (* Both assigned once *)
         if rstats.vs_assign_count = 1 && astats.vs_assign_count = 1 then
           if astats.vs_temp then
-            Some((aname, rname))
+            Some((avar, rvar))
           else
-            Some((rname, aname))
+            Some((rvar, avar))
         else if astats.vs_assign_count = 1 && astats.vs_use_count = 1 then
-          Some((aname, rname))
+          Some((avar, rvar))
         (* Function arguments (never assigned *)
         else if astats.vs_assign_count = 0 && rstats.vs_assign_count = 1 then
-          Some((rname, aname))
+          Some((rvar, avar))
         else if astats.vs_assign_count = 0 && astats.vs_use_count = 1 then
-          Some((rname, aname))
+          Some((rvar, avar))
         else
           None
+    | Iexp_copyvar (_, ((Global, _) as gvar), ((Local, _) as avar)) ->
+        let gstats = Hashtbl.find_exn fa.fa_var_stats gvar in
+        let astats = Hashtbl.find_exn fa.fa_var_stats avar in
+        if gstats.vs_assign_count = 1 && astats.vs_assign_count = 1 then
+          Some((avar, gvar))
+        else None
     | _ -> None)

@@ -6,8 +6,9 @@ open Wa_base
 
 type state = {
   wrap_table: string_int_map;
-  vars: Vars.vars;
+  mutable vars: Vars.vars;
   fa: Analysis.func_analysis;
+  mutable used_vars: (ivariable, IVariable.comparator_witness) Set.t;
 }
 
 type load_variable_dest =
@@ -94,13 +95,16 @@ let needs_clear_stack (iexpr : iexpression) =
   | Iexp_endloop _ -> true
   | _ -> false
 
-let codegen_setvar _state (scope, name) =
+let codegen_setvar state (scope, name) =
+  state.used_vars <- Set.add state.used_vars (scope, name);
   (iscope_to_string scope) ^ ".set " ^ name
 
-let codegen_getvar _state (scope, name) =
+let codegen_getvar state (scope, name) =
+  state.used_vars <- Set.add state.used_vars (scope, name);
   (iscope_to_string scope) ^ ".get " ^ name
 
 let codegen_teevar state (scope, name) =
+  state.used_vars <- Set.add state.used_vars (scope, name);
   match scope with
   | Global ->
       (codegen_setvar state (scope, name)) ^ "\n" ^
@@ -258,8 +262,11 @@ and codegen_pushtuple state lvo itt res =
   let tup_size = ituptype_size itt in
   "i32.const " ^ (Int.to_string tup_size) ^ "\n" ^
   "call " ^ malloc_id ^ "\n" ^
-  (codegen_setvar state res) ^ "\n" ^
-  (codegen_filltuple ~boxed:true state itt res lvo 0)
+  (if tup_size = 0 then
+    (codegen_setvar state res) ^ "\n"
+  else
+  (codegen_teevar state res) ^ "\n" ^
+  (codegen_filltuple ~boxed:true ~teed:true state itt res lvo 0))
 
 
 and codegen_construct state lvo itt res id =
@@ -288,12 +295,18 @@ and codegen_tupleindex ~boxed:boxed _state lvo itt index offset =
   (if boxed then poly_watype else watyp) ^ ".load offset=" ^ (Int.to_string final_offset) ^ "\n"
 
 
-and codegen_filltuple ~boxed:boxed state itt var lvo start_offset =
+and codegen_filltuple ~boxed:boxed ?teed:(teed = false) state itt var lvo start_offset =
   let zipped_lst = List.zip_exn itt lvo in
-  let (_, code_list_rev) = List.fold zipped_lst ~init:(start_offset, [])
-                             ~f:(fun (offset, out_lst) (it, lv_arg) ->
+  let (_, code_list_rev) = List.foldi zipped_lst ~init:(start_offset, [])
+                             ~f:(fun index (offset, out_lst) (it, lv_arg) ->
+    let get_or_teed =
+      if teed && (index = 0) then
+        ""
+      else
+        (codegen_getvar state var) ^ "\n"
+    in
     let item_wa =
-      (codegen_getvar state var) ^ "\n" ^
+      get_or_teed ^
       (lv_arg) ^ "\n" ^
       (if boxed then poly_watype else (itype_to_watype it)) ^ ".store offset=" ^ (Int.to_string offset)
     in
@@ -627,15 +640,29 @@ let codegen_basic_block state (bb : Analysis.basic_block) =
   let line_codes = List.map ~f:(codegen_iexpression_simple state) lines in
   String.concat ~sep:"\n" line_codes *)
 
+let remove_unused_vars state func =
+  let all_vars = Vars.get_vars state.vars in
+  let cvar_count = List.length func.pf_cvars in
+  let local_vars = List.drop all_vars (cvar_count + 1) in
+  let () = List.iter local_vars ~f:(fun (name, _) ->
+    let var = (Local, name) in
+    if not (Set.mem state.used_vars var) then
+      state.vars <- Vars.remove_var state.vars name
+  )
+  in
+  state.vars
+
 let codegen_ifunction_code wrap_table globals func =
   let fa = Analysis.analyse_function globals func in
   let state = {
     wrap_table = wrap_table;
     vars = func.pf_vars;
     fa = fa;
+    used_vars = Set.empty (module IVariable);
   }
   in
   let unmapped = Map.Poly.data fa.fa_basic_blocks in
   let bb_codes = List.map ~f:(codegen_basic_block state) unmapped in
   let full_code = String.concat ~sep:"\n" bb_codes in
-  (state.vars, full_code)
+  let reduced_vars = remove_unused_vars state func in
+  (reduced_vars, full_code)

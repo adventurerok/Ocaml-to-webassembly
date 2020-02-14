@@ -108,6 +108,18 @@ and transform_value_bindings_nonrecursive ?global:(global = false) state tvb_lis
   in
   code_list
 
+
+and transform_pat_escape state escape test_var =
+  match escape with
+  | [] -> []
+  | [Iexp_exitblock(leave_block)] ->
+      [Iexp_exitblockif(leave_block, test_var)]
+  | _ ->
+      let escape_block = update_vars state (Vars.add_block state.vars) in
+      [Iexp_startif(escape_block, test_var)]
+      @ escape
+      @ [Iexp_endif(escape_block)]
+
 and transform_pat ?check:(check = true)
                   ?escape:(escape = [Iexp_fail])
                   ?boxed:(boxed = false)
@@ -131,21 +143,17 @@ and transform_pat ?check:(check = true)
         let ityp = stoitype pat.tpat_type in
         let const_var = quick_temp_var state ityp in
         let test_var = quick_temp_var state It_bool in
-        let escape_block = update_vars state (Vars.add_block state.vars) in
+        let escape_code = transform_pat_escape state escape test_var in
         if (boxed && (itype_needs_box ityp)) then
           let unbox_var = quick_temp_var state ityp in
             [Iexp_unbox(ityp, var, unbox_var);
             Iexp_setvar(ityp, const_var, const);
-            Iexp_binop(ityp, Ibin_ne, test_var, unbox_var, const_var);
-            Iexp_startif(escape_block, test_var)]
-          @ escape
-          @ [Iexp_endif(escape_block)]
+            Iexp_binop(ityp, Ibin_ne, test_var, unbox_var, const_var)]
+          @ escape_code
         else
             [Iexp_setvar(ityp, const_var, const);
-            Iexp_binop(ityp, Ibin_ne, test_var, var, const_var);
-            Iexp_startif(escape_block, test_var)]
-          @ escape
-          @ [Iexp_endif(escape_block)]
+            Iexp_binop(ityp, Ibin_ne, test_var, var, const_var)]
+          @ escape_code
       else []
   | Tpat_tuple(plist) ->
       let ituptype = tupletoitype pat.tpat_type in
@@ -162,13 +170,11 @@ and transform_pat ?check:(check = true)
           let id_var = quick_temp_var state It_int in
           let const_var = quick_temp_var state It_int in
           let test_var = quick_temp_var state It_bool in
-          let escape_block = update_vars state (Vars.add_block state.vars) in
+          let escape_code = transform_pat_escape state escape test_var in
             [Iexp_loadconstructid(id_var, var);
             Iexp_setvar(It_int, const_var, Int.to_string construct.index);
-            Iexp_binop(It_int, Ibin_ne, test_var, id_var, const_var);
-            Iexp_startif(escape_block, test_var)]
-          @ escape
-          @ [Iexp_endif(escape_block)]
+            Iexp_binop(It_int, Ibin_ne, test_var, id_var, const_var)]
+          @ escape_code
         else []
       in
       let destruct_code =
