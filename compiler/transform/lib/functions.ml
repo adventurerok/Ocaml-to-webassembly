@@ -80,13 +80,40 @@ let select_export_functions fnames funcs =
 (* So on an expression, we'll need the modified expression, and the map of id to function *)
 (* Globals: Not in closure (global variables or arguments), Locals: In closure *)
 
-let rec func_transform_expr ?next_name:(next_name=None) (state: state) (locals: type_map) (expr: texpression) =
+
+let rec generate_let_bindings expr match_args =
+  match match_args with
+  | [] -> expr
+  | (arg_name, pat) :: match_args' ->
+      let tvb =
+        {
+          tvb_pat = pat;
+          tvb_expr = {
+            texp_desc = Texp_ident(arg_name);
+            texp_loc = Location.none;
+            texp_type = pat.tpat_type;
+          };
+          tvb_vars = List.map pat.tpat_vars ~f:(fun (vname, vtyp) -> (vname, Forall(Set.Poly.empty, vtyp)));
+        }
+      in
+      let inner_expr = generate_let_bindings expr match_args' in
+      {expr with
+        texp_desc = Texp_let(Asttypes.Nonrecursive, [tvb], inner_expr);
+      }
+
+let rec func_transform_expr ?next_name:(next_name=None) ?match_args:(match_args=[])
+                            (state: state) (locals: type_map) (in_expr: texpression) =
+  let expr =
+    match in_expr.texp_desc with
+    | Texp_fun _ -> in_expr
+    | _ -> generate_let_bindings in_expr (List.rev match_args)
+  in
   let desc =
     match expr.texp_desc with
     | Texp_ident(x) -> Texp_ident(x)
     | Texp_constant(c) -> Texp_constant(c)
     | Texp_let (rf, tvb_list, e) -> func_transform_let state locals rf tvb_list e
-    | Texp_fun (p, e) -> func_transform_func next_name state locals expr.texp_type p e
+    | Texp_fun (p, e) -> func_transform_func next_name match_args state locals expr.texp_type p e
     | Texp_apply (a, blist) ->
         let a' = func_transform_expr state locals a in
         let blist' = List.map blist ~f:(func_transform_expr state locals) in
@@ -120,7 +147,9 @@ let rec func_transform_expr ?next_name:(next_name=None) (state: state) (locals: 
         let a' = func_transform_expr state locals a in
         let b' = func_transform_expr state locals b in
         (Texp_sequence(a', b'))
-  in {expr with texp_desc = desc}
+  in
+  {expr with texp_desc = desc}
+
 
 and func_transform_value_bindings state locals rf tvb_list =
   let vars = List.concat (List.map tvb_list ~f:(fun tvb -> tvb.tvb_pat.tpat_vars)) in
@@ -146,21 +175,30 @@ and func_transform_let state locals rf tvb_list e =
   let e' = func_transform_expr state locals' e in
   (Texp_let(rf, tvb_list', e'))
 
-and func_transform_func next_name state locals typ pat expr =
+and func_transform_func next_name match_args state locals typ pat expr =
   let (fnames1, fname, app_name) =
     match next_name with
     | Some(name) -> add_named_func state.fnames name
     | None -> add_anon_func state.fnames
   in
   let () = state.fnames <- fnames1 in
-  let locals' = List.fold ~init:locals ~f:(fun a (t, v) -> Map.Poly.set a ~key:t ~data:v) pat.tpat_vars in
+  let arg_name = "arg_" ^ (String.chop_prefix_exn ~prefix:"$$f_" fname) in
+  let new_pat = {
+    tpat_desc = Tpat_var(arg_name);
+    tpat_loc = Location.none;
+    tpat_type = pat.tpat_type;
+    tpat_vars = [(arg_name, pat.tpat_type)]
+  }
+  in
+  let locals' = Map.set locals ~key:arg_name ~data:pat.tpat_type in
   let next_name' = Some(app_name) in
-  let expr_trans = func_transform_expr ~next_name:next_name' state locals' expr in
-  let vars_used = texpression_free_vars expr in
+  let match_args' = (arg_name, pat) :: match_args in
+  let expr_trans = func_transform_expr ~next_name:next_name' ~match_args:match_args' state locals' expr in
+  let vars_used = texpression_free_vars expr_trans in
   let closure_vars = Map.Poly.filter_keys vars_used ~f:(Map.Poly.mem locals) in
   let closure_list = Map.to_alist closure_vars in
   let fdata = {
-    fd_pat = pat;
+    fd_pat = new_pat;
     fd_expr = expr_trans;
     fd_cvars = closure_list;
     fd_type = typ;

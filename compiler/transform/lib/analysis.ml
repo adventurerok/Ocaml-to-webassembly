@@ -116,7 +116,7 @@ let lookup_var_info func globals (scope, name) =
   | Local -> Vars.lookup_var_info func.pf_vars name
 
 let var_assigned func globals state line var =
-  let vi = Option.value_exn (lookup_var_info func globals var) in
+  let vi = Option.value_exn ~message:("Unknown var " ^ (ivariable_to_string var)) (lookup_var_info func globals var) in
   let vs = Hashtbl.find_or_add state.fa_var_stats var ~default:(new_var_stats var vi.vi_itype vi.vi_temp) in
   vs.vs_assign_count <- vs.vs_assign_count + 1;
   (if vs.vs_first_assign = -1 then vs.vs_first_assign <- line);
@@ -271,30 +271,47 @@ let analyse_function (globals : Vars.vars) (func : ifunction) =
 
 let temp_to_named (func : ifunction) (fa : func_analysis) =
   (* We are assuming that no variable is used before it is assigned *)
+  (* Only map each variable once, so multi cycle if we want more *)
+  let already_mapped = Hash_set.create (module IVariable) in
   List.filter_mapi func.pf_code ~f:(fun _ iexpr ->
-    match iexpr with
-    | Iexp_copyvar (_, ((Local, _) as rvar), ((Local, _) as avar)) ->
-        let rstats = Hashtbl.find_exn fa.fa_var_stats rvar in
-        let astats = Hashtbl.find_exn fa.fa_var_stats avar in
-        (* Both assigned once *)
-        if rstats.vs_assign_count = 1 && astats.vs_assign_count = 1 then
-          if astats.vs_temp then
+    let mapping =
+      match iexpr with
+      | Iexp_copyvar (_, ((Local, _) as rvar), ((Local, _) as avar)) ->
+          let rstats = Hashtbl.find_exn fa.fa_var_stats rvar in
+          let astats = Hashtbl.find_exn fa.fa_var_stats avar in
+          if Hash_set.mem already_mapped rvar || Hash_set.mem already_mapped avar then
+            None
+          else if rstats.vs_assign_count = 1 && astats.vs_assign_count = 1 then
+          (* Both assigned once *)
+            if astats.vs_temp then
+              Some((avar, rvar))
+            else
+              Some((rvar, avar))
+          else if astats.vs_assign_count = 1 && astats.vs_use_count = 1 then
             Some((avar, rvar))
-          else
+          (* Function arguments (never assigned *)
+          else if astats.vs_assign_count = 0 && rstats.vs_assign_count = 1 then
             Some((rvar, avar))
-        else if astats.vs_assign_count = 1 && astats.vs_use_count = 1 then
-          Some((avar, rvar))
-        (* Function arguments (never assigned *)
-        else if astats.vs_assign_count = 0 && rstats.vs_assign_count = 1 then
-          Some((rvar, avar))
-        else if astats.vs_assign_count = 0 && astats.vs_use_count = 1 then
-          Some((rvar, avar))
-        else
-          None
-    | Iexp_copyvar (_, ((Global, _) as gvar), ((Local, _) as avar)) ->
-        let gstats = Hashtbl.find_exn fa.fa_var_stats gvar in
-        let astats = Hashtbl.find_exn fa.fa_var_stats avar in
-        if gstats.vs_assign_count = 1 && astats.vs_assign_count = 1 then
-          Some((avar, gvar))
-        else None
-    | _ -> None)
+          else if astats.vs_assign_count = 0 && astats.vs_use_count = 1 then
+            Some((rvar, avar))
+          else
+            None
+      | Iexp_copyvar (_, ((Global, _) as gvar), ((Local, _) as avar)) ->
+          let gstats = Hashtbl.find_exn fa.fa_var_stats gvar in
+          let astats = Hashtbl.find_exn fa.fa_var_stats avar in
+          if Hash_set.mem already_mapped avar then
+            None
+          else if gstats.vs_assign_count = 1 && astats.vs_assign_count = 1 then
+            Some((avar, gvar))
+          else None
+      | _ -> None
+    in
+    let () =
+      match mapping with
+      | Some(o, n) ->
+          Hash_set.add already_mapped o;
+          Hash_set.add already_mapped n
+      | None -> ()
+    in
+    mapping
+  )

@@ -400,7 +400,7 @@ let print_state msg gb_stack stack_avail saved_vars =
   Stdio.print_endline "\nSaved vars:";
   Stdio.print_endline (String.concat ~sep:" " (List.map (Set.to_list saved_vars) ~f:ivariable_to_string))
 
-
+(* Chance a gen block so it writes to it's var instead of putting the result on top of the stack *)
 let unstack_gen_block state gb saved_vars =
   match gb.out_stack with
   | Some(var) ->
@@ -415,20 +415,27 @@ let unstack_gen_block state gb saved_vars =
       }, Set.add saved_vars var)
   | None -> (gb, saved_vars)
 
-
+(* Find a stack entry that will generate the variable we want, removing unwanted entries along the way
+ * by having their results be saved to their variable.
+ * target_var = var we want
+ * gen_stack = the stack
+ * stack_avail = variables known to be available on the stack
+ * saved_vars = variables known to be saved
+ * no_bypass = variables that we cannot go past writes to *)
 let rec unwind_gen_stack state target_var gen_stack stack_avail saved_vars no_bypass =
   match gen_stack with
   | [] -> raise (CodegenFailure ("Var not on gen stack: " ^ ivariable_to_string target_var))
   | (gb :: gen_stack') ->
+      (* Check top gen stack entry doesn't write to a variable in no_bypass *)
       if Option.is_some (Set.find (Map.key_set no_bypass) ~f:(Set.mem gb.assigned)) then
         None
       else
         (match gb.out_stack with
+        (* Top gen stack entry puts other var on top of stack *)
         | Some(other_var) ->
             let stack_avail' = Set.remove stack_avail other_var in
+            (* Check this var also isn't in no_bypass *)
             if Map.mem no_bypass other_var then
-              None
-            else if Option.is_some (Set.find (Map.key_set no_bypass) ~f:(Set.mem gb.assigned)) then
               None
             else if equal_ivariable other_var target_var then
               (* We found our var *)
@@ -436,6 +443,7 @@ let rec unwind_gen_stack state target_var gen_stack stack_avail saved_vars no_by
                 gb.teed || (match target_var with
                 | (Global, _) -> true
                 | (Local, _) ->
+                    (* If the variable is used more than once, assume we should tee it *)
                     let vs = Hashtbl.find_exn state.fa.fa_var_stats target_var in
                     vs.vs_use_count > 1
                 )
@@ -447,9 +455,10 @@ let rec unwind_gen_stack state target_var gen_stack stack_avail saved_vars no_by
               in
               Some((gb.start_line, [gb.code ^ tee_extra], gb.assigned, gen_stack', stack_avail', saved_vars))
             else
+              (* Not our var, so this gen block needs to write it's result to the var
+               * instead of keeping it on top of the stack *)
               let (gb', saved_vars') = unstack_gen_block state gb saved_vars in
               let deeper_option =
-              (* let (start_line, c_lst, out_gen_stack, out_stack_avail) = *)
                 unwind_gen_stack state target_var gen_stack' stack_avail' saved_vars' no_bypass
               in
               (match deeper_option with
@@ -457,9 +466,9 @@ let rec unwind_gen_stack state target_var gen_stack stack_avail saved_vars no_by
                   let assigned_vars2 = Set.union assigned_vars1 gb'.assigned in
                   Some((start_line, gb'.code :: c_lst, assigned_vars2, out_gen_stack, out_stack_avail, saved_vars2))
               | None -> None)
+        (* Top gen stack entry doesn't put a var on top of stack *)
         | None ->
             let deeper_option =
-            (* let (start_line, c_lst, out_gen_stack, out_stack_avail) = *)
               unwind_gen_stack state target_var gen_stack' stack_avail saved_vars no_bypass
             in
             (match deeper_option with
@@ -469,6 +478,8 @@ let rec unwind_gen_stack state target_var gen_stack stack_avail saved_vars no_by
             | None -> None)
         )
 
+(* Ensures that a var is written to it's variable *)
+(* TODO might be redundant to do this *)
 let savevar_gen_stack _state target_var gen_stack stack_avail saved_vars =
   let stack_avail' = Set.remove stack_avail target_var in
   let rec loop gs acc =
@@ -491,6 +502,7 @@ let savevar_gen_stack _state target_var gen_stack stack_avail saved_vars =
   in (loop gen_stack [], stack_avail', Set.add saved_vars target_var)
 
 
+(* Unwinds the gen block stack to produce code for each Load Variable Order *)
 let rec codegen_unwind_lvos state start_line lvo_stack gen_stack stack_avail saved_vars no_bypass =
   match lvo_stack with
   | [] -> (start_line, [], Set.empty (module IVariable), gen_stack, stack_avail, saved_vars)
@@ -524,7 +536,6 @@ let rec codegen_unwind_lvos state start_line lvo_stack gen_stack stack_avail sav
           in
           if Set.mem stack_avail var then
             let unwind_option =
-            (* let (sl1, c_lst, gen_stack1, stack_avail1) = *)
               unwind_gen_stack state var gen_stack stack_avail saved_vars no_bypass'
             in
             (match unwind_option with
@@ -543,7 +554,7 @@ let rec codegen_unwind_lvos state start_line lvo_stack gen_stack stack_avail sav
             ignore_stack ()
       )
 
-
+(* Empty the stack, saving variables instead *)
 let empty_stack state gen_stack saved_vars =
   let rec loop gs sv acc sl =
     match gs with

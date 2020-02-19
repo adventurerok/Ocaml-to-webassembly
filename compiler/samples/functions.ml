@@ -11,7 +11,8 @@ let add3 n =
 let mult m n =
   let rec addm t a =
     if t = 0 then a
-    else addm (t-1) (a + m) in
+    else addm (t-1) (a + m)
+  in
   addm n 0
 
 
