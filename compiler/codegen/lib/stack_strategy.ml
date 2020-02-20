@@ -636,7 +636,7 @@ let codegen_add_line state prev_gens avail_vars saved_vars line iexpr =
         }, Set.add avail_vars2 res, Set.remove saved_vars2 res)
   in (gb :: prev_gens2, avail_vars3, saved_vars3)
 
-let codegen_basic_block state (bb : Analysis.basic_block) =
+let codegen_basic_block state func (bb : Analysis.basic_block) =
   let all_lines = Array.to_list bb.bb_code in
   let rec loop gen_blocks avail_vars saved_vars line_num lines =
     match lines with
@@ -653,7 +653,11 @@ let codegen_basic_block state (bb : Analysis.basic_block) =
           (* let () = print_state ("After line " ^ (Int.to_string line_num)) gen_blocks' avail_vars' saved_vars' in *)
           loop gen_blocks' avail_vars' saved_vars' (line_num + 1) lines'
   in
-  loop [] (Set.empty (module IVariable)) (Set.empty (module IVariable)) bb.bb_start_line all_lines
+  let all_vars = Vars.get_ivariables func.pf_vars in
+  let cvar_count = List.length func.pf_cvars in
+  let arg_vars = List.take all_vars (cvar_count + 1) in
+  let initial_saved_vars = Set.of_list (module IVariable) arg_vars in
+  loop [] (Set.empty (module IVariable)) initial_saved_vars bb.bb_start_line all_lines
 
 
 (* let codegen_basic_block state _fa (bb : Analysis.basic_block) =
@@ -683,7 +687,7 @@ let codegen_ifunction_code wrap_table globals func =
   }
   in
   let unmapped = Map.Poly.data fa.fa_basic_blocks in
-  let bb_codes = List.map ~f:(codegen_basic_block state) unmapped in
+  let bb_codes = List.map ~f:(codegen_basic_block state func) unmapped in
   let full_code = String.concat ~sep:"\n" bb_codes in
   let reduced_vars = remove_unused_vars state func in
   (reduced_vars, full_code)

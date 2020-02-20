@@ -174,3 +174,6 @@ let vars_to_string vars =
 (* Gets the ordered list of var name and type *)
 let get_vars vars =
   List.rev (List.map vars.data ~f:(fun {vi_code_name; vi_itype; _} -> (vi_code_name, vi_itype)))
+
+let get_ivariables vars =
+  List.rev (List.map vars.data ~f:(fun {vi_code_name; _} -> (vars.scope, vi_code_name)))
