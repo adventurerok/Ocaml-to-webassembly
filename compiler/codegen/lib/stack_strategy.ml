@@ -34,7 +34,7 @@ let load_variable_order (iexpr : iexpression) =
   | Iexp_binop (_, _, _, arg1, arg2) -> [Lv_stack(arg1); Lv_stack(arg2)]
   | Iexp_newclosure (_, _, _, _) -> []
   | Iexp_fillclosure (_, clo, arg_lst) -> (Lv_var(clo)) :: (lv_stack_list arg_lst)
-  | Iexp_callclosure (_, _, clo, arg) -> [Lv_var(clo); Lv_stack(arg)]
+  | Iexp_callclosure (_, _, clo, arg) -> [Lv_stack(clo); Lv_stack(arg)]
   | Iexp_calldirect(_, _, _, arg_lst) -> (lv_stack_list arg_lst)
   | Iexp_startblock _ -> []
   | Iexp_endblock _ -> []
@@ -114,7 +114,7 @@ let codegen_teevar state (scope, name) =
   | Local ->
       (iscope_to_string scope) ^ ".tee " ^ name
 
-let rec codegen_iexpression_core (state : state) lvo (expr : iexpression) =
+let rec codegen_iexpression_core (state : state) saved_vars lvo (expr : iexpression) =
   (* If vout is Lv_stack, then that is top of the stack *)
   (* If vout is Lv_var, the var was saved but it isn't top of stack *)
   (* If vout is None, no variable *)
@@ -134,7 +134,7 @@ let rec codegen_iexpression_core (state : state) lvo (expr : iexpression) =
       (codegen_binop ityp binop)
   | Iexp_newclosure (ift, func_name, itt, var) -> codegen_newclosure state ift func_name itt var
   | Iexp_fillclosure(itt, var, _) -> codegen_fillclosure state lvo itt var
-  | Iexp_callclosure(_, _, clo, _) -> codegen_callclosure state lvo clo
+  | Iexp_callclosure(_, _, clo, _) -> codegen_callclosure state saved_vars lvo clo
   | Iexp_calldirect(_, name, _, _) -> codegen_calldirect state name lvo
   | Iexp_startblock (name) ->
       "block " ^ name ^ "\n"
@@ -247,14 +247,17 @@ and codegen_fillclosure state lvo itt var =
   gen_var_code ^ "\n" ^
   fill_code ^ "\n"
 
-and codegen_callclosure state lvo clo =
+and codegen_callclosure state saved_vars lvo clo =
   let (load_clo, load_arg) =
     match lvo with
     | [lc; la] -> (lc, la)
     | _ -> raise (CodegenFailure "Incorrect LVO arguments")
   in
   load_clo ^ "\n" ^
-  (codegen_getvar state clo) ^ "\n" ^
+  (if Set.mem saved_vars clo then
+    ""
+  else
+    (codegen_teevar state clo) ^ "\n") ^
   load_arg ^ "\n" ^
   (codegen_getvar state clo) ^ "\n" ^
   (itype_to_watype It_int) ^ ".load offset=0\n" ^
@@ -364,7 +367,7 @@ let codegen_iexpression_simple state iexpr =
     | Lv_var(_) -> ""
     | Lv_stack(var) -> codegen_getvar state var)
   in
-  let main_code = codegen_iexpression_core state lvo iexpr in
+  let main_code = codegen_iexpression_core state (Set.empty (module IVariable)) lvo iexpr in
   let expected_output = variable_result iexpr in
   match expected_output with
   | Some(Lv_stack(var)) ->
@@ -595,7 +598,7 @@ let codegen_add_line state prev_gens avail_vars saved_vars line iexpr =
   (*let () = List.iteri lvo_code ~f:(fun id code ->
     Stdio.print_endline ("LVO " ^ (Int.to_string id) ^ ":\n" ^ code ^ "\n")
   ) in *)
-  let full_code = codegen_iexpression_core state lvo_code iexpr in
+  let full_code = codegen_iexpression_core state saved_vars1 lvo_code iexpr in
   let (prev_gens2, avail_vars2, saved_vars2) =
     if needs_clear_stack iexpr then
       let (gs_opt, sv') = empty_stack state prev_gens1 saved_vars1 in
