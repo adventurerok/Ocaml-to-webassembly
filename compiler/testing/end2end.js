@@ -5,185 +5,160 @@ const fs = require("fs");
 const readFile = util.promisify(fs.readFile);
 const exec = util.promisify(require('child_process').exec);
 
-let samplesDir = "samples/"
+const {testFatal, testFailure} = require("./util");
+const {testBenchmarks} = require("./benchmarks");
 
-const wat2wasmPath = "wat2wasm"
-const compilerPath = "_build/default/toplevel.exe"
+let samplesDir = "samples/";
+
+const wat2wasmPath = "wat2wasm";
+const compilerPath = "_build/default/toplevel.exe";
 
 const debug = false;
 
-async function testFile(path) {
+async function createTestObject(path) {
   let pathWithoutExtension = path.substring(0, path.lastIndexOf("."));
-  let wastPath = pathWithoutExtension + ".wast";
 
-  // Load the test file first
+  let result = {};
+  result.path = path;
+  result.pathWithoutExtension = pathWithoutExtension;
+  result.failures = [];
+  result.benchResults = [];
+
   let testFileContents;
   try {
     testFileContents = await readFile(pathWithoutExtension + ".json", "utf8");
   } catch(e) {}
 
+  if(testFileContents) {
+    result.json = JSON.parse(testFileContents);
+  }
+
+  return result;
+}
+
+async function testCompileAndInstantiate(test) {
+
   // Compile to wast
-  let command = compilerPath + " " + path + " -output " + wastPath;
+  let wastPath = test.pathWithoutExtension + ".wast";
+  let command = compilerPath + " " + test.path + " -output " + wastPath;
 
   if(debug) {
-    console.log("exec otwa for " + path);
+    console.log("exec otwa for " + test.path);
   }
 
   try{
     await exec(command);
   } catch(e) {
-    return {
-      path: path,
-      result: false,
-      message: "Failed otwa compilation",
-      detail: e.stdout + "\n" + e.stderr
-    }
+    testFatal(test, "Failed otwa compilation", e.stdout + "\n" + e.stderr);
   }
 
   // Compile to wasm
-  let wasmPath = pathWithoutExtension + ".wasm";
+  let wasmPath = test.pathWithoutExtension + ".wasm";
 
   if(debug) {
-    console.log("exec wat2wasm for " + path);
+    console.log("exec wat2wasm for " + test.path);
   }
 
   try{
     await exec(wat2wasmPath + " " + wastPath + " -o " + wasmPath);
   } catch(e) {
-    return {
-      path: path,
-      result: false,
-      message: "Failed wasm compilation",
-      detail: e.stderr
-    };
+    testFatal(test, "Failed wasm compilation", e.stderr);
   }
 
   if(debug) {
-    console.log("instantiate for " + path);
+    console.log("instantiate for " + test.path);
   }
 
   // instantiate wasm
-  let instance = null;
   try{
     const buffer = await readFile(wasmPath);
-    const module = await WebAssembly.compile(buffer);
-    instance = await WebAssembly.instantiate(module);
+    test.module = await WebAssembly.compile(buffer);
+    test.instance = await WebAssembly.instantiate(test.module);
   } catch(e) {
-    return {
-      path: path,
-      result: false,
-      message: "Failed WebAssembly instantiation",
-      detail: e
-    }
+    testFatal(test, "Failed WebAssembly instantiation", e);
   }
 
   if(debug) {
-    console.log("instantiated for " + path);
-  }
-
-
-  if(testFileContents) {
-    const testJson = JSON.parse(testFileContents);
-
-    return await runInstanceTests(path, instance, testJson);
-  } else {
-    console.log("No json for " + path);
-    return {
-      path: path,
-      result: true
-    }
+    console.log("instantiated for " + test.path);
   }
 }
 
-async function runInstanceTests(path, instance, testJson) {
-  let failures = [];
-  let benchResults = [];
+async function testFile(path) {
+  let test = await createTestObject(path);
 
-  // test globals
-  if(testJson.globals) {
-    for(let global in testJson.globals) {
-      let expected = testJson.globals[global].toString();
-
-      let glob_object = instance.exports["global_" + global];
-      if(!glob_object) {
-        failures.push("Missing global value '" + global + "'");
-      } else {
-        let actual = glob_object.value;
-
-        if(!compareValues(instance, expected, actual)) {
-          failures.push("Mismatch in global value '" + global + "': expected " + expected + " but got " + actual);
-        }
-      }
-    }
-  }
-
-  // benchmark
-  if(testJson.benchmarks) {
-    for(let benchName in testJson.benchmarks) {
-      let bench = testJson.benchmarks[benchName];
-
-      let start = (new Date()).getTime();
-      for(let i = 0; i < bench.iterations; i++) {
-        instance.exports[bench.func](0);
-      }
-      let ourTime = ((new Date()).getTime() - start) / bench.iterations;
-
-      let ocamlEcho = "let start = Sys.time() in let () = (for iter = 1 to "
-                      + bench.iterations + " do " + bench.func + "() done) in Sys.time() -. start;;";
-      let ocamlCmd = "echo \"" + ocamlEcho + "\" | ocaml -init " + path;
-
-      let ocamlTime;
-
-      try {
-        let res = await exec(ocamlCmd);
-        let regex = /^- : float = ([0-9]+\.[0-9]+(?:e-[0-9]+)?)$/gm;
-        let regMatch = regex.exec(res.stdout);
-        let time = parseFloat(regMatch[1]) * 1000 / bench.iterations;
-        ocamlTime = time;
-      } catch(e) {
-        return {
-          path: path,
-          result: false,
-          message: "Failed OCaml REPL Benchmark",
-          detail: e.stderr
-        }
-      }
-
-      benchResults.push(benchName + ": otwa = " + ourTime + " ms, ocaml = " + ocamlTime + "ms");
-
-    }
-  }
-
-  if(failures.length == 0) {
+  try {
+    await testCompileAndInstantiate(test);
+    await testGlobals(test);
+    await testBenchmarks(test);
+  } catch(e) {
     return {
-      path: path,
-      result: true,
-      bench: benchResults
+      path: e.path,
+      result: false,
+      message: e.message,
+      detail: e.detail
     }
-  } else {
+  }
+
+  if(test.failures.length !== 0) {
+    let failMsgs = [];
+    for(let fail of test.failures) {
+      let msg = fail.message + "\n";
+      if(fail.detail) {
+        msg += "Detail: " + fail.detail + "\n\n";
+      }
+      failMsgs.push(msg);
+    }
+
     return {
       path: path,
       result: false,
-      message: "Failed WebAssembly runtime testing",
-      detail: failures.join("\n")
-    }
+      message: test.failures.length + " failures",
+      detail: failMsgs.join(""),
+      bench: test.benchResults
+    };
+  }
+
+  return {
+    path: path,
+    result: true,
+    bench: test.benchResults
   }
 }
 
+async function testGlobals(test) {
+  if(!test.instance || !test.json || !test.json.globals) return;
+
+  for(let global in test.json.globals) {
+    let expected = test.json.globals[global].toString();
+
+    let glob_object = test.instance.exports["global_" + global];
+    if(!glob_object) {
+      testFailure(test, "Missing global value '" + global + "'");
+    } else {
+      let actual = glob_object.value;
+
+      if(!compareValues(test.instance, expected, actual)) {
+        testFailure(test, "Mismatch in global value '" + global + "': expected " + expected + " but got " + actual);
+      }
+    }
+  }
+
+}
+
 function compareValues(instance, expected, actual) {
-  if(expected == "true") {
-    return actual == 1;
-  } else if(expected == "false") {
-    return actual == 0;
+  if(expected === "true") {
+    return actual === 1;
+  } else if(expected === "false") {
+    return actual === 0;
   } else if(expected.endsWith("f")) {
     // float equality test
     const precision = 6;
     expected = Number.parseFloat(expected.substring(0, expected.length - 1)).toPrecision(precision);
     actual = Number.parseFloat(actual).toPrecision(precision);
-    return expected == actual;
+    return expected === actual;
   } else {
     // default integer test, but use parseFloat to avoid parseInt just ignoring floating point part
-    return Number.parseFloat(expected) == actual;
+    return Number.parseFloat(expected) === actual;
   }
 }
 
@@ -244,7 +219,7 @@ const run = async () => {
   }
 
   canExit = true;
-}
+};
 
 let mainPromise = run();
 

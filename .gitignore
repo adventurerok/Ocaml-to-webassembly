@@ -13,3 +13,8 @@ compiler/samples/**/*.wast
 compiler/samples/**/*.wasm
 compiler/samples/*.wast
 compiler/samples/*.wasm
+*.cmi
+*.cmo
+*.byte
+*.bench.ml
+*.bench.js
