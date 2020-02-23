@@ -15,6 +15,9 @@ compiler/samples/*.wast
 compiler/samples/*.wasm
 *.cmi
 *.cmo
+*.cmx
 *.byte
+*.exe
+*.o
 *.bench.ml
 *.bench.js

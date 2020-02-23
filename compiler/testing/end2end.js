@@ -173,7 +173,7 @@ if(process.argv.length > 2) {
 
 const run = async () => {
   const samplesFiles = fs.readdirSync(samplesDir).filter((name) => {
-    return name.endsWith(".ml");
+    return name.endsWith(".ml") && !name.endsWith(".bench.ml");
   });
 
   promises = [];

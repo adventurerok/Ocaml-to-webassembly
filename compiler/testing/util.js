@@ -1,5 +1,5 @@
 
-module.exports.testFailure = async function(test, message, detail) {
+function testFailure(test, message, detail) {
   if(!test.failures) {
     test.failures = [];
   }
@@ -8,9 +8,10 @@ module.exports.testFailure = async function(test, message, detail) {
     message,
     detail
   });
-};
+}
+module.exports.testFailure = testFailure;
 
-module.exports.testFatal = async function(test, message, detail) {
+module.exports.testFatal = function(test, message, detail) {
   testFailure(test, message, detail);
 
   throw {
