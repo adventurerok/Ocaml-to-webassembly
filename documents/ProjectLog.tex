@@ -426,4 +426,86 @@ At the moment the global variable is the closure. Two options:
 4893 total
 \end{minted}
 
+200 lines waiting to be eliminated via allowing copy propagation on globals.
+\\\\
+
+Tree split:
+We want a value on top of the stack, and we have a minimum instruction that you can't go before
+arg1 = 3
+q = 4
+arg2 = 7
+w = 11
+add res, arg1, arg2
+
+1. Always start with last stack thing you want (arg2)
+2. Only if previous instruction sets arg2 (for now)
+3. You recursively do this, with your min instruction index
+4. So we could generate for the above, the following:
+   const 3
+   const 4
+   savevar q
+   const 7
+   const 11
+   savevar w
+   add
+   savevar res
+   
+OBVIOUS BUG WITH CORRECT VERSION:
+* When do stack variables get saved otherwise?
+
+\section*{How to write dissertation}
+10k words target, 12k max. Target words included main text, tables, footnotes. Excludes appendices, bibliography, photographs, diagrams.
+40 page limit.
+\\\\
+Perfectly ok to describe algorithm from textbook or something, give original citation.
+\\\\
+\textbf{Key Algorithms}
+\begin{itemize}
+	\item Hindley-Milner
+	\item Defunctionalization
+	\item Transform to IR (trivial though)
+	\item Analysis
+	\item Stack code gen (most advanced)
+\end{itemize}
+
+Questions
+\begin{itemize}
+	\item What did you set out to do?
+	\item What did you actually do?
+	\item How did you do it?
+	\item What are the results?
+	\item How good are the results?	
+\end{itemize}
+
+It is not a diary of things done. Write it in the order that makes most sense, not the order that tasks were completed.
+\\\\
+Say everything 3 times: intro, main content, summary. Recursively
+Chapter 1 is overview of diss, 2-4 are content, 5 summarises.
+Each chapter needs an intro, main content, and summary. Could also do to each section in each chapter.
+\\\\
+Who should proof read: supervisor, DoS, friends. Allow at least two weeks for feedback, use them wisely, aka don't give draft you haven't checked yourself.
+\\\\
+Introduction - clear first paragraph what you've done.
+\\\\
+Preparation -
+work done before code was written. Evidence of planning and requirements analysis. Good evidence of good software practice, including libraries and tools. Explain background material required beyond part IB.
+\\\\
+Implementation - explain algorithms used etc.
+\\\\
+Evaluation - demonstrate success. Evidence that success criteria hit. Appropriate techniques e.g. confidence intervals. Ensure comparisons with other work are fair. Try to go beyond a simple measures of performance or correctness. Appropriate visualisations. Not expected to outperform Google for instance lol.
+\\\\
+Conclusion - how well you've done your project. What did you learn, what would you do differently? Self reflection.
+\\\\
+Professional Practice - pleasant to read as PDF. Reasonable grammar and spell-checked. Ethical approach in your work (very limited for me though).
+\\\\
+Language tips
+\begin{itemize}
+	\item Do not use don't and it's
+	\item Use I for things you've done, `we' is ok for the reader and I
+	\item Hyphenate compound adjectives light-blue ball, high-level language
+	\item Avoid doubt and convoluted sentences `I planned to aim at the possibility of constructing'.
+\end{itemize}
+
+submit as many times as you want.
+
 \end{document}

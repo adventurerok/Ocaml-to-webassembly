@@ -1,15 +1,14 @@
-\frametitle{Testing}
+\frametitle{What's Next}
 		\begin{columns}
-			\column{0.6\linewidth}
+			\column{0.8\linewidth}
 			\begin{itemize}
-				\item End-to-end tester compiles samples and checks their globals computed at runtime
+				\item Evaluation benchmarks
+				\item Negative tests and error messages
+				\item More optimisations (guided by the benchmarks)
+				\item Strings, records, more syntax support
+				\item Garbage collection?
+				\item Exceptions?
 			\end{itemize}
-			\column{0.4\linewidth}
-			\begin{center}
-				\includegraphics[width=0.55\linewidth]{for-sample}
-			\end{center}
-			
+			\column{0.2\linewidth}
 		\end{columns}
-		\begin{center}
-			\includegraphics[width=0.6\linewidth]{e2e-output}
-		\end{center}
+		
