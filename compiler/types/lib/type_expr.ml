@@ -6,9 +6,12 @@ open Typed_ast
 
 exception TypeError of string
 
+type state = {
+  mutable next_tvar : int;
+  mutable next_var : int;
+}
 
-let nexttvar = ref 0
-let fresh () =
+let fresh state =
   let rec int_to_tvar x =
     let ccode = (x % 26) + 97 in
     let c = Char.of_int_exn ccode in
@@ -17,18 +20,18 @@ let fresh () =
     | 0 -> [c]
     | _ -> c :: (int_to_tvar nx)
   in
-  let index = !nexttvar in
-  (nexttvar := index + 1; String.of_char_list (List.rev (int_to_tvar index)))
+  let index = state.next_tvar in
+  (state.next_tvar <- index + 1; String.of_char_list (List.rev (int_to_tvar index)))
 
-let subs_to_fresh tvars =
-  List.map tvars ~f:(fun old -> (old, T_var(fresh())))
+let subs_to_fresh state tvars =
+  List.map tvars ~f:(fun old -> (old, T_var(fresh state)))
 
-let instantiate (Forall(s, t)) =
-  let subs = subs_to_fresh (Set.to_list s) in
+let instantiate state (Forall(s, t)) =
+  let subs = subs_to_fresh state (Set.to_list s) in
   substitute_list subs t
 
 let context_ftv (ctx: Context.context) =
-  Set.Poly.union_list (List.map (Context.get_var_list ctx) ~f:(fun (_,t) -> ftv_scheme t))
+  Set.Poly.union_list (List.map (Context.get_var_list ctx) ~f:(fun var -> ftv_scheme var.typ))
 
 let generalize (ctx: Context.context) t =
   let free_vars = Set.diff (ftv t) (context_ftv ctx)
@@ -76,49 +79,49 @@ let type_constant (const : constant) =
   | _ -> raise (TypeError "Unknown constant type")
 
 (* context -> expression -> (uni_pair list * texpression) *)
-let rec infer_expr (ctx : Context.context) (expr : expression) : (uni_pair list * texpression) =
+let rec infer_expr (state : state) (ctx : Context.context) (expr : expression) : (uni_pair list * texpression) =
   let (ccs, etyp, desc) =
     match expr.pexp_desc with
     | Pexp_constant(const) ->
         let (typ, str) = type_constant const in
         ([], typ, Texp_constant(str))
-    | Pexp_construct(ident, expr_opt) -> infer_construct ctx ident expr_opt
-    | Pexp_apply(f, args) -> infer_apply ctx f args
-    | Pexp_ident(ident) -> infer_ident ctx ident
-    | Pexp_fun(_, _, pat, body) -> infer_fun ctx pat body
+    | Pexp_construct(ident, expr_opt) -> infer_construct state ctx ident expr_opt
+    | Pexp_apply(f, args) -> infer_apply state ctx f args
+    | Pexp_ident(ident) -> infer_ident state ctx ident
+    | Pexp_fun(_, _, pat, body) -> infer_fun state ctx pat body
     | Pexp_let(recflag, bindings, body) ->
-        let (ocs, ctx', tvb_lst) = ctx_of_bindings ctx recflag bindings in
-        let (ecs, ast) = infer_expr ctx' body in
+        let (ocs, ctx', tvb_lst) = ctx_of_bindings state ctx recflag bindings in
+        let (ecs, ast) = infer_expr state ctx' body in
         let typ = ast.texp_type in
         (ocs @ ecs, typ, Texp_let(recflag, tvb_lst, ast))
     | Pexp_tuple(lst) ->
-        let ctlst = List.map lst ~f:(infer_expr ctx) in
+        let ctlst = List.map lst ~f:(infer_expr state ctx) in
         let (ccslst, astlst) = List.unzip ctlst in
         let tlst = List.map astlst ~f:(fun e -> e.texp_type) in
         let ccs = List.concat ccslst in
         (ccs, T_tuple(tlst), Texp_tuple(astlst))
     | Pexp_ifthenelse(iexpr, texpr, eexpr_opt) ->
-        let (ics, i_ast) = infer_expr ctx iexpr in
+        let (ics, i_ast) = infer_expr state ctx iexpr in
         let ityp = i_ast.texp_type in
-        let (tcs, t_ast) = infer_expr ctx texpr in
+        let (tcs, t_ast) = infer_expr state ctx texpr in
         let ttyp = t_ast.texp_type in
         (match eexpr_opt with
         | Some(eexpr) ->
-            let (ecs, e_ast) = infer_expr ctx eexpr in
+            let (ecs, e_ast) = infer_expr state ctx eexpr in
             let etyp = e_ast.texp_type in
             let ccs = (Uni(ityp, v_bool)) :: (Uni(ttyp, etyp)) :: (ics @ tcs @ ecs) in
             (ccs, ttyp, Texp_ifthenelse(i_ast, t_ast, Some(e_ast)))
         | None -> ((Uni(ityp, v_bool)) :: (ics @ tcs), ttyp, Texp_ifthenelse(i_ast, t_ast, None)))
     | Pexp_constraint(expr, ct) ->
         let st = ct_to_st_with_check ctx ct in
-        let (ccs, ast) = infer_expr ctx expr in
+        let (ccs, ast) = infer_expr state ctx expr in
         ((Uni(ast.texp_type, st)) :: ccs, ast.texp_type, ast.texp_desc)
-    | Pexp_match(expr, cases) -> infer_match ctx expr cases
-    | Pexp_while(condition, inner) -> infer_while ctx condition inner
-    | Pexp_for(pat, min, max, dir, inner) -> infer_for ctx pat min max dir inner
+    | Pexp_match(expr, cases) -> infer_match state ctx expr cases
+    | Pexp_while(condition, inner) -> infer_while state ctx condition inner
+    | Pexp_for(pat, min, max, dir, inner) -> infer_for state ctx pat min max dir inner
     | Pexp_sequence(a, b) ->
-        let (acs, a_ast) = infer_expr ctx a in
-        let (bcs, b_ast) = infer_expr ctx b in
+        let (acs, a_ast) = infer_expr state ctx a in
+        let (bcs, b_ast) = infer_expr state ctx b in
         (acs @ bcs, b_ast.texp_type, Texp_sequence(a_ast, b_ast))
     | _ -> raise (TypeError "Unsupported expression")
   in (ccs, {
@@ -127,9 +130,9 @@ let rec infer_expr (ctx : Context.context) (expr : expression) : (uni_pair list 
     texp_type = etyp
   })
 
-and infer_apply ctx f args =
+and infer_apply state ctx f args =
   (* Check the function first *)
-  let (fcs, f_ast) = infer_expr ctx f in
+  let (fcs, f_ast) = infer_expr state ctx f in
   let ftype = f_ast.texp_type in
   (* The AST has flat applies with a list of args, rather than a tree of apply with 1 arg
    * Loop through each arg and compute a new function type by partially applying it *)
@@ -138,15 +141,15 @@ and infer_apply ctx f args =
     | [] -> ([], fc, [])
     | ((_, expr) :: args') ->
         (* Infer the arg *)
-        let (acs, a_ast) = infer_expr ctx expr in
+        let (acs, a_ast) = infer_expr state ctx expr in
         let atyp = a_ast.texp_type in
         (match fc with
         | T_func(a, b) ->
             let (bcs, btyp, ast_lst) = partial b args' in
             (((Uni(a, atyp)) :: acs) @ bcs, btyp, a_ast :: ast_lst)
         | T_var(_) ->
-            let a = T_var(fresh ()) in
-            let b = T_var(fresh ()) in
+            let a = T_var(fresh state) in
+            let b = T_var(fresh state) in
             let (bcs, btyp, ast_lst) = partial b args' in
             let ccs = ((Uni(fc, T_func(a, b))) :: (Uni(a, atyp)) :: acs) @ bcs in
             (ccs, btyp, a_ast :: ast_lst)
@@ -154,36 +157,36 @@ and infer_apply ctx f args =
   in let (argcs, typ, ast_lst) = partial ftype args in
   (fcs @ argcs, typ, Texp_apply(f_ast, ast_lst))
 
-and infer_fun ctx pat body =
+and infer_fun state ctx pat body =
   (* Get a context from the pattern *)
-  let a_ast = infer_pattern ctx pat in
+  let a_ast = infer_pattern state ctx pat in
   let atyp = a_ast.tpat_type in
   let vars = a_ast.tpat_vars in
   let ctx' = List.fold vars ~init:ctx ~f:(fun cx (v,t) -> Context.add_var cx v (Forall(Set.Poly.empty, t))) in
   (* Use this context to check the body *)
-  let (bcs, b_ast) = infer_expr ctx' body in
+  let (bcs, b_ast) = infer_expr state ctx' body in
   let btyp = b_ast.texp_type in
   (bcs, T_func(atyp, btyp), Texp_fun(a_ast, b_ast))
 
-and ctx_of_bindings ctx recflag bindings =
+and ctx_of_bindings state ctx recflag bindings =
   match recflag with
-  | Asttypes.Nonrecursive -> ctx_of_nonrec_bindings ctx bindings
-  | Asttypes.Recursive -> ctx_of_rec_bindings ctx bindings
+  | Asttypes.Nonrecursive -> ctx_of_nonrec_bindings state ctx bindings
+  | Asttypes.Recursive -> ctx_of_rec_bindings state ctx bindings
 
-and ctx_of_nonrec_bindings ctx bindings =
+and ctx_of_nonrec_bindings state ctx bindings =
   match bindings with
   | [] -> ([], ctx, [])
   | (binding :: bindings') ->
-      let (acs, ctx', tvb) = ctx_of_nonrec_binding ctx binding in
-      let (bcs, ctx'', tvb_lst) = ctx_of_nonrec_bindings ctx' bindings' in
+      let (acs, ctx', tvb) = ctx_of_nonrec_binding state ctx binding in
+      let (bcs, ctx'', tvb_lst) = ctx_of_nonrec_bindings state ctx' bindings' in
       (acs @ bcs, ctx'', tvb :: tvb_lst)
 
-and ctx_of_nonrec_binding ctx binding =
+and ctx_of_nonrec_binding state ctx binding =
   (* Type the expression, so no constraints *)
-  let (tcs, e_ast) = type_expr ctx binding.pvb_expr in
+  let (tcs, e_ast) = type_expr state ctx binding.pvb_expr in
   let typ = e_ast.texp_type in
   (* Then the pattern *)
-  let p_ast = infer_pattern ctx binding.pvb_pat in
+  let p_ast = infer_pattern state ctx binding.pvb_pat in
   let ptyp = p_ast.tpat_type in
   let vars = p_ast.tpat_vars in
   (* Then unify *)
@@ -209,12 +212,12 @@ and addvars subs ctx cx vlist =
       let (cx'', svars) = addvars subs ctx cx' vlist' in
       (cx'', (v,genscheme) :: svars)
 
-and ctx_of_rec_bindings ctx bindings =
+and ctx_of_rec_bindings state ctx bindings =
   (* Extract a list of lhs patterns and rhs expressions *)
   let pe_list = List.map bindings ~f:(fun vb -> (vb.pvb_pat, vb.pvb_expr)) in
   let (pat_list, expr_list) = List.unzip pe_list in
   (* Type check the patterns, getting their types and vars *)
-  let p_ast_lst = List.map pat_list ~f:(infer_pattern ctx) in
+  let p_ast_lst = List.map pat_list ~f:(infer_pattern state ctx) in
   let (ptyp_ls, pvar_ls) = List.unzip (List.map p_ast_lst ~f:(fun p -> (p.tpat_type, p.tpat_vars))) in
   (* Join the vars and create a context from them *)
   let allvars = List.concat pvar_ls in
@@ -226,7 +229,7 @@ and ctx_of_rec_bindings ctx bindings =
     match (pa_lst, pt_lst, e_lst) with
     | ([], [], []) -> ([], [], [])
     | ((p_ast :: pa_lst'), (ptyp :: pt_lst'), (expr :: e_lst')) ->
-        let (ccs, e_ast) = infer_expr ctx' expr in
+        let (ccs, e_ast) = infer_expr state ctx' expr in
         let etyp = e_ast.texp_type in
         let (ecs, typs, tvb_lst) = handle pa_lst' pt_lst' e_lst' in
         let tvb = {
@@ -261,22 +264,24 @@ and ctx_of_rec_bindings ctx bindings =
   (ocs, fctx, fixup tvb_lst svars)
 
 (* context -> pattern -> tpattern *)
-and infer_pattern ctx pat =
+and infer_pattern state ctx pat =
   let(ptyp, pvars, pdesc) =
     match pat.ppat_desc with
     | Ppat_var(ident) ->
         (* Maps to a fresh variable *)
         let varname = ident.txt in
-        let tv = fresh () in
+        let tv = fresh state in
         let typ = (T_var(tv)) in
-        (typ, [(varname, typ)], Tpat_var(varname))
+        let var_id = state.next_var in
+        state.next_var <- var_id + 1;
+        (typ, [((varname, var_id), typ)], Tpat_var((varname, var_id)))
     | Ppat_tuple(lst) ->
         (* Loop through subpatterns, returning type list, combined vars list and tpattern list *)
         let rec loop ls =
           match ls with
           | [] -> ([], [], [])
           | (pat::ls') ->
-              let (p_ast) = infer_pattern ctx pat in
+              let (p_ast) = infer_pattern state ctx pat in
               let typ = p_ast.tpat_type in
               let vars = p_ast.tpat_vars in
               let (tlst, vars', ast_lst) = loop ls' in
@@ -286,16 +291,16 @@ and infer_pattern ctx pat =
     | Ppat_constraint(pat', ct) ->
         (* Check the underlying pattern and unify with constraint *)
         let st = ct_to_st_with_check ctx ct in
-        let p_ast = infer_pattern ctx pat' in
+        let p_ast = infer_pattern state ctx pat' in
         let subs = unify p_ast.tpat_type st in
         let vars' = List.map p_ast.tpat_vars ~f:(fun (v, t) -> (v, substitute_list subs t)) in
         (st, vars', p_ast.tpat_desc)
     | Ppat_constant(const) ->
         let (ctyp, str) = type_constant const in
         (ctyp, [], Tpat_constant(str))
-    | Ppat_construct(id, pat_opt) -> infer_pattern_construct ctx id pat_opt
+    | Ppat_construct(id, pat_opt) -> infer_pattern_construct state ctx id pat_opt
     | Ppat_any ->
-        let tv = fresh () in
+        let tv = fresh state in
         let typ = (T_var(tv)) in
         (typ, [], Tpat_any)
     | _ -> raise (TypeError "Unsupported pattern")
@@ -306,46 +311,46 @@ and infer_pattern ctx pat =
     tpat_vars = pvars
   }
 
-and infer_ident ctx ident =
+and infer_ident state ctx ident =
   match ident.txt with
   | Lident(str) ->
       (match Context.find_var ctx str with
-      | Some(typ) -> ([], instantiate typ, Texp_ident(str))
+      | Some(var) -> ([], instantiate state var.typ, Texp_ident((str, var.id)))
       | None ->
           (match lookup_ident str with
           | Some(sch) ->
-              let t2 = instantiate sch in
-              ([], t2, Texp_ident(str))
+              let t2 = instantiate state sch in
+              ([], t2, Texp_ident((str, -1)))
           | None -> raise (TypeError ("Unknown identifer '" ^ str ^ "'"))))
   | _ -> raise (TypeError ("Unknown strange identifer"))
 
-and infer_construct ctx ident expr_opt =
+and infer_construct state ctx ident expr_opt =
   match ident.txt with
   | Lident("true") -> ([], T_val(V_bool), Texp_constant("true"))
   | Lident("false") -> ([], T_val(V_bool), Texp_constant("false"))
   | Lident("()") -> ([], T_val(V_unit), Texp_constant("unit"))
-  | Lident(str) -> infer_ctx_construct ctx str expr_opt
+  | Lident(str) -> infer_ctx_construct state ctx str expr_opt
   | _ -> raise (TypeError "Unknown construct")
 
-and infer_pattern_construct ctx ident pat_opt =
+and infer_pattern_construct state ctx ident pat_opt =
   match ident.txt with
   | Lident("true") -> (v_bool, [], Tpat_constant("true"))
   | Lident("false") -> (v_bool, [], Tpat_constant("false"))
   | Lident("()") -> (v_unit, [], Tpat_constant("unit"))
-  | Lident(str) -> infer_pattern_ctx_construct ctx str pat_opt
+  | Lident(str) -> infer_pattern_ctx_construct state ctx str pat_opt
   | _ -> raise (TypeError "Unknown construct")
 
 (* Infer a construct from the context *)
-and infer_ctx_construct ctx name expr_opt =
+and infer_ctx_construct state ctx name expr_opt =
   match Context.find_constr ctx name with
   | Some(constr) ->
       let variant = Option.value_exn (Context.find_type ctx constr.type_name) in
-      let subs = subs_to_fresh variant.args in
+      let subs = subs_to_fresh state variant.args in
       let constr_typ = T_constr(variant.name, List.map variant.args ~f:(fun tv -> T_var(tv))) in
       (match (expr_opt, List.is_empty constr.args) with
       | (None, true) -> ([], substitute_list subs constr_typ, Texp_construct(name, []))
       | (Some(expr), false) ->
-          let (ccs, actual_ast) = infer_expr ctx expr in
+          let (ccs, actual_ast) = infer_expr state ctx expr in
           let expected_typ = substitute_list subs (T_tuple(constr.args)) in
           (* Our typed ast is actually different from the OCaml one for constructs *)
           (* Theirs uses an optional tuple or other expression, while ours uses a list *)
@@ -368,16 +373,16 @@ and infer_ctx_construct ctx name expr_opt =
 
 (* Infer a construct from the context, but a pattern is supplied instead of an expression *)
 (* TODO maybe there's a way to combine these? *)
-and infer_pattern_ctx_construct ctx name pat_opt =
+and infer_pattern_ctx_construct state ctx name pat_opt =
   match Context.find_constr ctx name with
   | Some(constr) ->
       let variant = Option.value_exn (Context.find_type ctx constr.type_name) in
-      let subs = subs_to_fresh variant.args in
+      let subs = subs_to_fresh state variant.args in
       let constr_typ = T_constr(variant.name, List.map variant.args ~f:(fun tv -> T_var(tv))) in
       (match (pat_opt, List.is_empty constr.args) with
       | (None, true) -> (substitute_list subs constr_typ, [], Tpat_construct(name, []))
       | (Some(pat), false) ->
-          let p_ast = infer_pattern ctx pat in
+          let p_ast = infer_pattern state ctx pat in
           let expected_typ = substitute_list subs (T_tuple(constr.args)) in
           let vars = p_ast.tpat_vars in
           if (List.length constr.args) = 1 then
@@ -401,19 +406,19 @@ and infer_pattern_ctx_construct ctx name pat_opt =
       | (_, false) -> raise (TypeError ("Arguments expected for constructor " ^ name)))
   | _ -> raise (TypeError ("Unknown constructor " ^ name))
 
-and infer_match ctx expr cases =
-  let (ecs, e_ast) = infer_expr ctx expr in
+and infer_match state ctx expr cases =
+  let (ecs, e_ast) = infer_expr state ctx expr in
   let etyp = e_ast.texp_type in
   (* case -> incoming type -> (constraints * tcase list) *)
   let rec handle_cases cs ityp =
     match cs with
     | [] -> ([], [])
     | (case :: cs') ->
-        let (p_ast) = infer_pattern ctx case.pc_lhs in
+        let (p_ast) = infer_pattern state ctx case.pc_lhs in
         let ptyp = p_ast.tpat_type in
         let vars = p_ast.tpat_vars in
         let ctx' = List.fold vars ~init:ctx ~f:(fun cx (v,t) -> Context.add_var cx v (Forall(Set.Poly.empty, t))) in
-        let (ccs, c_ast) = infer_expr ctx' case.pc_rhs in
+        let (ccs, c_ast) = infer_expr state ctx' case.pc_rhs in
         let ctyp = c_ast.texp_type in
         let (ccs', tc_lst) = handle_cases cs' ctyp in
         let tcase = {
@@ -421,36 +426,38 @@ and infer_match ctx expr cases =
           tc_rhs = c_ast
         } in
         ((Uni(ptyp, etyp)) :: (Uni(ityp, ctyp)) :: (ccs @ ccs'), tcase :: tc_lst)
-  in let restyp = (T_var(fresh())) in
+  in let restyp = (T_var(fresh state)) in
   let (ccs, tc_lst) = handle_cases cases restyp in
   (ecs @ ccs, restyp, Texp_match(e_ast, tc_lst))
 
-and infer_while ctx condition inner =
-  let (ccs, c_ast) = infer_expr ctx condition in
-  let (ics, i_ast) = infer_expr ctx inner in
+and infer_while state ctx condition inner =
+  let (ccs, c_ast) = infer_expr state ctx condition in
+  let (ics, i_ast) = infer_expr state ctx inner in
   ((Uni(c_ast.texp_type, v_bool)) :: (Uni(i_ast.texp_type, v_unit)) :: (ccs @ ics), v_unit, Texp_while(c_ast, i_ast))
 
-and infer_for ctx pat min max dir inner =
+and infer_for state ctx pat min max dir inner =
   let (inner_ctx, var_opt) =
     match pat.ppat_desc with
     | Ppat_any -> (ctx, None)
     | Ppat_var(ident) ->
         let varname = ident.txt in
-        let ctx' = Context.add_var ctx varname (Forall(Set.Poly.empty, v_int)) in
+        let var_id = state.next_var in
+        state.next_var <- var_id + 1;
+        let ctx' = Context.add_var ctx (varname, var_id) (Forall(Set.Poly.empty, v_int)) in
         (ctx', Some(varname))
     | _ -> raise (TypeError("For loop index must be variable or _"))
   in
-  let (min_cs, min_ast) = infer_expr ctx min in
-  let (max_cs, max_ast) = infer_expr ctx max in
-  let (inner_cs, inner_ast) = infer_expr inner_ctx inner in
+  let (min_cs, min_ast) = infer_expr state ctx min in
+  let (max_cs, max_ast) = infer_expr state ctx max in
+  let (inner_cs, inner_ast) = infer_expr state inner_ctx inner in
   let for_cs = [(Uni(min_ast.texp_type, v_int));
                 (Uni(max_ast.texp_type, v_int));
                 (Uni(inner_ast.texp_type, v_unit))]
   in (min_cs @ max_cs @ inner_cs @ for_cs, v_unit, Texp_for(var_opt, min_ast, max_ast, dir, inner_ast))
 
 (* Infer the type and constraints, and then solve these to get just a type *)
-and type_expr (ctx : Context.context) (expr : expression) =
-  let (ccs, t_ast) = infer_expr ctx expr in
+and type_expr (state : state) (ctx : Context.context) (expr : expression) =
+  let (ccs, t_ast) = infer_expr state ctx expr in
   let subs = unify_many ccs in
   let fixed_tree = texpression_substitute subs t_ast in
   let ocs = extract_outer_constraints ctx subs in
@@ -483,16 +490,16 @@ let ctx_of_decls (ctx : Context.context) (type_decls : type_declaration list) =
     | _ -> raise (TypeError "Unsupported type kind")
   in List.fold type_decls ~init:ctx' ~f:ctx_of_decl
 
-let type_structure_item (ctx : Context.context) (item : structure_item) =
+let type_structure_item (state : state) (ctx : Context.context) (item : structure_item) =
   let (nctx, typ, desc) =
     match item.pstr_desc with
     | Pstr_eval(expr, _) ->
         (* TODO more outer constraints *)
-        let (_, e_ast) = type_expr ctx expr in
+        let (_, e_ast) = type_expr state ctx expr in
         (ctx, e_ast.texp_type, Tstr_eval(e_ast))
     | Pstr_value(recflag, bindings) ->
         (* TODO watch out for the global constraints _ below *)
-        let (_, ctx', tvb_lst) = ctx_of_bindings ctx recflag bindings in
+        let (_, ctx', tvb_lst) = ctx_of_bindings state ctx recflag bindings in
         (ctx', v_unit, Tstr_value(recflag, tvb_lst))
     | Pstr_type(_, type_decls) -> (ctx_of_decls ctx type_decls, v_unit, Tstr_type)
     | _ -> raise (TypeError ("Unsupported structure"))
@@ -502,10 +509,26 @@ let type_structure_item (ctx : Context.context) (item : structure_item) =
     tstr_type = typ
   })
 
-let rec type_structure (ctx : Context.context) (struc : structure) =
-  match struc with
-  | [] -> (ctx, [])
-  | (struc_item :: struc') ->
-      let (ctx', si_ast) = type_structure_item ctx struc_item in
-      let (ctx'', si_ast_lst) = type_structure ctx' struc' in
-      (ctx'', si_ast :: si_ast_lst)
+type result = {
+  tres_structure : tstructure;
+  tres_context : Context.context;
+  tres_next_var : int;
+}
+
+let type_structure (ctx : Context.context) (struc : structure) =
+  let state = {
+    next_tvar = 0;
+    next_var = 0;
+  }
+  in
+  let (tstruc_rev, ctx') = List.fold struc ~init:([], ctx) ~f:(fun (lst, cx) si ->
+    let (cx', si_ast) = type_structure_item state cx si in
+    (si_ast :: lst, cx')
+  )
+  in
+  let tstruc = List.rev tstruc_rev in
+  {
+    tres_structure = tstruc;
+    tres_context = ctx';
+    tres_next_var = state.next_var;
+  }

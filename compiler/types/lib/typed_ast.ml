@@ -10,6 +10,24 @@ let sexp_of_constant (c : constant) =
   | Pconst_float (str, _) -> str
   in String.sexp_of_t str
 
+
+type tident = string * int
+[@@deriving sexp_of, equal, hash, compare, sexp]
+
+
+module TIdent = struct
+  module T = struct
+    type t = tident
+    let compare = compare_tident
+    let sexp_of_t = sexp_of_tident
+    let t_of_sexp = tident_of_sexp
+    let hash = hash_tident
+  end
+
+  include T
+  include Comparable.Make(T)
+end
+
 (* The typed AST definition *)
 type texpression = {
   texp_desc : texpression_desc;
@@ -17,12 +35,17 @@ type texpression = {
   texp_type: scheme_type
 }
 
+and tspecial =
+| Tspec_mkclosure
+| Tspec_directapply
+
 and texpression_desc =
-  Texp_ident of string
+  Texp_ident of tident
 | Texp_constant of string
 | Texp_let of (Asttypes.rec_flag [@sexp.opaque]) * tvalue_binding list * texpression
 | Texp_fun of tpattern * texpression
 | Texp_apply of texpression * texpression list
+| Texp_special of tspecial * string * texpression list
 | Texp_match of texpression * tcase list
 | Texp_tuple of texpression list
 | Texp_construct of string * texpression list
@@ -35,7 +58,7 @@ and texpression_desc =
 and tvalue_binding = {
   tvb_pat : tpattern;
   tvb_expr: texpression;
-  tvb_vars: (string * scheme) list
+  tvb_vars: (tident * scheme) list
 }
 
 and tcase = {
@@ -47,12 +70,12 @@ and tpattern = {
   tpat_desc: tpattern_desc;
   tpat_loc: Location.t [@sexp.opaque];
   tpat_type: scheme_type;
-  tpat_vars: (string * scheme_type) list
+  tpat_vars: (tident * scheme_type) list
 }
 
 and tpattern_desc =
   Tpat_any
-| Tpat_var of string
+| Tpat_var of tident
 | Tpat_constant of string
 | Tpat_tuple of tpattern list
 | Tpat_construct of string * tpattern list
@@ -80,14 +103,25 @@ and tstructure_item_to_string si =
   | Tstr_value(rf, vb) -> tvalue_bindings_to_string rf vb
   | Tstr_type -> "type"
 
+and tident_to_string (name, id) =
+  name ^ "#" ^ (Int.to_string id)
+
+and tspecial_to_string tsp =
+  match tsp with
+  | Tspec_mkclosure -> "mkclosure"
+  | Tspec_directapply -> "directapply"
+
 and texpression_to_string (texpr : texpression) =
   "(" ^
   (match texpr.texp_desc with
-  | Texp_ident(str) -> str
+  | Texp_ident(str) -> (tident_to_string str)
   | Texp_constant(const) -> const
   | Texp_let (rf, vb, texpr') -> (tvalue_bindings_to_string rf vb) ^ " in " ^ (texpression_to_string texpr')
   | Texp_fun (p, e) -> "fun " ^ (tpattern_to_string p) ^ " -> " ^ (texpression_to_string e)
   | Texp_apply (a, b) -> String.concat ~sep:" " (List.map (a :: b) ~f:texpression_to_string)
+  | Texp_special (mode, name, lst) ->
+      (tspecial_to_string mode) ^ " " ^ name ^ " " ^
+      (String.concat ~sep:" " (List.map lst ~f:texpression_to_string))
   | Texp_match (e, m) -> "match " ^ (texpression_to_string e) ^ " with " ^ (tcases_to_string m)
   | Texp_tuple (ls) -> "(" ^ (String.concat ~sep:", " (List.map ls ~f:texpression_to_string)) ^ ")"
   | Texp_construct (name, ls) ->
@@ -125,7 +159,7 @@ and tpattern_to_string pat =
   "(" ^
   (match pat.tpat_desc with
   | Tpat_any -> "_"
-  | Tpat_var(str) -> str
+  | Tpat_var(str, id) -> str ^ "#" ^ (Int.to_string id)
   | Tpat_constant(const) -> const
   | Tpat_tuple(ls) -> "(" ^ (String.concat ~sep:", " (List.map ls ~f:tpattern_to_string)) ^ ")"
   | Tpat_construct(name, ls) ->
@@ -154,6 +188,8 @@ let rec texpression_map_types sf stf texp =
         let fexp' = texpression_map_types sf stf fexp in
         let exp_lst' = List.map exp_lst ~f:(texpression_map_types sf stf) in
         Texp_apply(fexp', exp_lst')
+    | Texp_special(mode, name, lst) ->
+        Texp_special(mode, name, List.map lst ~f:(texpression_map_types sf stf))
     | Texp_match (mexp, c_lst) ->
         let mexp' = texpression_map_types sf stf mexp in
         let c_lst' = tcases_map_types sf stf c_lst in
@@ -259,6 +295,8 @@ let rec texpression_free_vars (exp : texpression) =
       let e_vars = texpression_free_vars e in
       List.fold ~init:e_vars ~f:(fun a (v, _) -> Map.Poly.remove a v) p.tpat_vars
   | Texp_apply (a, blist) -> merge_map_list ((texpression_free_vars a) :: (List.map blist ~f:texpression_free_vars))
+  | Texp_special(_, _, lst) ->
+      merge_map_list (List.map lst ~f:texpression_free_vars)
   | Texp_match (e, cases) ->
       let emap = texpression_free_vars e in
       let cmaps = List.map cases ~f:(fun case ->

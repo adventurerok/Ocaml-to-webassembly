@@ -39,13 +39,13 @@ let add_named_func fnames n =
 type func_data = {
   fd_pat: tpattern;
   fd_expr: texpression;
-  fd_cvars: (string * scheme_type) list;
+  fd_cvars: (tident * scheme_type) list;
   fd_type: scheme_type;
   fd_name: string;
   fd_export_name: string option;
 }
 
-type type_map = (string, scheme_type) Map.Poly.t
+type type_map = (tident, scheme_type) Map.Poly.t
 
 let add_vars map vars =
   List.fold ~init:map ~f:(fun m (tv, t) -> Map.Poly.set m ~key:tv ~data:t) vars
@@ -57,7 +57,8 @@ let rec remove_apps name count =
 
 type state = {
   mutable fnames : func_names;
-  mutable funcs : func_data list
+  mutable funcs : func_data list;
+  mutable next_var : int;
 }
 
 (* Gives export names to the functions to export *)
@@ -118,6 +119,7 @@ let rec func_transform_expr ?next_name:(next_name=None) ?match_args:(match_args=
         let a' = func_transform_expr state locals a in
         let blist' = List.map blist ~f:(func_transform_expr state locals) in
         (Texp_apply(a', blist'))
+    | Texp_special(_, _, _) -> expr.texp_desc
     | Texp_match (e, cases) -> func_transform_match state locals e cases
     | Texp_tuple(ls) ->
         let ls' = List.map ls ~f:(func_transform_expr state locals) in
@@ -162,7 +164,7 @@ and func_transform_value_bindings state locals rf tvb_list =
   let tvb_list' = List.map tvb_list ~f:(fun tvb ->
     let next_name =
       match tvb.tvb_pat.tpat_desc with
-      | Tpat_var(name) -> Some(name)
+      | Tpat_var((name, _)) -> Some(name)
       | _ -> None
     in
     let e' = func_transform_expr ~next_name:next_name state inner_locals tvb.tvb_expr in
@@ -183,16 +185,19 @@ and func_transform_func next_name match_args state locals typ pat expr =
   in
   let () = state.fnames <- fnames1 in
   let arg_name = "arg_" ^ (String.chop_prefix_exn ~prefix:"$$f_" fname) in
+  let arg_id = state.next_var in
+  state.next_var <- arg_id + 1;
+  let arg_ident = (arg_name, arg_id) in
   let new_pat = {
-    tpat_desc = Tpat_var(arg_name);
+    tpat_desc = Tpat_var(arg_ident);
     tpat_loc = Location.none;
     tpat_type = pat.tpat_type;
-    tpat_vars = [(arg_name, pat.tpat_type)]
+    tpat_vars = [(arg_ident, pat.tpat_type)]
   }
   in
-  let locals' = Map.set locals ~key:arg_name ~data:pat.tpat_type in
+  let locals' = Map.set locals ~key:arg_ident ~data:pat.tpat_type in
   let next_name' = Some(app_name) in
-  let match_args' = (arg_name, pat) :: match_args in
+  let match_args' = (arg_ident, pat) :: match_args in
   let expr_trans = func_transform_expr ~next_name:next_name' ~match_args:match_args' state locals' expr in
   let vars_used = texpression_free_vars expr_trans in
   let closure_vars = Map.Poly.filter_keys vars_used ~f:(Map.Poly.mem locals) in
@@ -220,14 +225,8 @@ and func_transform_func next_name match_args state locals typ pat expr =
     texp_loc = Location.none
   }
   in
-  let fident = {
-    texp_desc = Texp_ident(fname);
-    texp_type = T_func(T_tuple(cvar_types), typ);
-    texp_loc = Location.none
-  }
-  in
   let () = state.funcs <- fdata :: state.funcs in
-  (Texp_apply(fident, [tuple]))
+  (Texp_special(Tspec_mkclosure, fname, [tuple]))
 
 and func_transform_structure_item state (si: tstructure_item) =
   let desc =
@@ -251,7 +250,7 @@ and func_transform_match state locals e cases =
   in
   (Texp_match(e', cases'))
 
-and func_transform_structure (struc: tstructure) =
+and func_transform_structure next_var (struc: tstructure) =
   let fnames = {
     temp_count = 0;
     names = Set.Poly.empty
@@ -259,7 +258,8 @@ and func_transform_structure (struc: tstructure) =
   in
   let state = {
     fnames = fnames;
-    funcs = []
+    funcs = [];
+    next_var = next_var;
   }
   in
   let si_list = List.map struc ~f:(func_transform_structure_item state) in
@@ -272,7 +272,7 @@ let func_data_to_string fdata =
   let estr = texpression_to_string fdata.fd_expr in
   let tstr = string_of_scheme_type fdata.fd_type in
   let cvstr = String.concat ~sep:", " (List.map fdata.fd_cvars ~f:(fun (v,t) ->
-    (v ^ " : " ^ (string_of_scheme_type t))))
+    ((tident_to_string v) ^ " : " ^ (string_of_scheme_type t))))
   in fdata.fd_name ^ "{\n  pat = " ^ pstr ^ "\n  expr = " ^ estr ^ "\n  type = " ^ tstr ^ "\n  vars = " ^ cvstr ^ "\n}"
 
 

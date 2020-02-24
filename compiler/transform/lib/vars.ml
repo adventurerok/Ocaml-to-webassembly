@@ -135,7 +135,7 @@ let make_local_vars (fdata : Functions.func_data) =
     base_empty_vars with
     scope = Local
   } in
-  let with_cvars = List.fold fdata.fd_cvars ~init:empty ~f:(fun vars (name,st) ->
+  let with_cvars = List.fold fdata.fd_cvars ~init:empty ~f:(fun vars ((name, _),st) ->
     let ityp = stoitype st in
     let (vars', _) = add_named_var vars name ityp in
     vars')

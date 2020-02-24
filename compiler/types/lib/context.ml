@@ -17,8 +17,14 @@ type constructor = {
   index: int;
 }
 
+type var = {
+  name : string;
+  id : int;
+  typ : scheme;
+}
+
 type context = {
-  vars: (string * scheme) list;
+  vars: var list;
 
   (* e.g. tree -> 1 if it takes 1 type argument *)
   (* name of type, number of type args, type args list *)
@@ -35,14 +41,15 @@ let empty : context = {
   constructs = Map.Poly.empty
 }
 
-let add_var (ctx : context) vr typ =
-  {ctx with vars = ((vr, typ) :: ctx.vars)}
+let add_var (ctx : context) (name, id) typ =
+  let var = { name = name; id = id; typ = typ } in
+  {ctx with vars = (var :: ctx.vars)}
 
 let find_var (ctx : context) name =
   let rec search vs =
     match vs with
     | [] -> None
-    | ((vr, typ) :: vs') -> if (String.equal vr name) then Some(typ) else (search vs')
+    | (vr :: vs') -> if (String.equal vr.name name) then Some(vr) else (search vs')
   in search ctx.vars
 
 let add_type (ctx : context) name args =
@@ -58,7 +65,7 @@ let add_type (ctx : context) name args =
   }
 
 let map_vars (ctx : context) f =
-  {ctx with vars = List.map ctx.vars ~f:(fun (x,y) -> (x,f y))}
+  {ctx with vars = List.map ctx.vars ~f:(fun var -> {var with typ = f var.typ})}
 
 let get_var_list (ctx : context) =
   ctx.vars
@@ -124,8 +131,8 @@ let rec check_type (ctx : context) (typ : scheme_type) =
 let print (ctx : context) =
   Stdio.print_endline "Context(";
   Stdio.print_endline "  vars:";
-  List.iter ctx.vars ~f:(fun (n,s) ->
-    Stdio.print_endline ("    " ^ n ^ ": " ^ (string_of_scheme s)));
+  List.iter ctx.vars ~f:(fun var ->
+    Stdio.print_endline ("    " ^ var.name ^ ": " ^ (string_of_scheme var.typ)));
   Stdio.print_endline "  types:";
   Map.iter ctx.types ~f:(fun variant ->
     let tvarstr = (String.concat ~sep:" " (List.map variant.args ~f:(fun s -> "'" ^ s))) in

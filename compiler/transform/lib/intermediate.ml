@@ -41,8 +41,8 @@ let quick_temp_var (state : state) typ =
 let rec transform_expr (state: state) (expr: texpression) =
   let ityp = stoitype expr.texp_type in
   match expr.texp_desc with
-  | Texp_ident(id) ->
-      let var_id = Vars.lookup_var_or_global state.vars id in
+  | Texp_ident((name,_)) ->
+      let var_id = Vars.lookup_var_or_global state.vars name in
       (var_id, [])
   | Texp_constant(str) ->
       let var = quick_temp_var state ityp in
@@ -53,6 +53,7 @@ let rec transform_expr (state: state) (expr: texpression) =
       (res, tvb_iexprs @ in_iexprs)
   | Texp_fun (_, _) -> raise (IntermediateFailure "Perform closure conversion first")
   | Texp_apply (fexpr, args) -> transform_apply state expr.texp_type fexpr args
+  | Texp_special (mode, name, args) -> transform_special state expr.texp_type mode name args
   | Texp_match (e, cases) -> transform_match state expr.texp_type e cases
   | Texp_tuple(_) ->
       let (tuple_vars, tuple_codelst) = transform_tupleargs ~poly_box:true state expr in
@@ -130,7 +131,7 @@ and transform_pat ?check:(check = true)
                   =
   match pat.tpat_desc with
   | Tpat_any -> []
-  | Tpat_var(name) ->
+  | Tpat_var((name,_)) ->
       let ityp = stoitype pat.tpat_type in
       let named_var = add_named_var ~global:global state name ityp in
       if (boxed && (itype_needs_box ityp)) then
@@ -192,21 +193,13 @@ and transform_value_bindings_recursive ?global:(global = false) state tvb_list =
   let details = List.map tvb_list ~f:(fun tvb ->
     let rec_name =
       match tvb.tvb_pat.tpat_desc with
-      | Tpat_var(name) -> name
+      | Tpat_var((name, _)) -> name
       | _ -> raise (IntermediateFailure "Recursive bindings must be functions")
     in
     let iftype = functoitype tvb.tvb_expr.texp_type in
-    let (fexpr, args) =
+    let (func_name, args) =
       match tvb.tvb_expr.texp_desc with
-      | Texp_apply(fexpr_match, args_match) -> (fexpr_match, args_match)
-      | _ -> raise (IntermediateFailure "Recursive bindings must be functions")
-    in
-    let func_name =
-      match fexpr.texp_desc with
-      | Texp_ident(name) ->
-          if String.is_prefix name ~prefix:"$$f_" then
-            name
-          else raise (IntermediateFailure "Recursive bindings must be functions")
+      | Texp_special(Tspec_mkclosure, fname_match, args_match) -> (fname_match, args_match)
       | _ -> raise (IntermediateFailure "Recursive bindings must be functions")
     in
     let tuple_expr = List.hd_exn args in
@@ -266,22 +259,25 @@ and transform_match state st_res_typ expr cases =
        Iexp_endblock(match_block)]
   )
 
-and transform_apply state typ fexpr args =
+and transform_apply state _typ fexpr args =
   match fexpr.texp_desc with
-  | Texp_ident(name) ->
+  | Texp_ident((name,_)) ->
       let lookup = Predefined.lookup_ident name in
       (match lookup with
       | Some(_) -> transform_op state name args
       | None ->
-          if String.is_prefix name ~prefix:"$$f_" then
-            transform_mk_closure state typ name args
-          else
-            let var_name = Vars.lookup_var_or_global state.vars name in
-            transform_apply_closure state fexpr.texp_type var_name args)
+          let var_name = Vars.lookup_var_or_global state.vars name in
+          transform_apply_closure state fexpr.texp_type var_name args)
   | _ ->
       let (var_name, other_code) = transform_expr state fexpr in
       let (res, apply_code) = transform_apply_closure state fexpr.texp_type var_name args in
       (res, (other_code @ apply_code))
+
+and transform_special state typ mode name args =
+  match mode with
+  | Tspec_mkclosure ->
+      transform_mk_closure state typ name args
+  | Tspec_directapply -> raise (IntermediateFailure "Direct apply not supported")
 
 and transform_op state name args =
   let (arg_vars, arg_codelst) = List.unzip (List.map args ~f:(transform_expr state)) in
@@ -549,8 +545,9 @@ let fix_globals globals locals code =
   in
   iexpression_list_map_vars ~f:fix_var code
 
-let transform_program ?debug:(debug = false) context structure =
-  let (funcs, fast) = Functions.func_transform_structure structure in
+let transform_program ?debug:(debug = false) context next_var structure =
+  let (funcs_1, fast_1) = Functions.func_transform_structure next_var structure in
+  let (funcs, fast) = Direct_call_generator.direct_call_transform funcs_1 fast_1 in
   let () = if debug then (
     Stdio.print_endline (Typed_ast.tstructure_to_string fast);
     Functions.print_func_datas funcs)
@@ -570,7 +567,7 @@ let transform_program ?debug:(debug = false) context structure =
       pf_vars = vars;
       pf_code = fix_globals global_vars vars code;
       pf_type = functoitype fd.fd_type;
-      pf_cvars = List.map fd.fd_cvars ~f:(fun (name,st) -> (name, stoitype st));
+      pf_cvars = List.map fd.fd_cvars ~f:(fun ((name,_),st) -> (name, stoitype st));
       pf_export_name = fd.fd_export_name
     }))
   in
