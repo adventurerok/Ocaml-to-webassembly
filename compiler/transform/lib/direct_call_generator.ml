@@ -1,6 +1,7 @@
 open Core_kernel
 open Otwa_types
 open Typed_ast
+open Types
 
 type state = {
   (* Maps function name to data *)
@@ -22,6 +23,27 @@ let pat_id_or_exn pat =
   | Tpat_var(id) -> id
   | _ -> raise (DirectTransformException "Expecting identifier pattern")
 
+(* Check if all closure vars are available *)
+(* bonus_set is for including additional vars in the search,
+ * e.g. arg vars of applied functions *)
+let check_cvars_avail state bonus_set (fd : Functions.func_data) =
+  let (cvars, _) = List.unzip fd.fd_cvars in
+  List.find cvars ~f:(fun var ->
+    (not (Hash_set.mem state.avail_vars var)) &&
+    (not (Hash_set.mem bonus_set var))
+  )
+  |> Option.is_none
+
+
+let make_tuple_expr (lst : texpression list) =
+  let types = List.map lst ~f:(fun e -> e.texp_type) in
+  let tup_type = T_tuple(types) in
+  {
+    texp_desc = Texp_tuple(lst);
+    texp_type = tup_type;
+    texp_loc = Location.none;
+  }
+
 (* Recurse: should go into functions? *)
 let rec dct_expr ?recurse:(recurse = true) state expr =
   let (desc, func) =
@@ -37,7 +59,7 @@ let rec dct_expr ?recurse:(recurse = true) state expr =
         (Texp_let(rf, tvb_list', e'), f)
     | Texp_fun (_, _) ->
         raise (DirectTransformException "Functions should be removed")
-    | Texp_apply (a, blist) -> dct_apply ~recurse:recurse state a blist
+    | Texp_apply (a, blist) -> dct_apply ~recurse:recurse state expr.texp_type a blist
     | Texp_special (mode, name, args) -> dct_special ~recurse:recurse state mode name args
     | Texp_match (e, cases) -> (dct_match state e cases, None)
     | Texp_tuple(lst) ->
@@ -70,7 +92,7 @@ and dct_expr_nofunc ?recurse:(recurse = false) state expr =
   let (expr', _) = dct_expr ~recurse:recurse state expr in
   expr'
 
-and dct_apply ~recurse:recurse state fexpr args =
+and dct_apply ~recurse:recurse state typ fexpr args =
   let args' = List.map args ~f:(dct_expr_nofunc ~recurse:recurse state) in
   match fexpr.texp_desc with
   | Texp_ident((name, _)) ->
@@ -78,9 +100,9 @@ and dct_apply ~recurse:recurse state fexpr args =
       (match lookup with
       | Some(_) -> (Texp_apply(fexpr, args'), None)
       | None ->
-          dct_apply_closure state fexpr args
+          dct_apply_closure state typ fexpr args
       )
-  | _ -> dct_apply_closure state fexpr args
+  | _ -> dct_apply_closure state typ fexpr args
 
 and dct_special ~recurse:recurse state mode name args =
   match mode with
@@ -110,12 +132,38 @@ and dct_mk_closure ~recurse:recurse state name args =
   (Texp_special(Tspec_mkclosure, name, args), Some(name))
 
 
-and dct_apply_closure state fexpr args =
+and dct_apply_closure state _typ fexpr args =
   let (fexpr', fname_opt) = dct_expr state fexpr in
   match fname_opt with
   | Some(fname) ->
-      let _fd = Hashtbl.find_exn state.funcs fname in
-      (Texp_apply(fexpr', args), None)
+      let fd = Hashtbl.find_exn state.funcs fname in
+      if check_cvars_avail state (Hash_set.create (module TIdent)) fd then
+        let cv_args = List.map fd.fd_cvars ~f:(fun (var, vt) ->
+          {
+            texp_desc = Texp_ident(var);
+            texp_loc = Location.none;
+            texp_type = vt
+          }
+        )
+        in
+        let da_args = cv_args @ [List.hd_exn args] in
+        let arg_tuple = make_tuple_expr da_args in
+        let ret_type =
+          match fexpr.texp_type with
+          | T_func(_, b) -> b
+          | _ -> raise (DirectTransformException "Can't direct call non function type")
+        in
+        let da = {
+          texp_desc = Texp_special(Tspec_directapply, fname, [arg_tuple]);
+          texp_loc = Location.none;
+          texp_type = ret_type;
+        }
+        in
+        match (List.tl_exn args) with
+        | [] -> (da.texp_desc, None)
+        | args' -> (Texp_apply(da, args'), None)
+      else
+        (Texp_apply(fexpr', args), None)
   | None -> (Texp_apply(fexpr', args), None)
 
 

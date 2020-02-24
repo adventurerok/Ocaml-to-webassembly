@@ -16,6 +16,7 @@ let transform_list ~f:map lst =
 
 type state = {
   context: Context.context;
+  functions: (string, Functions.func_data) Hashtbl.t;
   mutable vars: Vars.vars;
   mutable globals: Vars.vars
 }
@@ -277,7 +278,8 @@ and transform_special state typ mode name args =
   match mode with
   | Tspec_mkclosure ->
       transform_mk_closure state typ name args
-  | Tspec_directapply -> raise (IntermediateFailure "Direct apply not supported")
+  | Tspec_directapply ->
+      transform_direct_apply state typ name args
 
 and transform_op state name args =
   let (arg_vars, arg_codelst) = List.unzip (List.map args ~f:(transform_expr state)) in
@@ -366,6 +368,28 @@ and transform_tupleargs ?poly_box:(poly_box=false) state expr =
       let (var, code) = transform_expr_box ~box:poly_box state expr in
       ([var], [code])
 
+
+and transform_tupleargs_boxcomp state itt expr =
+  match expr.texp_desc with
+  | Texp_tuple(lst) ->
+      let zipped = List.map2_exn lst itt ~f:(fun e it ->
+        match it with
+        | It_poly ->
+            transform_expr_box ~box:true state e
+        | _ ->
+            transform_expr_box ~box:false state e
+      )
+      in
+      List.unzip zipped
+  | _ ->
+      let (var, code) =
+        match itt with
+        | [It_poly] -> transform_expr_box ~box:true state expr
+        | [_] -> transform_expr_box ~box:false state expr
+        | _ -> raise (IntermediateFailure "Mismatch in tuple and itt length")
+      in
+      ([var], [code])
+
 and transform_mk_closure state typ name args =
   let tuple_expr = List.hd_exn args in
   let iftype = functoitype typ in
@@ -378,6 +402,29 @@ and transform_mk_closure state typ name args =
     @ [Iexp_newclosure(iftype, name, ituptype, var_name);
       Iexp_fillclosure(ituptype, var_name, tuple_vars)]
   )
+
+and transform_direct_apply state typ name args =
+  let tuple_expr = List.hd_exn args in
+  let ret_typ = stoitype typ in
+  let fd = Hashtbl.find_exn state.functions name in
+  let cvar_types = List.map fd.fd_cvars ~f:(fun (_, t) -> t) in
+  let da_tuple = T_tuple(cvar_types @ [fd.fd_expr.texp_type]) in
+  let ituptype = tupletoitype da_tuple in
+  let (tuple_vars, tuple_codelst) = transform_tupleargs_boxcomp state ituptype tuple_expr in
+  let tuple_lincode = List.concat tuple_codelst in
+  let var_name = quick_temp_var state ret_typ in
+  let iret_fd = stoitype fd.fd_expr.texp_type in
+  let (unbox_var, unbox_code) =
+    match iret_fd with
+    | It_poly -> transform_unbox state typ var_name
+    | _ -> (var_name, [])
+  in
+  (unbox_var,
+    tuple_lincode
+    @ [Iexp_calldirect(var_name, name, ituptype, tuple_vars)]
+    @ unbox_code
+  )
+
 
 and transform_expr_box ?box:(box = true) state expr =
   let (var, code) = transform_expr state expr in
@@ -517,10 +564,11 @@ let transform_structure_item state (si : tstructure_item) =
 let transform_structure state (st : tstructure) =
   transform_list st ~f:(transform_structure_item state)
 
-let transform_function globals context (fd : Functions.func_data) =
+let transform_function globals func_map context (fd : Functions.func_data) =
   let vars = Vars.make_local_vars fd in
   let state = {
     context = context;
+    functions = func_map;
     vars = vars;
     globals = globals
   }
@@ -552,8 +600,13 @@ let transform_program ?debug:(debug = false) context next_var structure =
     Stdio.print_endline (Typed_ast.tstructure_to_string fast);
     Functions.print_func_datas funcs)
   in
+  let func_map =
+    List.map funcs ~f:(fun func -> (func.fd_name, func))
+    |> Hashtbl.of_alist_exn (module String)
+  in
   let global_state = {
     context = context;
+    functions = func_map;
     vars = Vars.empty_init_vars;
     globals = Vars.empty_global_vars
   }
@@ -561,7 +614,7 @@ let transform_program ?debug:(debug = false) context next_var structure =
   let init_code = transform_structure global_state fast in
   let global_vars = global_state.globals in
   let ifuncs = List.map funcs ~f:(fun fd ->
-    let (vars, code) = transform_function global_state.globals context fd in
+    let (vars, code) = transform_function global_state.globals func_map context fd in
     (fd.fd_name, {
       pf_name = fd.fd_name;
       pf_vars = vars;
