@@ -8,12 +8,15 @@ const exec = util.promisify(require('child_process').exec);
 const {testFatal, testFailure} = require("./util");
 const {testBenchmarks} = require("./benchmarks");
 
-let samplesDir = "samples/";
 
 const wat2wasmPath = "wat2wasm";
 const compilerPath = "_build/default/toplevel.exe";
 
-const debug = false;
+// Global arguments
+let samplesDir = "samples/";
+let debug = false;
+let noCompile = false;
+let otwaArgs = "";
 
 async function createTestObject(path) {
   let pathWithoutExtension = path.substring(0, path.lastIndexOf("."));
@@ -41,9 +44,12 @@ async function testCompileAndInstantiate(test) {
   // Compile to wast
   let wastPath = test.pathWithoutExtension + ".wast";
   let command = compilerPath + " " + test.path + " -output " + wastPath;
+  if(otwaArgs.length > 0) {
+    command += " " + otwaArgs;
+  }
 
   if(debug) {
-    console.log("exec otwa for " + test.path);
+    console.log("exec otwa for " + test.path + ": " + command);
   }
 
   try{
@@ -169,14 +175,31 @@ let canExit = false;
 let promises;
 let allPromise;
 
-let noCompile = false;
 
-if(process.argv.length > 2) {
-  samplesDir = process.argv[2];
-}
+for(let argIndex = 2; argIndex < process.argv.length; ++argIndex) {
+  let arg = process.argv[argIndex];
 
-if(process.argv.length > 3) {
-  noCompile = true;
+  if(arg.startsWith("-")) {
+    switch(arg) {
+      case "-nocompile":
+        noCompile = true;
+        break;
+      case "-e2edebug":
+        debug = true;
+        break;
+      default:
+        // otwa compiler argument
+        if(otwaArgs.length > 0) {
+          otwaArgs += " ";
+        }
+        otwaArgs += arg;
+        if(debug) {
+          console.log(arg);
+        }
+    }
+  } else {
+    samplesDir = arg;
+  }
 }
 
 const run = async () => {

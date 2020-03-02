@@ -1,0 +1,5 @@
+(library
+  (name otwa_base)
+  (public_name proj.base)
+  (libraries core_kernel compiler-libs.common)
+  (preprocess (pps ppx_jane)))

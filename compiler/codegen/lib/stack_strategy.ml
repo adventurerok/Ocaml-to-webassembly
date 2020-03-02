@@ -1,4 +1,5 @@
 open Core_kernel
+open Otwa_base
 open Otwa_transform
 open Intermediate_ast
 open Intermediate_program
@@ -660,10 +661,10 @@ let codegen_basic_block state func (bb : Analysis.basic_block) =
   loop [] (Set.empty (module IVariable)) initial_saved_vars bb.bb_start_line all_lines
 
 
-(* let codegen_basic_block state _fa (bb : Analysis.basic_block) =
+let codegen_basic_block_nostack state (bb : Analysis.basic_block) =
   let lines = Array.to_list bb.bb_code in
   let line_codes = List.map ~f:(codegen_iexpression_simple state) lines in
-  String.concat ~sep:"\n" line_codes *)
+  String.concat ~sep:"\n" line_codes
 
 let remove_unused_vars state func =
   let all_vars = Vars.get_vars state.vars in
@@ -687,7 +688,12 @@ let codegen_ifunction_code wrap_table globals func =
   }
   in
   let unmapped = Map.Poly.data fa.fa_basic_blocks in
-  let bb_codes = List.map ~f:(codegen_basic_block state func) unmapped in
+  let bb_codes =
+    if Config.global.optimise_stack_codegen then
+      List.map ~f:(codegen_basic_block state func) unmapped
+    else
+      List.map ~f:(codegen_basic_block_nostack state) unmapped
+  in
   let full_code = String.concat ~sep:"\n" bb_codes in
   let reduced_vars = remove_unused_vars state func in
   (reduced_vars, full_code)

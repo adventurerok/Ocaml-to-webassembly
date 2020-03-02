@@ -1,5 +1,5 @@
 
 (executable
   (name toplevel)
-  (libraries proj.types proj.transform proj.codegen core_kernel compiler-libs.common)
+  (libraries proj.types proj.transform proj.codegen proj.base core_kernel compiler-libs.common)
   (preprocess (pps ppx_jane)))

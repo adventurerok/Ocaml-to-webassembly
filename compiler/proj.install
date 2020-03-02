@@ -1,5 +1,17 @@
 lib: [
   "_build/install/default/lib/proj/META"
+  "_build/install/default/lib/proj/base/config.ml" {"base/config.ml"}
+  "_build/install/default/lib/proj/base/otwa_base.a" {"base/otwa_base.a"}
+  "_build/install/default/lib/proj/base/otwa_base.cma" {"base/otwa_base.cma"}
+  "_build/install/default/lib/proj/base/otwa_base.cmi" {"base/otwa_base.cmi"}
+  "_build/install/default/lib/proj/base/otwa_base.cmt" {"base/otwa_base.cmt"}
+  "_build/install/default/lib/proj/base/otwa_base.cmx" {"base/otwa_base.cmx"}
+  "_build/install/default/lib/proj/base/otwa_base.cmxa" {"base/otwa_base.cmxa"}
+  "_build/install/default/lib/proj/base/otwa_base.cmxs" {"base/otwa_base.cmxs"}
+  "_build/install/default/lib/proj/base/otwa_base.ml" {"base/otwa_base.ml"}
+  "_build/install/default/lib/proj/base/otwa_base__Config.cmi" {"base/otwa_base__Config.cmi"}
+  "_build/install/default/lib/proj/base/otwa_base__Config.cmt" {"base/otwa_base__Config.cmt"}
+  "_build/install/default/lib/proj/base/otwa_base__Config.cmx" {"base/otwa_base__Config.cmx"}
   "_build/install/default/lib/proj/codegen/basic_strategy.ml" {"codegen/basic_strategy.ml"}
   "_build/install/default/lib/proj/codegen/otwa_codegen.a" {"codegen/otwa_codegen.a"}
   "_build/install/default/lib/proj/codegen/otwa_codegen.cma" {"codegen/otwa_codegen.cma"}

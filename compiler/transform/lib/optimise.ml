@@ -1,4 +1,5 @@
 open Core_kernel
+open Otwa_base
 open Intermediate_ast
 open Intermediate_program
 
@@ -23,27 +24,30 @@ let eliminate_redundant_copies code =
     | _ -> Some(iexpr))
 
 let rec eliminate_temp_to_named globals func =
-  let fa = Analysis.analyse_function globals func in
-  let map = Analysis.temp_to_named func fa in
-  if List.is_empty map then
+  if not Config.global.optimise_alias_elimination then
     func
   else
-    let vars1 = List.fold map ~init:func.pf_vars ~f:(fun vrs ((_, ovar), _) ->
-      Vars.remove_var vrs ovar)
-    in
-    let code1 = List.fold map ~init:func.pf_code ~f:(fun code (ovar, nvar) ->
-      Stdio.print_endline ("Elim var " ^ (ivariable_to_string ovar) ^ " " ^ (ivariable_to_string nvar));
-      replace_var ovar nvar code)
-    in
-    let code2 = eliminate_redundant_copies code1
-    in
-    let func1 = {
-      func with
-      pf_vars = vars1;
-      pf_code = code2
-    }
-    in
-    eliminate_temp_to_named globals func1
+    let fa = Analysis.analyse_function globals func in
+    let map = Analysis.temp_to_named func fa in
+    if List.is_empty map then
+      func
+    else
+      let vars1 = List.fold map ~init:func.pf_vars ~f:(fun vrs ((_, ovar), _) ->
+        Vars.remove_var vrs ovar)
+      in
+      let code1 = List.fold map ~init:func.pf_code ~f:(fun code (ovar, nvar) ->
+        Stdio.print_endline ("Elim var " ^ (ivariable_to_string ovar) ^ " " ^ (ivariable_to_string nvar));
+        replace_var ovar nvar code)
+      in
+      let code2 = eliminate_redundant_copies code1
+      in
+      let func1 = {
+        func with
+        pf_vars = vars1;
+        pf_code = code2
+      }
+      in
+      eliminate_temp_to_named globals func1
 
 let optimise_function (prog : iprogram) (func : ifunction) =
   eliminate_temp_to_named prog.prog_globals func

@@ -1,4 +1,5 @@
 open Core_kernel
+open Otwa_base
 open Otwa_types
 open Typed_ast
 open Types
@@ -297,16 +298,19 @@ let dct_structure state struc =
   List.map struc ~f:(dct_structure_item state)
 
 let direct_call_transform (funcs : Functions.func_data list) (toplevel : tstructure) =
-  let func_map =
-    funcs
-    |> List.map ~f:(fun func -> (func.fd_name, func))
-    |> Hashtbl.of_alist_exn (module String)
-  in
-  let state = {
-    funcs = func_map;
-    func_vars = Hashtbl.create (module Int);
-    avail_vars = Hash_set.create (module TIdent);
-  }
-  in
-  let toplevel' = dct_structure state toplevel in
-  (Hashtbl.data state.funcs, toplevel')
+  if Config.global.optimise_direct_call_gen then
+    let func_map =
+      funcs
+      |> List.map ~f:(fun func -> (func.fd_name, func))
+      |> Hashtbl.of_alist_exn (module String)
+    in
+    let state = {
+      funcs = func_map;
+      func_vars = Hashtbl.create (module Int);
+      avail_vars = Hash_set.create (module TIdent);
+    }
+    in
+    let toplevel' = dct_structure state toplevel in
+    (Hashtbl.data state.funcs, toplevel')
+  else
+    (funcs, toplevel)
