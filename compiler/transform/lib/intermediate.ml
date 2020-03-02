@@ -344,6 +344,7 @@ and transform_op state name args =
       | "*." -> (Ibin_mul, ityp)
       | "/" -> (Ibin_div, ityp)
       | "/." -> (Ibin_div, ityp)
+      | "mod" -> (Ibin_rem, ityp)
       | "<" -> (Ibin_lt, It_bool)
       | ">" -> (Ibin_gt, It_bool)
       | "<=" -> (Ibin_le, It_bool)

@@ -138,33 +138,96 @@ and dct_apply_closure state _typ fexpr args =
   | Some(fname) ->
       let fd = Hashtbl.find_exn state.funcs fname in
       if check_cvars_avail state (Hash_set.create (module TIdent)) fd then
-        let cv_args = List.map fd.fd_cvars ~f:(fun (var, vt) ->
-          {
-            texp_desc = Texp_ident(var);
-            texp_loc = Location.none;
-            texp_type = vt
-          }
-        )
-        in
-        let da_args = cv_args @ [List.hd_exn args] in
-        let arg_tuple = make_tuple_expr da_args in
-        let ret_type =
-          match fexpr.texp_type with
-          | T_func(_, b) -> b
-          | _ -> raise (DirectTransformException "Can't direct call non function type")
-        in
-        let da = {
-          texp_desc = Texp_special(Tspec_directapply, fname, [arg_tuple]);
-          texp_loc = Location.none;
-          texp_type = ret_type;
-        }
-        in
-        match (List.tl_exn args) with
-        | [] -> (da.texp_desc, None)
-        | args' -> (Texp_apply(da, args'), None)
+        dct_apply_closure_direct state fd fexpr.texp_type args
+        (* dct_apply_closure_singledirect state fd fexpr.texp_type args *)
       else
         (Texp_apply(fexpr', args), None)
   | None -> (Texp_apply(fexpr', args), None)
+
+
+and dct_apply_closure_direct state fd_first ftyp_first args =
+  let rec loop (fd_cur : Functions.func_data) ftyp_cur args_rem rev_args rev_pat_vars =
+    let fd_next_opt = Hashtbl.find state.funcs (fd_cur.fd_name ^ "-app") in
+    match fd_next_opt, args_rem with
+    | (Some(fd_next)), (arg :: args_rem') ->
+        let next_type =
+          match ftyp_cur with
+          | T_func(_, b) -> b
+          | _ -> raise (DirectTransformException "Can't direct call non function type")
+        in
+        let pat_var =
+          match fd_cur.fd_pat.tpat_vars with
+          | [(var, _)] -> var
+          | _ -> raise (DirectTransformException "Function patterns should be single var")
+        in
+        loop fd_next next_type args_rem' (arg :: rev_args) (pat_var :: rev_pat_vars)
+    | _ ->
+        let last_arg = List.hd_exn rev_args in
+        let other_args = List.tl_exn rev_args in
+        let pat_var_map = Hashtbl.create (module TIdent) in
+        List.iter2_exn rev_pat_vars other_args ~f:(fun v a ->
+          Hashtbl.set pat_var_map ~key:v ~data:a
+        );
+        let cv_args = List.map fd_cur.fd_cvars ~f:(fun (var, vt) ->
+          let arg_opt = Hashtbl.find pat_var_map var in
+          match arg_opt with
+          | Some(arg) -> arg
+          | None ->
+              {
+                texp_desc = Texp_ident(var);
+                texp_loc = Location.none;
+                texp_type = vt
+              }
+        )
+        in
+        let da_args = cv_args @ [last_arg] in
+        let arg_tuple = make_tuple_expr da_args in
+        let ret_type =
+          match ftyp_cur with
+          | T_func(_, b) -> b
+          | _ -> raise (DirectTransformException "Can't direct call non function type")
+        in
+        let spec_desc = Texp_special(Tspec_directapply, fd_cur.fd_name, [arg_tuple]) in
+        match args_rem with
+        | [] ->
+            (spec_desc, None)
+        | _ ->
+            let da = {
+              texp_desc = spec_desc;
+              texp_loc = Location.none;
+              texp_type = ret_type;
+            }
+            in
+            (Texp_apply(da, args_rem), None)
+
+  in
+  loop fd_first ftyp_first (List.tl_exn args) [List.hd_exn args] []
+
+and dct_apply_closure_singledirect _state (fd : Functions.func_data) ftyp args =
+  let cv_args = List.map fd.fd_cvars ~f:(fun (var, vt) ->
+    {
+      texp_desc = Texp_ident(var);
+      texp_loc = Location.none;
+      texp_type = vt
+    }
+  )
+  in
+  let da_args = cv_args @ [List.hd_exn args] in
+  let arg_tuple = make_tuple_expr da_args in
+  let ret_type =
+    match ftyp with
+    | T_func(_, b) -> b
+    | _ -> raise (DirectTransformException "Can't direct call non function type")
+  in
+  let da = {
+    texp_desc = Texp_special(Tspec_directapply, fd.fd_name, [arg_tuple]);
+    texp_loc = Location.none;
+    texp_type = ret_type;
+  }
+  in
+  match (List.tl_exn args) with
+  | [] -> (da.texp_desc, None)
+  | args' -> (Texp_apply(da, args'), None)
 
 
 and dct_value_bindings state rf tvb_list =
