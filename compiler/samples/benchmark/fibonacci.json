@@ -1,0 +1,11 @@
+{
+  "globals": {
+    "n40": 102334155
+  },
+  "benchmarks": {
+    "loop10000": {
+      "func": "loop1000",
+      "iterations": 10
+    }
+  }
+}

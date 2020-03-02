@@ -48,7 +48,13 @@ module.exports.testBenchmarks = async function (test) {
     let resultStrings = [];
     let targetNames = Object.keys(test.benchmarks[benchName]).sort();
     for (let targetName of targetNames) {
-      resultStrings.push(targetName + " = " + test.benchmarks[benchName][targetName] + "ms");
+      let benchData = test.benchmarks[benchName][targetName];
+
+      if(benchData.time !== undefined) {
+        resultStrings.push(targetName + " = " + benchData.time.toPrecision(3) + "ms & " + formatBytes(benchData.memory, 4));
+      } else {
+        resultStrings.push(targetName + " = " + benchData.toPrecision(3) + "ms");
+      }
     }
 
     test.benchResults.push(benchName + ": " + resultStrings.join(", "));
@@ -59,10 +65,20 @@ module.exports.testBenchmarks = async function (test) {
 
 async function otwaBenchmark(test, bench) {
   let start = (new Date()).getTime();
+
+  let startMemory = test.instance.exports.mem_idx.value;
+
   for (let i = 0; i < bench.iterations; i++) {
     test.instance.exports[bench.func](0);
   }
-  test.benchmarks[bench.name].otwa = ((new Date()).getTime() - start);
+
+  let endMemory = test.instance.exports.mem_idx.value;
+  let usedMemory = endMemory - startMemory;
+
+  test.benchmarks[bench.name].otwa = {
+    time: ((new Date()).getTime() - start),
+    memory: usedMemory
+  };
 }
 
 async function interpBenchmark(test, bench) {
@@ -102,7 +118,7 @@ async function compiledBenchmarks(test, benchmarks) {
     await exec("ocamlc " + benchPath + ".ml -o " + benchPath + ".byte");
     await exec("js_of_ocaml " + benchPath + ".byte");
     await compileOpt;
-  } catch(e) {
+  } catch (e) {
     testFatal(test, "Failed other compiler compilation", e.stderr);
   }
 
@@ -118,14 +134,14 @@ async function execBenchmarkProgram(test, targetName, cmd) {
   try {
     let res = await exec(cmd);
     let lines = res.stdout.split("\n");
-    for(let line of lines) {
-      if(line.length === 0) continue;
+    for (let line of lines) {
+      if (line.length === 0) continue;
 
       let parts = line.split(" ");
       let benchName = parts[0];
       test.benchmarks[benchName][targetName] = parseFloat(parts[1]) * 1000;
     }
-  } catch(e) {
+  } catch (e) {
     testFatal(test, "Failed execution of compiled benchmark: " + cmd, e.stderr);
   }
 }
@@ -136,4 +152,19 @@ function compiledLetBenchmark(bench) {
   let thirdLine = "print_endline (\"" + bench.name + " \" ^ (string_of_float time)));;";
 
   return firstLine + secondLine + thirdLine;
+}
+
+function formatBytes(amount, precision) {
+  if (amount >= 1024 * 1024 * 1024) {
+    const gbAmount = amount / (1024 * 1024 * 1024);
+    return gbAmount.toPrecision(precision) + " GiB";
+  } else if(amount >= 1024 * 1024) {
+    const mbAmount = amount / (1024 * 1024);
+    return mbAmount.toPrecision(precision) + " MiB";
+  } else if(amount >= 1024) {
+    const kbAmount = amount / 1024;
+    return kbAmount.toPrecision(precision) + " KiB";
+  } else {
+    return amount.toPrecision(precision) + " B";
+  }
 }

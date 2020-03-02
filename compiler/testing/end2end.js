@@ -47,7 +47,9 @@ async function testCompileAndInstantiate(test) {
   }
 
   try{
-    await exec(command);
+    if(!noCompile) {
+      await exec(command);
+    }
   } catch(e) {
     testFatal(test, "Failed otwa compilation", e.stdout + "\n" + e.stderr);
   }
@@ -167,8 +169,14 @@ let canExit = false;
 let promises;
 let allPromise;
 
+let noCompile = false;
+
 if(process.argv.length > 2) {
   samplesDir = process.argv[2];
+}
+
+if(process.argv.length > 3) {
+  noCompile = true;
 }
 
 const run = async () => {
