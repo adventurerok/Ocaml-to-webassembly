@@ -1,4 +1,5 @@
 open Core_kernel
+open Otwa_base
 
 type tvalue =
   | V_unit
@@ -23,7 +24,15 @@ type scheme_type =
 type scheme = Forall of tvar_set * scheme_type
 [@@deriving sexp_of]
 
-type uni_pair = Uni of scheme_type * scheme_type
+type uni_pair = Uni of scheme_type * scheme_type * Location.t
+
+let loc_to_string (loc : Location.t) =
+  if loc.loc_ghost then
+    "none"
+  else
+    let start_pos = loc.loc_start in
+    let pos_in_line = start_pos.pos_cnum - start_pos.pos_bol in
+    start_pos.pos_fname ^ " line " ^ (Int.to_string start_pos.pos_lnum) ^ ":" ^ (Int.to_string pos_in_line)
 
 (* Converting things into strings *)
 let rec string_of_scheme_type typ =
@@ -47,7 +56,7 @@ let string_of_scheme (Forall(vars, typ)) =
   else
     "forall " ^ (String.concat ~sep:"," (Set.to_list vars)) ^ ". " ^ (string_of_scheme_type typ)
 
-let string_of_uni_pair (Uni(s1, s2)) =
+let string_of_uni_pair (Uni(s1, s2, _)) =
   "uni(" ^ (string_of_scheme_type s1) ^ ", " ^ (string_of_scheme_type s2) ^ ")"
 
 let rec string_of_uni_pair_list = function
@@ -83,8 +92,8 @@ let rec substitute_list ls typ =
   | ((tv,styp)::xs) -> substitute_list xs (substitute tv styp typ)
 
 (* Substitute tv for styp in both types in Uni *)
-let substitute_uni tv styp (Uni(a, b)) =
-  (Uni(substitute tv styp a, substitute tv styp b))
+let substitute_uni tv styp (Uni(a, b, loc)) =
+  (Uni(substitute tv styp a, substitute tv styp b, loc))
 
 let rec substitute_uni_list ls uni =
   match ls with
@@ -103,13 +112,17 @@ let substitute_scheme_list ls (Forall(s,t)) =
 
 (* message, left type, right type *)
 exception UnifyFail of string * string * string
-let unify_fail_exn msg a_in b_in = raise (UnifyFail(msg, string_of_scheme_type a_in, string_of_scheme_type b_in))
+let unify_fail_exn msg a_in b_in loc =
+  raise (UnifyFail(msg ^ " at " ^ (loc_to_string loc), string_of_scheme_type a_in, string_of_scheme_type b_in))
 
 (* type variable name, type *)
 exception OccursFail of string * string
 
 (* Ensure that tv doesn't occur in typ *)
 let occurs_check tv typ =
+  (if Config.global.trace then
+    Stdio.print_endline ("Occurs check " ^ tv ^ " in " ^ (string_of_scheme_type typ))
+  );
   let rec inner typ' =
     match typ' with
     | T_val(_) -> ()
@@ -125,19 +138,22 @@ let occurs_check tv typ =
         inner b
   in inner typ
 
-let find_unify (Uni(a_in, b_in)) =
+let find_unify (Uni(a_in, b_in, loc)) =
+  (if Config.global.trace then
+    Stdio.print_endline ("Find unify " ^ (string_of_scheme_type a_in) ^ " " ^ (string_of_scheme_type b_in))
+  );
   let rec inner a b =
     match (a, b) with
     | (T_val(va), T_val(vb)) ->
         if equal_tvalue va vb then []
-        else unify_fail_exn "Different value types" a_in b_in
+        else unify_fail_exn "Different value types" a_in b_in loc
     | (T_tuple([]), T_tuple([])) -> []
     | (T_tuple(x::xs), T_tuple(y::ys)) -> inner (T_func(x, T_tuple(xs))) (T_func(y, T_tuple(ys)))
     | (T_constr(s1, l1), T_constr(s2, l2)) ->
         if String.equal s1 s2 then
           inner (T_tuple(l1)) (T_tuple(l2))
         else
-          unify_fail_exn "Different constructs" a_in b_in
+          unify_fail_exn "Different constructs" a_in b_in loc
     | (T_var(ta), T_var(_)) -> [(ta, b)] (* To avoid self-unification failing the occurs check *)
     | (T_var(tv), _) ->
         let () = occurs_check tv b in
@@ -149,11 +165,11 @@ let find_unify (Uni(a_in, b_in)) =
         let upx = inner p x in
         let uqy = inner (substitute_list upx q) (substitute_list upx y) in
         (upx @ uqy)
-    | _ -> unify_fail_exn "Unequal types" a_in b_in
+    | _ -> unify_fail_exn "Unequal types" a_in b_in loc
   in inner a_in b_in
 
 (* Shorthand if you don't want to make a Uni yourself *)
-let unify a b = find_unify (Uni(a,b))
+let unify a b = find_unify (Uni(a,b, Location.none))
 
 (* Unify a whole list of constraints *)
 let rec unify_many lst =

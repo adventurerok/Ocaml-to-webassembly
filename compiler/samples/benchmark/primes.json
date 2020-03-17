@@ -1,0 +1,11 @@
+{
+  "globals": {
+    "v31": 31
+  },
+  "benchmarks": {
+    "slow_benchmark": {
+      "func": "slow_benchmark",
+      "iterations": 1
+    }
+  }
+}

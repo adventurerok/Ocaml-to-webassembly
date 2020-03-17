@@ -1,5 +1,6 @@
 open Core_kernel
 open Parsetree
+open Otwa_base
 open Types
 open Predefined
 open Typed_ast
@@ -23,11 +24,20 @@ let fresh state =
   let index = state.next_tvar in
   (state.next_tvar <- index + 1; String.of_char_list (List.rev (int_to_tvar index)))
 
-let subs_to_fresh state tvars =
-  List.map tvars ~f:(fun old -> (old, T_var(fresh state)))
+let subs_to_fresh state name tvars =
+  (if Config.global.trace then
+    Stdio.print_endline ("Subs to fresh for " ^ name)
+  );
+  List.map tvars ~f:(fun old ->
+    let fresh_var = fresh state in
+    (if Config.global.trace then
+      Stdio.print_endline ("Stf map '" ^ old ^ " to '" ^ fresh_var)
+    );
+    (old, T_var(fresh_var))
+  )
 
-let instantiate state (Forall(s, t)) =
-  let subs = subs_to_fresh state (Set.to_list s) in
+let instantiate state name (Forall(s, t)) =
+  let subs = subs_to_fresh state ("instantiate " ^ name) (Set.to_list s) in
   substitute_list subs t
 
 let context_ftv (ctx: Context.context) =
@@ -37,6 +47,13 @@ let generalize (ctx: Context.context) t =
   let free_vars = Set.diff (ftv t) (context_ftv ctx)
   in Forall(free_vars, t)
 
+let mk_uni (a, b, loc, txt) =
+  (if Config.global.trace then
+    Stdio.print_endline ("Make uni " ^ (string_of_scheme_type a) ^ " to " ^ (string_of_scheme_type b) ^
+     "    at" ^ (loc_to_string loc) ^ " with reason " ^ txt)
+  );
+  (Uni(a, b, loc))
+
 let extract_outer_constraints ctx subs =
   let ctx_ftv = context_ftv ctx in
   let rec inner slist =
@@ -44,7 +61,7 @@ let extract_outer_constraints ctx subs =
     | [] -> []
     | ((tv, typ) :: slist') ->
         if Set.mem ctx_ftv tv then
-          (Uni(T_var(tv), typ)) :: (inner slist')
+          (mk_uni(T_var(tv), typ, Location.none, "extract outer constraints")) :: (inner slist')
         else
           inner slist'
   in inner subs
@@ -109,13 +126,13 @@ let rec infer_expr (state : state) (ctx : Context.context) (expr : expression) :
         | Some(eexpr) ->
             let (ecs, e_ast) = infer_expr state ctx eexpr in
             let etyp = e_ast.texp_type in
-            let ccs = (Uni(ityp, v_bool)) :: (Uni(ttyp, etyp)) :: (ics @ tcs @ ecs) in
+            let ccs = (mk_uni(ityp, v_bool, expr.pexp_loc, "if")) :: (mk_uni(ttyp, etyp, expr.pexp_loc, "thenelse")) :: (ics @ tcs @ ecs) in
             (ccs, ttyp, Texp_ifthenelse(i_ast, t_ast, Some(e_ast)))
-        | None -> ((Uni(ityp, v_bool)) :: (ics @ tcs), ttyp, Texp_ifthenelse(i_ast, t_ast, None)))
+        | None -> ((mk_uni(ityp, v_bool, expr.pexp_loc, "if")) :: (ics @ tcs), ttyp, Texp_ifthenelse(i_ast, t_ast, None)))
     | Pexp_constraint(expr, ct) ->
         let st = ct_to_st_with_check ctx ct in
         let (ccs, ast) = infer_expr state ctx expr in
-        ((Uni(ast.texp_type, st)) :: ccs, ast.texp_type, ast.texp_desc)
+        ((mk_uni(ast.texp_type, st, expr.pexp_loc, "constraint")) :: ccs, ast.texp_type, ast.texp_desc)
     | Pexp_match(expr, cases) -> infer_match state ctx expr cases
     | Pexp_while(condition, inner) -> infer_while state ctx condition inner
     | Pexp_for(pat, min, max, dir, inner) -> infer_for state ctx pat min max dir inner
@@ -146,12 +163,17 @@ and infer_apply state ctx f args =
         (match fc with
         | T_func(a, b) ->
             let (bcs, btyp, ast_lst) = partial b args' in
-            (((Uni(a, atyp)) :: acs) @ bcs, btyp, a_ast :: ast_lst)
+            (((mk_uni(a, atyp, expr.pexp_loc, "applyend")) :: acs) @ bcs, btyp, a_ast :: ast_lst)
         | T_var(_) ->
-            let a = T_var(fresh state) in
-            let b = T_var(fresh state) in
+            let a_var = fresh state in
+            let b_var = fresh state in
+            (if Config.global.trace then
+              Stdio.print_endline ("New apply type vars '" ^ a_var ^ " -> '" ^ b_var)
+            );
+            let a = T_var(a_var) in
+            let b = T_var(b_var) in
             let (bcs, btyp, ast_lst) = partial b args' in
-            let ccs = ((Uni(fc, T_func(a, b))) :: (Uni(a, atyp)) :: acs) @ bcs in
+            let ccs = ((mk_uni(fc, T_func(a, b), expr.pexp_loc, "applyfunc")) :: (mk_uni(a, atyp, expr.pexp_loc, "applyarg")) :: acs) @ bcs in
             (ccs, btyp, a_ast :: ast_lst)
         | _ -> raise (TypeError "Cannot apply a non_function"))
   in let (argcs, typ, ast_lst) = partial ftype args in
@@ -209,6 +231,9 @@ and addvars subs ctx cx vlist =
       let truetype = substitute_list subs t in
       let genscheme = generalize ctx truetype in
       let cx' = Context.add_var cx v genscheme in
+      (if Config.global.trace then
+        Stdio.print_endline ("Bind " ^ (tident_to_string v) ^ " to " ^ (string_of_scheme genscheme))
+      );
       let (cx'', svars) = addvars subs ctx cx' vlist' in
       (cx'', (v,genscheme) :: svars)
 
@@ -238,7 +263,7 @@ and ctx_of_rec_bindings state ctx bindings =
           tvb_vars = [] (* Compute this later *)
         } in
         (* The pattern type and expression type must unify *)
-        (ccs @ [(Uni(ptyp, etyp))] @ ecs, etyp :: typs, tvb :: tvb_lst)
+        (ccs @ [(mk_uni(ptyp, etyp, expr.pexp_loc, "recbind"))] @ ecs, etyp :: typs, tvb :: tvb_lst)
     | _ -> raise (TypeError "Unequal number of pattern types and expression types. Impossible?")
   in let (ccs, _, tvb_lst) = handle p_ast_lst ptyp_ls expr_list in
   let subs = unify_many ccs in
@@ -265,6 +290,9 @@ and ctx_of_rec_bindings state ctx bindings =
 
 (* context -> pattern -> tpattern *)
 and infer_pattern state ctx pat =
+  (if Config.global.trace then
+    Stdio.print_endline ("Infer pattern start")
+  );
   let(ptyp, pvars, pdesc) =
     match pat.ppat_desc with
     | Ppat_var(ident) ->
@@ -273,6 +301,9 @@ and infer_pattern state ctx pat =
         let tv = fresh state in
         let typ = (T_var(tv)) in
         let var_id = state.next_var in
+        (if Config.global.trace then
+          Stdio.print_endline ("New ident " ^ (tident_to_string (varname, var_id)) ^ " with tvar '" ^ tv)
+        );
         state.next_var <- var_id + 1;
         (typ, [((varname, var_id), typ)], Tpat_var((varname, var_id)))
     | Ppat_tuple(lst) ->
@@ -304,7 +335,11 @@ and infer_pattern state ctx pat =
         let typ = (T_var(tv)) in
         (typ, [], Tpat_any)
     | _ -> raise (TypeError "Unsupported pattern")
-  in {
+  in
+  (if Config.global.trace then
+    Stdio.print_endline ("Infer pattern end with typ = " ^ (string_of_scheme_type ptyp))
+  );
+  {
     tpat_desc = pdesc;
     tpat_loc = pat.ppat_loc;
     tpat_type = ptyp;
@@ -315,11 +350,11 @@ and infer_ident state ctx ident =
   match ident.txt with
   | Lident(str) ->
       (match Context.find_var ctx str with
-      | Some(var) -> ([], instantiate state var.typ, Texp_ident((str, var.id)))
+      | Some(var) -> ([], instantiate state str var.typ, Texp_ident((str, var.id)))
       | None ->
           (match lookup_ident str with
           | Some(sch) ->
-              let t2 = instantiate state sch in
+              let t2 = instantiate state str sch in
               ([], t2, Texp_ident((str, -1)))
           | None -> raise (TypeError ("Unknown identifer '" ^ str ^ "'"))))
   | _ -> raise (TypeError ("Unknown strange identifer"))
@@ -345,7 +380,7 @@ and infer_ctx_construct state ctx name expr_opt =
   match Context.find_constr ctx name with
   | Some(constr) ->
       let variant = Option.value_exn (Context.find_type ctx constr.type_name) in
-      let subs = subs_to_fresh state variant.args in
+      let subs = subs_to_fresh state name variant.args in
       let constr_typ = T_constr(variant.name, List.map variant.args ~f:(fun tv -> T_var(tv))) in
       (match (expr_opt, List.is_empty constr.args) with
       | (None, true) -> ([], substitute_list subs constr_typ, Texp_construct(name, []))
@@ -356,12 +391,12 @@ and infer_ctx_construct state ctx name expr_opt =
           (* Theirs uses an optional tuple or other expression, while ours uses a list *)
           if (List.length constr.args) = 1 then
             let actual_typ = T_tuple([actual_ast.texp_type]) in
-            let ccs' = (Uni(expected_typ, actual_typ)) :: ccs in
+            let ccs' = (mk_uni(expected_typ, actual_typ, expr.pexp_loc, "construct1arg")) :: ccs in
             let subs_typ = substitute_list subs constr_typ in
             (ccs', subs_typ, Texp_construct(name, [actual_ast]))
           else
             let actual_typ = actual_ast.texp_type in
-            let ccs' = (Uni(expected_typ, actual_typ)) :: ccs in
+            let ccs' = (mk_uni(expected_typ, actual_typ, expr.pexp_loc, "constructNarg")) :: ccs in
             let subs_typ = substitute_list subs constr_typ in
             (match actual_ast.texp_desc with
             | Texp_tuple(ls) ->
@@ -377,16 +412,22 @@ and infer_pattern_ctx_construct state ctx name pat_opt =
   match Context.find_constr ctx name with
   | Some(constr) ->
       let variant = Option.value_exn (Context.find_type ctx constr.type_name) in
-      let subs = subs_to_fresh state variant.args in
-      let constr_typ = T_constr(variant.name, List.map variant.args ~f:(fun tv -> T_var(tv))) in
+      let subs = subs_to_fresh state name variant.args in
+      let constr_typ = substitute_list subs (T_constr(variant.name, List.map variant.args ~f:(fun tv -> T_var(tv)))) in
       (match (pat_opt, List.is_empty constr.args) with
-      | (None, true) -> (substitute_list subs constr_typ, [], Tpat_construct(name, []))
+      | (None, true) -> (constr_typ, [], Tpat_construct(name, []))
       | (Some(pat), false) ->
           let p_ast = infer_pattern state ctx pat in
           let expected_typ = substitute_list subs (T_tuple(constr.args)) in
+          (if Config.global.trace then
+            Stdio.print_endline ("Infer construct " ^ name ^ " expected type is " ^ (string_of_scheme_type expected_typ))
+          );
           let vars = p_ast.tpat_vars in
           if (List.length constr.args) = 1 then
             let actual_typ = T_tuple([p_ast.tpat_type]) in
+            (if Config.global.trace then
+              Stdio.print_endline ("Infer 1 arg construct " ^ name ^ " actual type is " ^ (string_of_scheme_type actual_typ))
+            );
             let subs' = unify expected_typ actual_typ in
             let vars' = List.map vars ~f:(fun (v,t) -> (v, substitute_list subs' t)) in
             let subs_typ = substitute_list subs' constr_typ in
@@ -394,9 +435,15 @@ and infer_pattern_ctx_construct state ctx name pat_opt =
             (subs_typ, vars', Tpat_construct(name, subs_ast_lst))
           else
             let actual_typ = p_ast.tpat_type in
+            (if Config.global.trace then
+              Stdio.print_endline ("Infer 2+ arg construct " ^ name ^ " actual type is " ^ (string_of_scheme_type actual_typ))
+            );
             let subs' = unify expected_typ actual_typ in
             let vars' = List.map vars ~f:(fun (v,t) -> (v, substitute_list subs' t)) in
             let subs_typ = substitute_list subs' constr_typ in
+            (if Config.global.trace then
+              Stdio.print_endline ("Subs typ is " ^ (string_of_scheme_type subs_typ))
+            );
             (match p_ast.tpat_desc with
             | Tpat_tuple(ls) ->
                 let subs_ast_lst = List.map ls ~f:(tpattern_substitute subs') in
@@ -425,15 +472,25 @@ and infer_match state ctx expr cases =
           tc_lhs = p_ast;
           tc_rhs = c_ast
         } in
-        ((Uni(ptyp, etyp)) :: (Uni(ityp, ctyp)) :: (ccs @ ccs'), tcase :: tc_lst)
-  in let restyp = (T_var(fresh state)) in
+        ((mk_uni(ptyp, etyp, expr.pexp_loc, "matchpat")) :: (mk_uni(ityp, ctyp, expr.pexp_loc, "matchexpr")) :: (ccs @ ccs'), tcase :: tc_lst)
+  in
+  let restyp_var = fresh state in
+  let restyp = (T_var(restyp_var)) in
+  (if Config.global.trace then
+    Stdio.print_endline ("Match statement with result type variable '" ^ restyp_var)
+  );
   let (ccs, tc_lst) = handle_cases cases restyp in
   (ecs @ ccs, restyp, Texp_match(e_ast, tc_lst))
 
 and infer_while state ctx condition inner =
   let (ccs, c_ast) = infer_expr state ctx condition in
   let (ics, i_ast) = infer_expr state ctx inner in
-  ((Uni(c_ast.texp_type, v_bool)) :: (Uni(i_ast.texp_type, v_unit)) :: (ccs @ ics), v_unit, Texp_while(c_ast, i_ast))
+  (
+    (mk_uni(c_ast.texp_type, v_bool, c_ast.texp_loc, "whilecond"))
+    :: (mk_uni(i_ast.texp_type, v_unit, i_ast.texp_loc, "whilebody"))
+    :: (ccs @ ics),
+    v_unit, Texp_while(c_ast, i_ast)
+  )
 
 and infer_for state ctx pat min max dir inner =
   let (inner_ctx, var_opt) =
@@ -450,9 +507,9 @@ and infer_for state ctx pat min max dir inner =
   let (min_cs, min_ast) = infer_expr state ctx min in
   let (max_cs, max_ast) = infer_expr state ctx max in
   let (inner_cs, inner_ast) = infer_expr state inner_ctx inner in
-  let for_cs = [(Uni(min_ast.texp_type, v_int));
-                (Uni(max_ast.texp_type, v_int));
-                (Uni(inner_ast.texp_type, v_unit))]
+  let for_cs = [(mk_uni(min_ast.texp_type, v_int, min_ast.texp_loc, "formin"));
+                (mk_uni(max_ast.texp_type, v_int, max_ast.texp_loc, "formax"));
+                (mk_uni(inner_ast.texp_type, v_unit, inner_ast.texp_loc, "forbody"))]
   in (min_cs @ max_cs @ inner_cs @ for_cs, v_unit, Texp_for(var_opt, min_ast, max_ast, dir, inner_ast))
 
 (* Infer the type and constraints, and then solve these to get just a type *)

@@ -31,6 +31,7 @@ let openfile name debug output =
 
 let () =
   let debug_ref = ref false in
+  let trace_ref = ref false in
   let optimise_stack_codegen_ref = ref true in
   let optimise_direct_call_gen_ref = ref true in
   let optimise_alias_elimination_ref = ref true in
@@ -38,6 +39,7 @@ let () =
   let input_ref = ref "" in
   let cmd_spec =
     [("-debug", Arg.Set(debug_ref), "Enable debug mode");
+     ("-trace", Arg.Set(trace_ref), "Enable debug and trace mode");
      ("-no_stack_codegen", Arg.Clear(optimise_stack_codegen_ref), "Disable stack codegen");
      ("-no_direct_calls", Arg.Clear(optimise_direct_call_gen_ref), "Disable direct call optimisations");
      ("-no_alias_elimination", Arg.Clear(optimise_alias_elimination_ref), "Disable alias elimination");
@@ -47,8 +49,9 @@ let () =
     input_ref := str
   in
   Arg.parse cmd_spec anon_fun "Usage: [options] input_file";
-  Config.global.debug <- !debug_ref;
+  Config.global.debug <- !debug_ref || !trace_ref;
+  Config.global.trace <- !trace_ref;
   Config.global.optimise_stack_codegen <- !optimise_stack_codegen_ref;
   Config.global.optimise_direct_call_gen <- !optimise_direct_call_gen_ref;
   Config.global.optimise_alias_elimination <- !optimise_alias_elimination_ref;
-  openfile !input_ref !debug_ref !output_ref
+  openfile !input_ref (!debug_ref || !trace_ref) !output_ref
