@@ -381,9 +381,9 @@ and infer_ctx_construct state ctx name expr_opt =
   | Some(constr) ->
       let variant = Option.value_exn (Context.find_type ctx constr.type_name) in
       let subs = subs_to_fresh state name variant.args in
-      let constr_typ = T_constr(variant.name, List.map variant.args ~f:(fun tv -> T_var(tv))) in
+      let constr_typ = substitute_list subs (T_constr(variant.name, List.map variant.args ~f:(fun tv -> T_var(tv)))) in
       (match (expr_opt, List.is_empty constr.args) with
-      | (None, true) -> ([], substitute_list subs constr_typ, Texp_construct(name, []))
+      | (None, true) -> ([], constr_typ, Texp_construct(name, []))
       | (Some(expr), false) ->
           let (ccs, actual_ast) = infer_expr state ctx expr in
           let expected_typ = substitute_list subs (T_tuple(constr.args)) in
@@ -392,15 +392,13 @@ and infer_ctx_construct state ctx name expr_opt =
           if (List.length constr.args) = 1 then
             let actual_typ = T_tuple([actual_ast.texp_type]) in
             let ccs' = (mk_uni(expected_typ, actual_typ, expr.pexp_loc, "construct1arg")) :: ccs in
-            let subs_typ = substitute_list subs constr_typ in
-            (ccs', subs_typ, Texp_construct(name, [actual_ast]))
+            (ccs', constr_typ, Texp_construct(name, [actual_ast]))
           else
             let actual_typ = actual_ast.texp_type in
             let ccs' = (mk_uni(expected_typ, actual_typ, expr.pexp_loc, "constructNarg")) :: ccs in
-            let subs_typ = substitute_list subs constr_typ in
             (match actual_ast.texp_desc with
             | Texp_tuple(ls) ->
-                (ccs', subs_typ, Texp_construct(name, ls))
+                (ccs', constr_typ, Texp_construct(name, ls))
             | _ -> raise (TypeError ("Expecting a tuple for constructor aruments " ^ name)))
       | (_, true) -> raise (TypeError ("No arguments expected for constructor " ^ name))
       | (_, false) -> raise (TypeError ("Arguments expected for constructor " ^ name)))

@@ -208,8 +208,12 @@ and codegen_unop ityp unop =
 and codegen_binop ityp binop =
   let signed_ext =
     match ityp with
+    | It_poly -> "_s"
     | It_int -> "_s"
-    | _ -> ""
+    | It_bool -> "_s"
+    | It_unit -> "_s"
+    | It_float -> ""
+    | _ -> raise (CodegenFailure ("Can't do binop on " ^ (itype_to_string ityp)))
   in
   let opname =
     match binop with

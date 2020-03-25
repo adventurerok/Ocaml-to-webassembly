@@ -1,0 +1,11 @@
+{
+  "globals": {
+    "v_true": true
+  },
+  "benchmarks": {
+    "sort1000": {
+      "func": "sort_1000",
+      "iterations": 100
+    }
+  }
+}
