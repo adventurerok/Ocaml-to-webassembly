@@ -7,6 +7,12 @@ _minted*
 *.nav
 *.out
 *.snm
+*.bib
+*.bbl
+*.bcf
+*.blg
+*.lof
+*.xml
 _build
 .merlin
 compiler/samples/**/*.wast

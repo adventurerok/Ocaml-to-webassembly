@@ -453,6 +453,10 @@ add res, arg1, arg2
 OBVIOUS BUG WITH CORRECT VERSION:
 * When do stack variables get saved otherwise?
 
+Each time variable bound, map name to unique ID.
+When function closures made, store mapping of closure vars to ID
+when closure invoked, if same mappings we can do a direct call!
+
 \section*{How to write dissertation}
 10k words target, 12k max. Target words included main text, tables, footnotes. Excludes appendices, bibliography, photographs, diagrams.
 40 page limit.
@@ -507,5 +511,45 @@ Language tips
 \end{itemize}
 
 submit as many times as you want.
+
+\subsection*{How to benchmark}
+\begin{enumerate}
+	\item Generate copy of code
+	\item Append benchmark kernel
+	
+\end{enumerate}
+
+\subsection*{Bench results}
+\subsubsection*{Before Any DFC}
+Benchmarks for samples/benchmark/gcd.ml
+rec100: byte = 4.152ms, interp = 4.871999999999995ms, js = 3.00002098083ms, opt = 0.311ms, otwa = 14ms
+rec1000: byte = 42.576ms, interp = 50.32500000000001ms, js = 3.00002098083ms, opt = 2.4099999999999997ms, otwa = 123ms
+looprec: byte = 46.614000000000004ms, interp = 47.38300000000001ms, js = 3.99994850159ms, opt = 2.127ms, otwa = 124ms
+imp1000: byte = 42.091ms, interp = 53.37500000000001ms, js = 6.00004196167ms, opt = 1.817ms, otwa = 8ms
+
+\subsubsection*{One-level DFC}
+Benchmarks for samples/benchmark/gcd.ml
+rec100: byte = 4.013ms, interp = 4.623999999999996ms, js = 2.00009346008ms, opt = 0.211ms, otwa = 10ms
+rec1000: byte = 51.488ms, interp = 50.668ms, js = 3.99994850159ms, opt = 2.154ms, otwa = 108ms
+looprec: byte = 40.230000000000004ms, interp = 47.17300000000001ms, js = 3.00002098083ms, opt = 2.246ms, otwa = 99ms
+imp1000: byte = 35.205ms, interp = 54.544999999999995ms, js = 9.0000629425ms, opt = 1.761ms, otwa = 8ms
+
+\subsubsection*{Multi-level DFC No Rec Var Elimination}
+Benchmarks for samples/benchmark/gcd.ml
+rec100: byte = 4.138ms, interp = 4.751999999999999ms, js = 1.9998550415ms, opt = 0.518ms, otwa = 4ms
+rec1000: byte = 42.507000000000005ms, interp = 49.09100000000001ms, js = 3.00002098083ms, opt = 4.711ms, otwa = 40ms
+looprec: byte = 45.966ms, interp = 50.973000000000006ms, js = 3.99994850159ms, opt = 4.859ms, otwa = 50ms
+imp1000: byte = 34.88ms, interp = 53.00200000000001ms, js = 6.99996948242ms, opt = 3.036ms, otwa = 9ms
+
+\subsubsection*{(Manual) Rec Var Elimination}
+(looprec) 44ms / no change not really worth it
+
+\subsubsection*{(Manual) Elimination of Match Tuple allocation / deallocation}
+(looprec) 15ms / huge change!! This would be a good optimisation to do
+
+\subsubsection*{(Manual) Ref to Var Elimination (Imp GCD)}
+Changes IMP gcd from 9ms to 3ms!!!
+
+\subsubsection*{Need to eliminate unused vars!!!}
 
 \end{document}

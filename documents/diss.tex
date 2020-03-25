@@ -1,0 +1,334 @@
+% The master copy of this demo dissertation is held on my filespace
+% on the cl file serve (/homes/mr/teaching/demodissert/)
+
+% Last updated by MR on 2 August 2001
+
+\documentclass[12pt,twoside,notitlepage]{report}
+
+\usepackage{a4}
+\usepackage{verbatim}
+
+\usepackage{minted}
+%\usemintedstyle{colorful}
+\setmintedinline{breaklines}
+
+\newcommand{\textinline}{\mintinline{text}}
+\newcommand{\cinline}{\mintinline{C}}
+\newcommand{\camlinline}{\mintinline{OCaml}}
+
+\input{epsf}                            % to allow postscript inclusions
+% On thor and CUS read top of file:
+%     /opt/TeX/lib/texmf/tex/dvips/epsf.sty
+% On CL machines read:
+%     /usr/lib/tex/macros/dvips/epsf.tex
+
+
+
+\raggedbottom                           % try to avoid widows and orphans
+\sloppy
+\clubpenalty1000%
+\widowpenalty1000%
+
+\addtolength{\oddsidemargin}{6mm}       % adjust margins
+\addtolength{\evensidemargin}{-8mm}
+
+\renewcommand{\baselinestretch}{1.1}    % adjust line spacing to make
+                                        % more readable
+
+\usepackage[backend=bibtex, style=alphabetic, sorting=ynt]{biblatex}
+\addbibresource{refs.bib}
+
+\begin{document}
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Title
+
+
+\pagestyle{empty}
+
+\hfill{\LARGE \bf Paul Durbaba}
+
+\vspace*{60mm}
+\begin{center}
+\Huge
+{\bf Compiling OCaml to WebAssembly} \\
+\vspace*{5mm}
+Diploma in Computer Science \\
+\vspace*{5mm}
+Robinson College \\
+\vspace*{5mm}
+May 2020  % today's date
+\end{center}
+
+\clearpage
+
+
+ 
+\newpage
+\section*{Declaration}
+
+I, Paul Durbaba of Robinson College, being a candidate for Part II of the Computer
+Science Tripos, hereby declare
+that this dissertation and the work described in it are my own work,
+unaided except as may be specified below, and that the dissertation
+does not contain material that has already been used to any substantial
+extent for a comparable purpose.
+
+\bigskip
+\leftline{Signed Paul Durbaba}
+
+\medskip
+\leftline{Date [date]}
+
+\section*{Acknowledgements}
+
+% TODO List the people that check the diss
+LIST THE PEOPLE THAT CHECK THE DISS
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Proforma, table of contents and list of figures
+
+\setcounter{page}{1}
+\pagenumbering{roman}
+\pagestyle{plain}
+
+\chapter*{Proforma}
+
+{\large
+	\begin{tabular}{ll}
+		Name:               & \bf Paul Durbaba                       \\
+		College:            & \bf Robinson College                     \\
+		Project Title:      & \bf Compiling OCaml to WebAssembly \\
+		Examination:        & \bf Part II Computer Science, May 2020        \\
+		Word Count:         & \bf FILL IN LATER  \\
+		Project Originator: & Tim Jones                \\
+		Supervisor:         & Tobias Kohn            \\ 
+	\end{tabular}
+}
+\footnotetext[1]{This word count was computed
+	by {\tt detex diss.tex | tr -cd '0-9A-Za-z $\tt\backslash$n' | wc -w}
+}
+\stepcounter{footnote}
+
+
+\section*{Original Aims of the Project}
+
+At most 100 words describing the original aims of the project. 
+
+
+\section*{Work Completed}
+
+At most 100 words summarising the work completed. 
+
+\section*{Special Difficulties}
+
+At most 100 words describing any special difficulties that you faced.
+(In most cases the special difficulties entry will say “None”.) 
+
+\tableofcontents
+
+\listoffigures
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% now for the chapters
+
+\clearpage        % just to make sure before the page numbering
+                        % is changed
+
+\setcounter{page}{1}
+\pagenumbering{arabic}
+\pagestyle{headings}
+
+\chapter{Introduction}
+% The Introduction should explain the principal motivation for the project. Show how the work fits into the broad area of surrounding Computer Science and give a brief survey of previous related work. It should generally be unnecessary to quote at length from technical papers or textbooks. If a simple bibliographic reference is insufficient, consign any lengthy quotation to an appendix. 
+
+%TODO EXPLAIN KEY MOTIVATION, IDEAS BEHIND PROJECT
+
+
+My motivation for this project is to learn how to make a compiler, and to learn both about programming in OCaml and about WebAssembly.
+
+% TODO PREVIOUS RELATED WORK
+
+\section{OCaml}
+OCaml\cite{OCaml} is a strongly-typed functional programming language, with some imperative features such as references. I chose OCaml both as the source language of the compiler, and the language the compiler is designed in, because I wanted to gain some familiarity in writing programs in functional languages, and OCaml has similar syntax to Standard ML taught in first year, but with much better library support, and because compiling a functional programming language presents additional challenges to compiling an imperative language such as C - with first class functions and pattern matching requiring special consideration.
+
+\section{WebAssembly}
+% copied from project proposal
+WebAssembly\cite{webassembly} is a stack-based binary instruction format for the web with the main goal of improving performance  of  more  computationally  intensive  functions  in  web  applications.   It  does not  replace  JavaScript  as  there  (currently)  is  no  way  to  perform  tasks  such  as  DOM manipulation  directly  from  WebAssembly  -  it  is  expected  that  a  JavaScript  application might  call  some  functions  implemented  in  WebAssembly  to  perform  computation,  and then display the results itself.
+\\\\
+WebAssembly was chosen as the target instruction set because it is relatively new, with few compilers out there currently targeting it, and it is likely to grow in popularity in the future as more extensions are added to it that make it more viable to be used - such as support for garbage collection and exceptions.
+% TODO
+
+%TODO WHAT IS WEBASSEMBLY
+
+
+% TODO DESCRIPTION OF HOW TO BUILD THE PROJECT?
+
+\section{Related Work}
+% TODO Js\_of\_ocaml, A
+
+There have been a few attempts to compile OCaml to WebAssembly already, such as by Sander Spies\cite{Awbfo}, who modified the existing backend of the OCaml Compiler to target WebAssembly. This differs from my approach in that I am implementing an entire compiler from the type-checker through to the WebAssembly code generator. While Sander's approach allows them to leverage the existing features and optimisations of the OCaml compiler, their approach didn't fit with my goals of learning how to write an entire compiler - including type checker, intermediate translations and optimisations by myself, and such an approach likely wouldn't constitute enough work for a Part II project.
+
+
+\clearpage
+
+
+
+\chapter{Preparation}
+% Principally, this chapter should describe the work which was undertaken before code was written, hardware built or theories worked on. It should show how the project proposal was further refined and clarified, so that the Implementation stage could go smoothly rather than by trial and error.
+
+% Throughout this chapter and indeed the whole dissertation, it is essential to demonstrate that a proper professional approach was employed.
+
+% The nature of this chapter will vary greatly from one dissertation to another but, underlining the professional approach, this chapter will very likely include a section headed “Requirements Analysis” and incorporate other references to software engineering techniques.
+
+% The chapter will cite any new programming languages and systems which had to be learnt and will mention complicated theories or algorithms which required understanding.
+
+% It is essential to declare the Starting Point (see Section 7). This states any existing codebase or materials that your project builds on. The text here can commonly be identical to the text in your proposal, but it may enlarge on it or report variations. For instance, the true starting point may have turned out to be different from that declared in the proposal and such discrepancies must be explained. 
+
+\section{Requirements}
+
+The success criteria in the project proposal presents a clearly defined subset of OCaml to implement. This subset was designed to be large enough so that useful OCaml programs could be written in it, while small enough to be feasible to implement by Christmas.
+
+% TODO STARTING POINT
+
+% TODO MATERIAL DONE BEFORE CODE WAS WRITTEN
+
+% TODO? HOW I ENSURED CODING WASN'T TRIAL AND ERROR
+
+\section{Components of the Compiler}
+
+
+\section{Libraries Used}
+
+
+\section{Working Environment and Tools Setup}
+I chose to use the Dune\cite{Dune} build system for OCaml as it is the most widely-used build system for OCaml, and supports multi-module projects and dependencies installed via OPAM, the OCaml Package Manager.
+\\\\
+
+\begin{minipage}{\linewidth}
+Dune build files are specified in each directory a file called \textinline{dune}, with the top-level directory specifying the build file for the entire project, and subdirectories containing the build files for each module. These build files are specified in a LISP-like `s-expression' syntax, for instance here is the top-level build file of the project:
+\begin{minted}{LISP}
+(executable
+    (name toplevel)
+    (libraries proj.types proj.transform proj.codegen proj.base
+               core_kernel compiler-libs.common)
+    (preprocess (pps ppx_jane)))
+\end{minted}
+\end{minipage}
+\\\\
+The name field includes the `public names' of libraries to be included. Library modules have their own build files that specify `library' instead of `executable', and an additional `public\_name' field.
+\\\\
+The executable can be build by invoking \textinline{dune build toplevel.exe} in the top-level directory, which will output the binary to \textinline{_build/default/toplevel.exe}.
+
+% TODO Dune, Git
+
+\section{Starting Point}
+Below is the starting point as stated in my project proposal.
+% TODO copy from project proposal
+
+\subsection{OCaml and Compilers}
+I have done very little programming in OCaml previously, with the exception of coming up with some code samples when considering which features this compiler should support. However I have some experience in programming in Standard ML, a similar language, from Part IA Foundations of Computer Science.
+\\\\
+I also have little previous experience in writing compilers. I have written basic lexers and parsers, and implemented a system for interpreting mathematical expressions, however I have no experience with a larger compiler that compiles to instructions instead of interpreting.
+
+\subsection{WebAssembly and the Web}
+I have no experience with WebAssembly with the exception of reading through some of the documentation in the weeks leading up to this proposal.
+\\\\
+I have a fair amount of experience with JavaScript and websites: I do not anticipate any issue with coming up with a suitable demonstration of the WASM produced by the compiler.
+
+\clearpage
+\chapter{Implementation}
+% This chapter should describe what was actually produced: the programs which were written, the hardware which was built or the theory which was developed. Any design strategies that looked ahead to the testing stage might profitably be referred to (the professional approach again).
+
+% Descriptions of programs may include fragments of high-level code but large chunks of code are usually best left to appendices or omitted altogether. Analogous advice applies to circuit diagrams.
+
+% Draw attention to the parts of the work which are not your own. The Implementation Chapter should include a section labelled "Repository Overview". The repository overview should be around one page in length and should describe the high-level structure of the source code found in your source code Repository. It should describe whether the code was written from scratch or if it built on an existing project or tutorial. Making effective use of powerful tools and pre-existing code is often laudable, and will count to your credit if properly reported.
+
+% It should not be necessary to give a day-by-day account of the progress of the work but major milestones may sometimes be highlighted with advantage. 
+
+% TODO WORK DONE, ONE SECTION PER PART OF THE COMPILER
+
+\section{Front End}
+
+\section{Type Checker}
+
+\section{Lambda Lifting / Closure Conversion}
+
+\section{Intermediate Translation}
+
+\section{Code Generation}
+
+\section{Overview of the files}
+
+\clearpage
+\chapter{Evaluation}
+% This is where Assessors will be looking for signs of success and for evidence of thorough and systematic evaluation as discussed in Section 8.3. Sample output, tables of timings and photographs of workstation screens, oscilloscope traces or circuit boards may be included. A graph that does not indicate confidence intervals will generally leave a professional scientist with a negative impression.
+
+% As with code, voluminous examples of sample output are usually best left to appendices or omitted altogether.
+
+% There are some obvious questions which this chapter will address. How many of the original goals were achieved? Were they proved to have been achieved? Did the program, hardware, or theory really work?
+
+% Assessors are well aware that large programs will very likely include some residual bugs. It should always be possible to demonstrate that a program works in simple cases and it is instructive to demonstrate how close it is to working in a really ambitious case. 
+
+\section{Success Criteria}
+
+\section{End To End Tester}
+
+\section{Benchmarks / Benchmark Driven Optimisations}
+
+% TODO DONT FORGET ALL THE WORK IN MAKING THE CODE SHORTER
+
+% TODO HOW IT WAS EVALUATED
+% TODO TEST SYSTEM AND BENCHMARKS
+
+
+
+
+\clearpage
+\chapter{Conclusion}
+% This chapter is likely to be very short and it may well refer back to the Introduction. It might properly explain how you would have planned the project if starting again with the benefit of hindsight. 
+
+% TODO CONCLUDE THE DOCUMENT
+% TODO IVE SUCCESSFULLY MET SUCCESS CRITERIA, SUMMARY OF EVERYTHING
+% TODO WHAT LESSONS DID I LEARN
+% TODO WHAT WORK COULD YOU DO IN THE FUTURE
+
+
+
+
+\clearpage
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% the bibliography
+
+\addcontentsline{toc}{chapter}{Bibliography}
+\printbibliography[title={Bibliography}]
+\clearpage
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% the appendices
+\appendix
+% Assessors like to see some sample code or example circuit diagrams, and appendices are the sensible places to include such items. Accordingly, software and hardware projects should incorporate appropriate appendices. Note that the 12,000 word limit does not include material in the appendices, but only in extremely unusual circumstances may appendices exceed 10-15 pages - if you feel that such unusual circumstances might apply to you you should ask your Director of Studies and Supervisor to apply to the Chairman of Examiners. It is quite in order to have no appendices. Appendices should appear between the bibliography and the project proposal. 
+
+\chapter{The First Appendix}
+
+Things in appendix A
+
+
+\clearpage
+
+\chapter{The Second Appendix}
+
+Things in appendix B
+
+
+\clearpage
+
+\chapter{Project Proposal}
+\clearpage
+
+\input{propbody}
+
+\end{document}
