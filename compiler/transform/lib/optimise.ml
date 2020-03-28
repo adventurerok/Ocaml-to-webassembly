@@ -86,7 +86,30 @@ let rec eliminate_tuple_loads globals func =
                   (Iexp_copyvar(var_typ, dest, source_var))
               | None -> iexpr)
           | None -> iexpr)
-      (* TODO constructs *)
+      | Iexp_loadconstructindex (itt, index, dest, construct) ->
+          let construct_def_opt = Analysis.unique_reaching_definition line_defs construct in
+          (match construct_def_opt with
+          | Some(def_line) ->
+              let construct_data_opt = Hashtbl.find construct_map def_line in
+              (match construct_data_opt with
+              | Some((_, construct_vars)) ->
+                  let source_var = Array.get construct_vars index in
+                  let var_typ = List.nth_exn itt index in
+                  changed := true;
+                  (Iexp_copyvar(var_typ, dest, source_var))
+              | None -> iexpr)
+          | None -> iexpr)
+      | Iexp_loadconstructid (dest, construct) ->
+          let construct_def_opt = Analysis.unique_reaching_definition line_defs construct in
+          (match construct_def_opt with
+          | Some(def_line) ->
+              let construct_data_opt = Hashtbl.find construct_map def_line in
+              (match construct_data_opt with
+              | Some((construct_id, _)) ->
+                  changed := true;
+                  (Iexp_setvar(It_int, dest, Int.to_string construct_id))
+              | None -> iexpr)
+          | None -> iexpr)
       | _ -> iexpr)
     )
     in
