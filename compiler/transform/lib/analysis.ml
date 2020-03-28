@@ -139,7 +139,7 @@ let update_line_vars func globals state line assigned used =
   List.iter ~f:(var_used func globals state line) used
 
 (* Result and argument vars of an iexpression *)
-let instr_vars (iexpr : iexpression) =
+let instr_vars ?fill_closure_is_assign:(fcia = false) (iexpr : iexpression) =
   match iexpr with
   | Iexp_setvar (_, res, _) -> (Some(res), [])
   | Iexp_copyvar (_, res, arg) -> (Some(res), [arg])
@@ -147,7 +147,11 @@ let instr_vars (iexpr : iexpression) =
   | Iexp_unop (_, _, res, arg) -> (Some(res), [arg])
   | Iexp_binop (_, _, res, arg1, arg2) -> (Some(res), [arg1; arg2])
   | Iexp_newclosure (_, _, _, res) -> (Some(res), [])
-  | Iexp_fillclosure (_, a1, alst) -> (None, (a1 :: alst))
+  | Iexp_fillclosure (_, a1, alst) ->
+      if fcia then
+        (Some(a1), a1 :: alst)
+      else
+        (None, (a1 :: alst))
   | Iexp_callclosure (_, res, clo, arg) -> (Some(res), [clo; arg])
   | Iexp_calldirect(res, _, _, args) -> (Some(res), args)
   | Iexp_startblock _ -> (None, [])
@@ -168,6 +172,36 @@ let instr_vars (iexpr : iexpression) =
   | Iexp_updatebox (_, arg, box) -> (None, [arg; box])
   | Iexp_unbox (_, arg, res) -> (Some(res), [arg])
   | Iexp_fail -> (None, [])
+
+let can_side_effect (iexpr : iexpression) =
+  match iexpr with
+  | Iexp_setvar (_, _, _) -> false
+  | Iexp_copyvar (_, _, _) -> false
+  | Iexp_return (_, _) -> true
+  | Iexp_unop (_, _, _, _) -> false
+  | Iexp_binop (_, _, _, _, _) -> false
+  | Iexp_newclosure (_, _, _, _) -> false
+  | Iexp_fillclosure (_, _, _) -> false
+  | Iexp_callclosure (_, _, _, _) -> true
+  | Iexp_calldirect (_, _, _, _) -> true
+  | Iexp_startblock _ -> false
+  | Iexp_endblock _ -> false
+  | Iexp_exitblock _ -> false
+  | Iexp_exitblockif (_, _) -> false
+  | Iexp_startif (_, _) -> false
+  | Iexp_else _ -> false
+  | Iexp_endif _ -> false
+  | Iexp_startloop (_, _) -> false
+  | Iexp_endloop (_, _) -> false
+  | Iexp_pushtuple (_, _, _) -> false
+  | Iexp_loadtupleindex (_, _, _, _) -> false
+  | Iexp_pushconstruct (_, _, _, _) -> false
+  | Iexp_loadconstructindex (_, _, _, _) -> false
+  | Iexp_loadconstructid (_, _) -> false
+  | Iexp_newbox (_, _, _) -> false
+  | Iexp_updatebox (_, _, _) -> true
+  | Iexp_unbox (_, _, _) -> false
+  | Iexp_fail -> true
 
 (* Variable analysis on instructions *)
 let analyse_instr func globals state line (iexpr : iexpression) =
@@ -350,6 +384,60 @@ let unique_reaching_definition line_defs var =
           Set.choose var_defs
         else None
     | None -> None
+
+
+let live_variables fa =
+  (* Hashtbl of line number to Set of live ivariables *)
+  let in_live = Hashtbl.create (module Int) in
+  let out_live = Hashtbl.create (module Int) in
+  let modified = ref true in
+  while !modified do
+    modified := false;
+    Map.iter fa.fa_basic_blocks ~f:(fun bb ->
+      let next_live = List.filter_map bb.bb_next ~f:(fun next_line ->
+        let next_bb_opt = Map.find fa.fa_basic_blocks next_line in
+        match next_bb_opt with
+        | Some(next_bb) ->
+            Hashtbl.find in_live next_bb.bb_start_line
+        | None -> None)
+      in
+      (* A map so we always have 1 predecessor map.
+       * For the first basic block this is set to the start of function definitons *)
+      let base_set = (Set.empty (module IVariable)) in
+      let merged = List.reduce_exn (base_set :: next_live) ~f:Set.union in
+      let old_live_opt = Hashtbl.find out_live bb.bb_end_line in
+      let changed =
+        match old_live_opt with
+        | Some(old_live) ->
+            not (Set.equal old_live merged)
+        | None -> true
+      in
+      if changed then
+        modified := true;
+        Hashtbl.set out_live ~key:bb.bb_end_line ~data:merged;
+        for back_index = 0 to (Array.length bb.bb_code) - 1 do
+          let index = (Array.length bb.bb_code - 1) - back_index in
+          let line = bb.bb_start_line + index in
+          let end_line_live = Hashtbl.find_exn out_live line in
+          let assign_opt, used_vars = instr_vars (Array.get bb.bb_code index) in
+          let inter_live =
+            match assign_opt with
+            | Some(assign) ->
+                Set.remove end_line_live assign
+            | None ->
+                end_line_live
+          in
+          let start_line_live =
+            Set.union inter_live (Set.of_list (module IVariable) used_vars)
+          in
+          Hashtbl.set in_live ~key:line ~data:start_line_live;
+          (if index > 0 then
+            Hashtbl.set out_live ~key:(line - 1) ~data:start_line_live)
+
+        done
+    )
+  done;
+  (in_live, out_live)
 
 
 let temp_to_named (func : ifunction) (fa : func_analysis) =

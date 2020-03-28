@@ -36,6 +36,7 @@ let () =
   let optimise_direct_call_gen_ref = ref true in
   let optimise_alias_elimination_ref = ref true in
   let optimise_tuple_loads_ref = ref true in
+  let optimise_dead_code_ref = ref true in
   let output_ref = ref "" in
   let input_ref = ref "" in
   let cmd_spec =
@@ -45,6 +46,7 @@ let () =
      ("-no_direct_calls", Arg.Clear(optimise_direct_call_gen_ref), "Disable direct call optimisations");
      ("-no_alias_elimination", Arg.Clear(optimise_alias_elimination_ref), "Disable alias elimination");
      ("-no_tuple_loads", Arg.Clear(optimise_tuple_loads_ref), "Disable tuple load optimisation");
+     ("-no_dead_code", Arg.Clear(optimise_dead_code_ref), "Disable dead code elimination");
      ("-output", Arg.Set_string(output_ref), "Output to named file instead of standard out")]
   in
   let anon_fun str =
@@ -57,4 +59,5 @@ let () =
   Config.global.optimise_direct_call_gen <- !optimise_direct_call_gen_ref;
   Config.global.optimise_alias_elimination <- !optimise_alias_elimination_ref;
   Config.global.optimise_tuple_loads <- !optimise_tuple_loads_ref;
+  Config.global.optimise_dead_code <- !optimise_dead_code_ref;
   openfile !input_ref (!debug_ref || !trace_ref) !output_ref
