@@ -9,8 +9,11 @@ type func_analysis = {
   (* from line, to lines (including next line if possible) *)
   fa_jump_table: (int, int list) Hashtbl.t;
 
+  (* The arguments to the function, in order *)
+  fa_args: ivariable list;
+
   (* start line number -> code for block *)
-  mutable fa_basic_blocks: (int, basic_block) Map.Poly.t
+  mutable fa_basic_blocks: basic_block Int.Map.t
 }
 
 and basic_block = {
@@ -91,7 +94,7 @@ let func_analysis_to_string fa =
   "Variables: \n" ^
   (String.concat (List.map ~f:var_stats_to_string (Hashtbl.data fa.fa_var_stats))) ^ "\n" ^
   "Basic Blocks: \n" ^
-  (String.concat (List.map ~f:basic_block_to_string (Map.Poly.data fa.fa_basic_blocks))) ^ "\n"
+  (String.concat (List.map ~f:basic_block_to_string (Map.data fa.fa_basic_blocks))) ^ "\n"
 
 let new_var_stats (scope, name) typ temp () =
   {
@@ -135,46 +138,53 @@ let update_line_vars func globals state line assigned used =
   List.iter ~f:(var_assigned func globals state line) assigned;
   List.iter ~f:(var_used func globals state line) used
 
+(* Result and argument vars of an iexpression *)
+let instr_vars (iexpr : iexpression) =
+  match iexpr with
+  | Iexp_setvar (_, res, _) -> (Some(res), [])
+  | Iexp_copyvar (_, res, arg) -> (Some(res), [arg])
+  | Iexp_return (_, arg) -> (None, [arg])
+  | Iexp_unop (_, _, res, arg) -> (Some(res), [arg])
+  | Iexp_binop (_, _, res, arg1, arg2) -> (Some(res), [arg1; arg2])
+  | Iexp_newclosure (_, _, _, res) -> (Some(res), [])
+  | Iexp_fillclosure (_, a1, alst) -> (None, (a1 :: alst))
+  | Iexp_callclosure (_, res, clo, arg) -> (Some(res), [clo; arg])
+  | Iexp_calldirect(res, _, _, args) -> (Some(res), args)
+  | Iexp_startblock _ -> (None, [])
+  | Iexp_endblock _ -> (None, [])
+  | Iexp_exitblock _ -> (None, [])
+  | Iexp_exitblockif (_, arg) -> (None, [arg])
+  | Iexp_startif (_, arg) -> (None, [arg])
+  | Iexp_else _ -> (None, [])
+  | Iexp_endif _ -> (None, [])
+  | Iexp_startloop (_, _) -> (None, [])
+  | Iexp_endloop (_, _) -> (None, [])
+  | Iexp_pushtuple (_, res, args) -> (Some(res), args)
+  | Iexp_loadtupleindex (_, _, res, arg) -> (Some(res), [arg])
+  | Iexp_pushconstruct (_, res, _, args) -> (Some(res), args)
+  | Iexp_loadconstructindex (_, _, res, arg) -> (Some(res), [arg])
+  | Iexp_loadconstructid (res, arg) -> (Some(res), [arg])
+  | Iexp_newbox (_, arg, res) -> (Some(res), [arg])
+  | Iexp_updatebox (_, arg, box) -> (None, [arg; box])
+  | Iexp_unbox (_, arg, res) -> (Some(res), [arg])
+  | Iexp_fail -> (None, [])
 
 (* Variable analysis on instructions *)
 let analyse_instr func globals state line (iexpr : iexpression) =
-  let ulv_filled = update_line_vars func globals state line in
-  match iexpr with
-  | Iexp_setvar (_, res, _) -> ulv_filled [res] []
-  | Iexp_copyvar (_, res, arg) -> ulv_filled [res] [arg]
-  | Iexp_return (_, arg) -> ulv_filled [] [arg]
-  | Iexp_unop (_, _, res, arg) -> ulv_filled [res] [arg]
-  | Iexp_binop (_, _, res, arg1, arg2) -> ulv_filled [res] [arg1; arg2]
-  | Iexp_newclosure (_, _, _, res) -> ulv_filled [res] []
-  | Iexp_fillclosure (_, a1, alst) -> ulv_filled [] (a1 :: alst)
-  | Iexp_callclosure (_, res, clo, arg) -> ulv_filled [res] [clo; arg]
-  | Iexp_calldirect(res, _, _, args) -> ulv_filled [res] args
-  | Iexp_startblock _ -> ()
-  | Iexp_endblock _ -> ()
-  | Iexp_exitblock _ -> ()
-  | Iexp_exitblockif (_, arg) -> ulv_filled [] [arg]
-  | Iexp_startif (_, arg) -> ulv_filled [] [arg]
-  | Iexp_else _ -> ()
-  | Iexp_endif _ -> ()
-  | Iexp_startloop (_, _) -> ()
-  | Iexp_endloop (_, _) -> ()
-  | Iexp_pushtuple (_, res, args) -> ulv_filled [res] args
-  | Iexp_loadtupleindex (_, _, res, arg) -> ulv_filled [res] [arg]
-  | Iexp_pushconstruct (_, res, _, args) -> ulv_filled [res] args
-  | Iexp_loadconstructindex (_, _, res, arg) -> ulv_filled [res] [arg]
-  | Iexp_loadconstructid (res, arg) -> ulv_filled [res] [arg]
-  | Iexp_newbox (_, arg, res) -> ulv_filled [res] [arg]
-  | Iexp_updatebox (_, arg, box) -> ulv_filled [] [arg; box]
-  | Iexp_unbox (_, arg, res) -> ulv_filled [res] [arg]
-  | Iexp_fail -> ()
+  let res_opt, args = instr_vars iexpr in
+  update_line_vars func globals state line (Option.to_list res_opt) args
 
 
 let analyse_function_block func globals code =
+  let all_vars = Vars.get_ivariables func.pf_vars in
+  let cvar_count = List.length func.pf_cvars in
+  let arg_vars = List.take all_vars (cvar_count + 1) in
   let fa = {
     fa_name = func.pf_name;
     fa_var_stats = Hashtbl.create (module IVariable);
     fa_jump_table = Hashtbl.create (module Int);
-    fa_basic_blocks = Map.Poly.empty;
+    fa_args = arg_vars;
+    fa_basic_blocks = Int.Map.empty;
   }
   in
   List.iteri ~f:(analyse_instr func globals fa) code;
@@ -223,9 +233,9 @@ let compute_jump_table func fa =
 
 let compute_basic_blocks func fa =
   compute_jump_table func fa;
-  let jump_offsets = Set.Poly.of_list (List.map ~f:(fun x -> x + 1) (Hashtbl.keys fa.fa_jump_table)) in
-  let receive_offsets = Set.Poly.of_list (List.concat (Hashtbl.data fa.fa_jump_table)) in
-  let block_offsets = Set.Poly.union jump_offsets receive_offsets in
+  let jump_offsets = Int.Set.of_list (List.map ~f:(fun x -> x + 1) (Hashtbl.keys fa.fa_jump_table)) in
+  let receive_offsets = Int.Set.of_list (List.concat (Hashtbl.data fa.fa_jump_table)) in
+  let block_offsets = Set.union jump_offsets receive_offsets in
   let pred_table = Hashtbl.create (module Int) in
   let add_basic_block start code_rev =
     let end_line = start + (List.length code_rev) - 1 in
@@ -237,7 +247,7 @@ let compute_basic_blocks func fa =
       bb_pred = []
     }
     in
-    fa.fa_basic_blocks <- Map.Poly.set fa.fa_basic_blocks ~key:start ~data:bb
+    fa.fa_basic_blocks <- Map.set fa.fa_basic_blocks ~key:start ~data:bb
   in
   let rec loop line code block_start block_rev =
     match code with
@@ -249,14 +259,14 @@ let compute_basic_blocks func fa =
             List.iter (Hashtbl.find_multi fa.fa_jump_table line) ~f:(fun target ->
               Hashtbl.add_multi pred_table ~key:target ~data:block_start))
         in
-        if Set.Poly.mem block_offsets line then
+        if Set.mem block_offsets line then
           let () = add_basic_block block_start block_rev in
           loop (line + 1) code' line [instr]
         else
           loop (line + 1) code' block_start (instr :: block_rev)
   in
   loop 1 (List.tl_exn func.pf_code) 0 [List.hd_exn func.pf_code];
-  fa.fa_basic_blocks <- Map.Poly.map fa.fa_basic_blocks ~f:(fun no_pred ->
+  fa.fa_basic_blocks <- Map.map fa.fa_basic_blocks ~f:(fun no_pred ->
     {
       no_pred with
       bb_pred = Hashtbl.find_multi pred_table no_pred.bb_start_line
@@ -267,6 +277,79 @@ let compute_basic_blocks func fa =
 let analyse_function (globals : Vars.vars) (func : ifunction) =
   let fa = analyse_function_block func globals func.pf_code in
   compute_basic_blocks func fa
+
+let reaching_definitions fa =
+  (* Each argument variable has a -1 definition corresponding to "from an argument" *)
+  let start_func_defs =
+    List.map fa.fa_args ~f:(fun iv -> (iv, (Int.Set.singleton (-1))))
+    |> Map.of_alist_exn (module IVariable)
+  in
+  (* Hashtbl of line number to Map of ivariable -> Set of possible definition lines *)
+  let in_defs = Hashtbl.create (module Int) in
+  let out_defs = Hashtbl.create (module Int) in
+  let modified = ref true in
+  while !modified do
+    modified := false;
+    Map.iter fa.fa_basic_blocks ~f:(fun bb ->
+      let pred_defs = List.filter_map bb.bb_pred ~f:(fun pred_line ->
+        let pred_bb = Map.find_exn fa.fa_basic_blocks pred_line in
+        Hashtbl.find out_defs pred_bb.bb_end_line)
+      in
+      (* A map so we always have 1 predecessor map.
+       * For the first basic block this is set to the start of function definitons *)
+      let base_map =
+        if bb.bb_start_line = 0 then
+          start_func_defs
+        else
+          (Map.empty (module IVariable))
+      in
+      let merged = List.reduce_exn (base_map :: pred_defs) ~f:(fun a b ->
+        Map.merge_skewed a b ~combine:(fun ~key:_ s1 s2 -> Set.union s1 s2))
+      in
+      let old_defs_opt = Hashtbl.find in_defs bb.bb_start_line in
+      let changed =
+        match old_defs_opt with
+        | Some(old_defs) ->
+            not (Map.equal Set.equal old_defs merged)
+        | None -> true
+      in
+      if changed then
+        modified := true;
+        Hashtbl.set in_defs ~key:bb.bb_start_line ~data:merged;
+        for index = 0 to (Array.length bb.bb_code) - 1 do
+          let line = bb.bb_start_line + index in
+          let start_def = Hashtbl.find_exn in_defs line in
+          let assign_opt, _ = instr_vars (Array.get bb.bb_code index) in
+          let end_def =
+            match assign_opt with
+            | Some(assign) ->
+                Map.set start_def ~key:assign ~data:(Int.Set.singleton line)
+            | None ->
+                start_def
+          in
+          Hashtbl.set out_defs ~key:line ~data:end_def;
+          (if index < Array.length bb.bb_code - 1 then
+            Hashtbl.set in_defs ~key:(line + 1) ~data:end_def)
+
+        done
+    )
+  done;
+  in_defs
+
+(* Finds a unique reaching definition for a variable, or none *)
+(* line_defs = Map of reaching definitions for a specific line *)
+let unique_reaching_definition line_defs var =
+  if ivariable_is_global var then
+    (* No guarantees for global variables *)
+    None
+  else
+    let var_defs_opt = Map.find line_defs var in
+    match var_defs_opt with
+    | Some(var_defs) ->
+        if Set.length var_defs = 1 then
+          Set.choose var_defs
+        else None
+    | None -> None
 
 
 let temp_to_named (func : ifunction) (fa : func_analysis) =

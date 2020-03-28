@@ -134,6 +134,16 @@ module IVariable = struct
   include Comparable.Make(T)
 end
 
+let ivariable_is_local ((is, _) : ivariable) =
+  match is with
+  | Local -> true
+  | Global -> false
+
+let ivariable_is_global ((is, _) : ivariable) =
+  match is with
+  | Global -> true
+  | Local -> false
+
 type iexpression =
 (* Create a new var from a constant *)
 (* type of variable, name of variable *)

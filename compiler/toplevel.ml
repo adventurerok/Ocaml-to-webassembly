@@ -35,6 +35,7 @@ let () =
   let optimise_stack_codegen_ref = ref true in
   let optimise_direct_call_gen_ref = ref true in
   let optimise_alias_elimination_ref = ref true in
+  let optimise_tuple_loads_ref = ref true in
   let output_ref = ref "" in
   let input_ref = ref "" in
   let cmd_spec =
@@ -43,6 +44,7 @@ let () =
      ("-no_stack_codegen", Arg.Clear(optimise_stack_codegen_ref), "Disable stack codegen");
      ("-no_direct_calls", Arg.Clear(optimise_direct_call_gen_ref), "Disable direct call optimisations");
      ("-no_alias_elimination", Arg.Clear(optimise_alias_elimination_ref), "Disable alias elimination");
+     ("-no_tuple_loads", Arg.Clear(optimise_tuple_loads_ref), "Disable tuple load optimisation");
      ("-output", Arg.Set_string(output_ref), "Output to named file instead of standard out")]
   in
   let anon_fun str =
@@ -54,4 +56,5 @@ let () =
   Config.global.optimise_stack_codegen <- !optimise_stack_codegen_ref;
   Config.global.optimise_direct_call_gen <- !optimise_direct_call_gen_ref;
   Config.global.optimise_alias_elimination <- !optimise_alias_elimination_ref;
+  Config.global.optimise_tuple_loads <- !optimise_tuple_loads_ref;
   openfile !input_ref (!debug_ref || !trace_ref) !output_ref

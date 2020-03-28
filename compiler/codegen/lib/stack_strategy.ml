@@ -691,7 +691,7 @@ let codegen_ifunction_code wrap_table globals func =
     used_vars = Set.empty (module IVariable);
   }
   in
-  let unmapped = Map.Poly.data fa.fa_basic_blocks in
+  let unmapped = Map.data fa.fa_basic_blocks in
   let bb_codes =
     if Config.global.optimise_stack_codegen then
       List.map ~f:(codegen_basic_block state func) unmapped
