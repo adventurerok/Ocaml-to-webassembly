@@ -6,6 +6,8 @@ type t = {
   mutable optimise_alias_elimination: bool;
   mutable optimise_tuple_loads: bool;
   mutable optimise_dead_code: bool;
+  mutable optimise_refs: bool;
+  mutable optimise_tail_calls: bool;
 }
 
 
@@ -17,4 +19,6 @@ let global = {
   optimise_alias_elimination = true;
   optimise_tuple_loads = true;
   optimise_dead_code = true;
+  optimise_refs = true;
+  optimise_tail_calls = true;
 }

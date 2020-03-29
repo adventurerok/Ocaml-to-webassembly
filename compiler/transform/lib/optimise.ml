@@ -146,6 +146,57 @@ let rec eliminate_dead_code globals func =
       result_func
 
 
+let rec eliminate_redundant_refs globals func =
+  if not Config.global.optimise_refs then
+    func
+  else
+    let fa = Analysis.analyse_function globals func in
+    let target_vars = Hash_set.of_list (module IVariable) (Vars.get_ivariables func.pf_vars) in
+    (* Remove argument variables as if these are refs, they allow external side effects *)
+    List.iter fa.fa_args ~f:(Hash_set.remove target_vars);
+    List.iter func.pf_code ~f:(fun iexpr ->
+      match iexpr with
+      | Iexp_newbox(_, unboxed, _) ->
+          Hash_set.remove target_vars unboxed
+      | Iexp_updatebox(_, unboxed, _) ->
+          Hash_set.remove target_vars unboxed
+      | Iexp_unbox(_, _, unboxed) ->
+          Hash_set.remove target_vars unboxed
+      | _ ->
+          let assign_opt, used = Analysis.instr_vars iexpr in
+          List.iter ((Option.to_list assign_opt) @ used) ~f:(Hash_set.remove target_vars)
+    );
+    let changed = ref false in
+    let new_code = List.map func.pf_code ~f:(fun iexpr ->
+      match iexpr with
+      | Iexp_newbox(it, unboxed, boxed) ->
+          if Hash_set.mem target_vars boxed then
+            (changed := true;
+            (Iexp_copyvar(it, boxed, unboxed)))
+          else
+            iexpr
+      | Iexp_updatebox(it, unboxed, boxed) ->
+          if Hash_set.mem target_vars boxed then
+            (changed := true;
+            (Iexp_copyvar(it, boxed, unboxed)))
+          else
+            iexpr
+      | Iexp_unbox(it, boxed, unboxed) ->
+          if Hash_set.mem target_vars boxed then
+            (changed := true;
+            (Iexp_copyvar(it, unboxed, boxed)))
+          else
+            iexpr
+      | _ -> iexpr
+    )
+    in
+    let result_func = { func with pf_code = new_code} in
+    if !changed then
+      eliminate_redundant_refs globals result_func
+    else
+      result_func
+
+
 let optimise_function (prog : iprogram) (func : ifunction) =
   let fa = Analysis.analyse_function prog.prog_globals func in
   (* let rd = Analysis.reaching_definitions fa in
@@ -169,7 +220,9 @@ let optimise_function (prog : iprogram) (func : ifunction) =
   let f2 = eliminate_tuple_loads prog.prog_globals f1 in
   let f3 = eliminate_temp_to_named prog.prog_globals f2 in
   let f4 = eliminate_dead_code prog.prog_globals f3 in
-  f4
+  let f5 = eliminate_redundant_refs prog.prog_globals f4 in
+  let f6 = eliminate_temp_to_named prog.prog_globals f5 in
+  f6
 
 let optimise (prog : iprogram) =
   {
