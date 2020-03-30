@@ -13,7 +13,7 @@ let replace_var oldvar newvar code =
   iexpression_list_map_vars ~f:check_var code
 
 
-(* let eliminate_redundant_copies code =
+let eliminate_redundant_copies code =
   List.filter_map code ~f:(fun iexpr ->
     match iexpr with
     | Iexp_copyvar(_, res, arg) ->
@@ -48,15 +48,17 @@ let rec eliminate_temp_to_named globals func =
         pf_code = code2
       }
       in
-      eliminate_temp_to_named globals func1 *)
+      eliminate_temp_to_named globals func1
 
 (* And the shiny new version that uses reaching definitions *)
+(* Finds variables that have been copied, and replaces them with uncopied version *)
 let rec eliminate_copies globals func =
   if not Config.global.optimise_alias_elimination then
     func
   else
     let fa = Analysis.analyse_function globals func in
     let rds = Analysis.reaching_definitions fa in
+    let acs = Analysis.active_copies fa in
     let copy_defs = Hashtbl.create (module Int) in
     List.iteri func.pf_code ~f:(fun line iexpr ->
       (match iexpr with
@@ -72,21 +74,34 @@ let rec eliminate_copies globals func =
       else
         let line_defs = Hashtbl.find_exn rds line in
         let var_defs_opt = Map.find line_defs var in
-        match var_defs_opt with
-        | Some(var_defs) ->
-            let vd_lst = Set.to_list var_defs in
-            let vd_copies = List.map vd_lst ~f:(Hashtbl.find copy_defs) in
-            let vd_filter = List.filter_opt vd_copies in
-            if List.length vd_copies <> List.length vd_filter then
-              (* There are some definitions which are not copies *)
-              var
-            else
-              let vd_unique = List.remove_consecutive_duplicates vd_filter ~equal:equal_ivariable in
-              (* Now we see if there is only 1 definition variable *)
-              (match vd_unique with
-              | [uni] -> uni
-              | _ -> var)
-        | None -> var
+        let target =
+          match var_defs_opt with
+          | Some(var_defs) ->
+              let vd_lst = Set.to_list var_defs in
+              let vd_copies = List.map vd_lst ~f:(Hashtbl.find copy_defs) in
+              let vd_filter = List.filter_opt vd_copies in
+              if List.length vd_copies <> List.length vd_filter then
+                (* There are some definitions which are not copies *)
+                var
+              else
+                let vd_unique = List.remove_consecutive_duplicates vd_filter ~equal:equal_ivariable in
+                (* Now we see if there is only 1 definition variable *)
+                (match vd_unique with
+                | [uni] -> uni
+                | _ -> var)
+          | None -> var
+        in
+        if equal_ivariable target var then
+          var
+        else
+          let active_copy_defs = Hashtbl.find_exn acs line in
+          let target_copies = Option.value ~default:(Set.empty (module IVariable)) (Map.find active_copy_defs target) in
+          if Set.mem target_copies var then
+            (changed := true;
+            target)
+          else
+            var
+
     in
     let map_variables line vars =
       List.map vars ~f:(map_variable line)
@@ -317,6 +332,8 @@ let optimise_function (prog : iprogram) (func : ifunction) =
     Analysis.print_live_variables lva));
   let final_func =
       func
+      (* |> eliminate_temp_to_named prog.prog_globals *)
+      (* |> eliminate_redundant_refs prog.prog_globals *)
       |> eliminate_copies prog.prog_globals
       |> eliminate_tuple_loads prog.prog_globals
       |> eliminate_copies prog.prog_globals
@@ -326,6 +343,7 @@ let optimise_function (prog : iprogram) (func : ifunction) =
       |> eliminate_copies prog.prog_globals
       |> eliminate_dead_code prog.prog_globals
       |> eliminate_unused_vars prog.prog_globals
+      (* |> eliminate_temp_to_named prog.prog_globals *)
   in
   final_func
 

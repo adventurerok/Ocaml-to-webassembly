@@ -226,6 +226,10 @@ let analyse_function_block func globals code =
     let vi = Option.value_exn (lookup_var_info func globals var) in
     Hashtbl.set fa.fa_var_stats ~key:var ~data:(new_var_stats var vi.vi_itype vi.vi_temp ())
   );
+  (* Give each argument an assign at -1 *)
+  List.iter arg_vars ~f:(fun var ->
+    var_assigned func globals fa (-1) var
+  );
   List.iteri ~f:(analyse_instr func globals fa) code;
   fa
 
@@ -412,6 +416,106 @@ let unique_reaching_definition line_defs var =
           Set.choose var_defs
         else None
     | None -> None
+
+
+let invert_reaching_definitions fa rd =
+  (* Maps definition line to set of possible used lines *)
+  let du = Hashtbl.create (module Int) in
+  Map.iter fa.fa_basic_blocks ~f:(fun bb ->
+    for index = 0 to (Array.length bb.bb_code) - 1 do
+      (* Looping over each line in the function *)
+      let line = bb.bb_start_line + index in
+      (if not (Hashtbl.mem du line) then
+        Hashtbl.set du ~key:line ~data:Int.Set.empty);
+      let line_defs = Hashtbl.find_exn rd line in
+      (* Find the variables used on this line (not those defined) *)
+      let _, used = instr_vars (Array.get bb.bb_code index) in
+      List.iter used ~f:(fun used_var ->
+        (* For each used variable, find where it could have been defined *)
+        let defs = Map.find_exn line_defs used_var in
+        List.iter defs ~f:(fun def ->
+          (* Give our current line a usage from that definition site *)
+          let prev_usages = Option.value ~default:Int.Set.empty (Hashtbl.find du def) in
+          let new_usages = Set.add prev_usages line in
+          Hashtbl.set du ~key:def ~data:new_usages
+        )
+      )
+    done
+  );
+  du
+
+(* For each line and variable, the set of copy instruction targets known to have copied the current version of the variable *)
+(* A reaching definitions analysis is required for the target as well to determine if the copy is still valid *)
+let active_copies fa =
+  (* Hashtbl of line number to Map of ivariable -> Set of known lines copying it *)
+  let in_defs = Hashtbl.create (module Int) in
+  let out_defs = Hashtbl.create (module Int) in
+  let modified = ref true in
+  while !modified do
+    modified := false;
+    Map.iter fa.fa_basic_blocks ~f:(fun bb ->
+      let pred_defs = List.filter_map bb.bb_pred ~f:(fun pred_line ->
+        let pred_bb = Map.find_exn fa.fa_basic_blocks pred_line in
+        Hashtbl.find out_defs pred_bb.bb_end_line)
+      in
+      let merged =
+        (* Now we intersect *)
+        if List.length pred_defs > 0 then
+          List.reduce_exn pred_defs ~f:(fun a b ->
+            (* Intersection requires removing keys only present in one *)
+            Map.merge a b ~f:(fun ~key:_ thing ->
+              match thing with
+              | `Left(_) -> None
+              | `Right(_) -> None
+              | `Both(s1, s2) -> Some(Set.inter s1 s2)
+            )
+          )
+        else
+          Map.empty (module IVariable)
+      in
+      let old_defs_opt = Hashtbl.find in_defs bb.bb_start_line in
+      let changed =
+        match old_defs_opt with
+        | Some(old_defs) ->
+            not (Map.equal Set.equal old_defs merged)
+        | None -> true
+      in
+      if changed then
+        modified := true;
+        Hashtbl.set in_defs ~key:bb.bb_start_line ~data:merged;
+        for index = 0 to (Array.length bb.bb_code) - 1 do
+          let line = bb.bb_start_line + index in
+          let start_def = Hashtbl.find_exn in_defs line in
+          let assign_opt, _ = instr_vars (Array.get bb.bb_code index) in
+          let copied_opt =
+            match Array.get bb.bb_code index with
+            | Iexp_copyvar(_, target, arg) ->
+                Some((target, arg))
+            | _ -> None
+          in
+          let middle_def =
+            match assign_opt with
+            | Some(assign) ->
+                Map.remove start_def assign
+            | None ->
+                start_def
+          in let end_def =
+            match copied_opt with
+            | Some((target, copy)) ->
+                let old_locs = Option.value ~default:(Set.empty (module IVariable)) (Map.find middle_def copy) in
+                let new_locs = Set.add old_locs target in
+                Map.set middle_def ~key:copy ~data:new_locs
+            | None ->
+                middle_def
+          in
+          Hashtbl.set out_defs ~key:line ~data:end_def;
+          (if index < Array.length bb.bb_code - 1 then
+            Hashtbl.set in_defs ~key:(line + 1) ~data:end_def)
+
+        done
+    )
+  done;
+  in_defs
 
 
 let live_variables fa =
