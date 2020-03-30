@@ -18,7 +18,8 @@ type state = {
   context: Context.context;
   functions: (string, Functions.func_data) Hashtbl.t;
   mutable vars: Vars.vars;
-  mutable globals: Vars.vars
+  mutable globals: Vars.vars;
+  named_loops: (string, (string * string)) Hashtbl.t
 }
 
 let update_vars (state : state) (vars, thing) =
@@ -280,6 +281,24 @@ and transform_special state typ mode name args =
       transform_mk_closure state typ name args
   | Tspec_directapply ->
       transform_direct_apply state typ name args
+  | Tspec_namedloop ->
+      transform_named_loop state name args
+  | Tspec_breakloop ->
+      let loop_info = Hashtbl.find state.named_loops name in
+      (match loop_info with
+      | Some((break_block, _)) ->
+          let res = quick_temp_var state It_unit in
+          (res, [Iexp_setvar(It_unit, res, "()"); Iexp_exitblock(break_block)])
+      | None ->
+          raise (IntermediateFailure("No loop named " ^ name)))
+  | Tspec_continueloop ->
+      let loop_info = Hashtbl.find state.named_loops name in
+      match loop_info with
+      | Some((_, continue_block)) ->
+          let res = quick_temp_var state It_unit in
+          (res, [Iexp_setvar(It_unit, res, "()"); Iexp_exitblock(continue_block)])
+      | None ->
+          raise (IntermediateFailure("No loop named " ^ name))
 
 and transform_op state name args =
   let (arg_vars, arg_codelst) = List.unzip (List.map args ~f:(transform_expr state)) in
@@ -487,6 +506,21 @@ and transform_construct state name ls =
   )
 
 
+and transform_named_loop state name args =
+  let break_block = update_vars state (Vars.add_block state.vars) in
+  let continue_block = update_vars state (Vars.add_block state.vars) in
+  Hashtbl.set state.named_loops ~key:name ~data:(break_block, continue_block);
+  let inner = List.hd_exn args in
+  let _, inner_code = transform_expr state inner in
+  let final_var = quick_temp_var state It_unit in
+  (final_var,
+    [Iexp_startloop(break_block, continue_block)]
+    @ inner_code
+    @ [Iexp_endloop(break_block, continue_block);
+       Iexp_setvar(It_unit, final_var, "()")]
+  )
+
+
 and transform_while state cond inner =
   let (cond_var, cond_code) = transform_expr state cond in
   let test_var = quick_temp_var state It_bool in
@@ -571,7 +605,8 @@ let transform_function globals func_map context (fd : Functions.func_data) =
     context = context;
     functions = func_map;
     vars = vars;
-    globals = globals
+    globals = globals;
+    named_loops = Hashtbl.create (module String);
   }
   in
   let arg_code = transform_pat state fd.fd_pat Vars.function_arg in
@@ -595,8 +630,9 @@ let fix_globals globals locals code =
   iexpression_list_map_vars ~f:fix_var code
 
 let transform_program ?debug:(debug = false) context next_var structure =
-  let (funcs_1, fast_1) = Functions.func_transform_structure next_var structure in
-  let (funcs, fast) = Direct_call_generator.direct_call_transform funcs_1 fast_1 in
+  let (funcs_1, fast_1, next_var1) = Functions.func_transform_structure next_var structure in
+  let (funcs_2, fast) = Direct_call_generator.direct_call_transform funcs_1 fast_1 in
+  let (funcs, _next_var2) = Tail_calls.tail_recursion_transform funcs_2 next_var1 in
   let () = if debug then (
     Stdio.print_endline (Typed_ast.tstructure_to_string fast);
     Functions.print_func_datas funcs)
@@ -609,7 +645,8 @@ let transform_program ?debug:(debug = false) context next_var structure =
     context = context;
     functions = func_map;
     vars = Vars.empty_init_vars;
-    globals = Vars.empty_global_vars
+    globals = Vars.empty_global_vars;
+    named_loops = Hashtbl.create (module String);
   }
   in
   let init_code = transform_structure global_state fast in

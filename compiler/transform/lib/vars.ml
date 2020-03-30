@@ -100,6 +100,23 @@ let remove_var (vrs : vars) (n : string) =
   }
 
 
+let change_var_type (vrs: vars) (n : string) (t : itype) =
+  let rec loop data =
+    match data with
+    | [] -> []
+    | vi :: data' ->
+        if (String.equal n vi.vi_code_name) then
+          { vi with vi_itype = t } :: data'
+        else
+          vi :: (loop data')
+  in
+  let newdata = loop vrs.data in
+  {
+    vrs with
+    data = newdata
+  }
+
+
 let lookup_var (vrs : vars) (n : string) =
   let rec loop data =
     match data with

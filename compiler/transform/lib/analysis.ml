@@ -221,6 +221,11 @@ let analyse_function_block func globals code =
     fa_basic_blocks = Int.Map.empty;
   }
   in
+  (* Create a var stats for each var, to account for completely unused vars that don't show up later *)
+  List.iter all_vars ~f:(fun var ->
+    let vi = Option.value_exn (lookup_var_info func globals var) in
+    Hashtbl.set fa.fa_var_stats ~key:var ~data:(new_var_stats var vi.vi_itype vi.vi_temp ())
+  );
   List.iteri ~f:(analyse_instr func globals fa) code;
   fa
 
@@ -231,11 +236,18 @@ let find_block_end name code =
     | Iexp_else(n) -> String.equal name n
     | Iexp_endif(n) -> String.equal name n
     | Iexp_endblock(n) -> String.equal name n
-    | Iexp_endloop(n, _) -> String.equal name n
+    | Iexp_endloop(n, c) -> (String.equal name n) || (String.equal name c)
     | _ -> false)
   in
   match opt with
-  | Some(id, _) -> id
+  | Some(id, instr) ->
+      (match instr with
+      | Iexp_endloop(_, c) ->
+          if String.equal name c then
+            (id, true)
+          else
+            (id, false)
+      | _ -> (id, false))
   | None -> raise (AnalysisFailure ("Can't find end of " ^ name ^ " block"))
 
 let compute_jump_table func fa =
@@ -246,20 +258,36 @@ let compute_jump_table func fa =
         let () =
           (match instr with
           | Iexp_startif(block, _) ->
-              let offset = find_block_end block code' in
+              let offset, _ = find_block_end block code' in
               Hashtbl.set fa.fa_jump_table ~key:line ~data:[line + 1; line + offset + 2]
+          | Iexp_endif(_) ->
+              Hashtbl.set fa.fa_jump_table ~key:line ~data:[line + 1]
+          | Iexp_endblock(_) ->
+              Hashtbl.set fa.fa_jump_table ~key:line ~data:[line + 1]
           | Iexp_else(block) ->
-              let offset = find_block_end block code' in
+              let offset, _ = find_block_end block code' in
               Hashtbl.add_multi fa.fa_jump_table ~key:line ~data:(line + offset + 2)
           | Iexp_startloop(break, _) ->
-              let offset = find_block_end break code' in
+              let offset, _ = find_block_end break code' in
               Hashtbl.add_multi fa.fa_jump_table ~key:(line + offset + 1) ~data:line
           | Iexp_exitblock(block) ->
-              let offset = find_block_end block code' in
-              Hashtbl.add_multi fa.fa_jump_table ~key:line ~data:(line + offset + 2)
+              let offset, is_loop = find_block_end block code' in
+              let true_line =
+                if is_loop then
+                  List.hd_exn (Hashtbl.find_exn fa.fa_jump_table (line + offset + 1))
+                else
+                  line + offset + 2
+              in
+              Hashtbl.add_multi fa.fa_jump_table ~key:line ~data:true_line
           | Iexp_exitblockif(block, _) ->
-            let offset = find_block_end block code' in
-            Hashtbl.set fa.fa_jump_table ~key:line ~data:[line + 1; line + offset + 2]
+              let offset, is_loop = find_block_end block code' in
+              let true_line =
+                if is_loop then
+                  List.hd_exn (Hashtbl.find_exn fa.fa_jump_table (line + offset + 1))
+                else
+                  line + offset + 2
+              in
+              Hashtbl.set fa.fa_jump_table ~key:line ~data:[line + 1; true_line]
           | _ -> ()
           )
         in loop (line + 1) code'
@@ -438,6 +466,31 @@ let live_variables fa =
     )
   done;
   (in_live, out_live)
+
+
+let print_reaching_definitions rd =
+  let rd_map = Map.of_alist_exn (module Int) (Hashtbl.to_alist rd) in
+  Stdio.print_endline ("\nReaching definitions:\n");
+  Map.iteri rd_map ~f:(fun ~key:k ~data:d ->
+    let var_strs =
+      Map.to_alist d
+      |> List.map ~f:(fun (vr, dfs) ->
+          (ivariable_to_string vr) ^ ": " ^ (String.concat ~sep:"," (List.map (Set.to_list dfs) ~f:Int.to_string)))
+    in
+    let out = (Int.to_string k) ^ " --> " ^ (String.concat ~sep:"; " var_strs) in
+    Stdio.print_endline out
+  )
+
+
+let print_live_variables lva =
+  let lva_map = Map.of_alist_exn (module Int) (Hashtbl.to_alist lva) in
+  Stdio.print_endline ("\nLive variables:\n");
+  Map.iteri lva_map ~f:(fun ~key:line ~data:live ->
+    let var_strs = List.map ~f:ivariable_to_string (Set.to_list live) in
+    let out = (Int.to_string line) ^ " --> " ^ (String.concat ~sep:", " var_strs) in
+    Stdio.print_endline out
+  )
+
 
 
 let temp_to_named (func : ifunction) (fa : func_analysis) =

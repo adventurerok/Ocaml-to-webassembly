@@ -112,6 +112,13 @@ and dct_special ~recurse:recurse state mode name args =
   | Tspec_directapply ->
       (* Our work is already done *)
       (Texp_special(Tspec_directapply, name, args), None)
+  | Tspec_namedloop ->
+      let args', _ = List.unzip (List.map args ~f:(dct_expr ~recurse:recurse state)) in
+      (Texp_special(Tspec_namedloop, name, args'), None)
+  | Tspec_continueloop ->
+      (Texp_special(Tspec_continueloop, name, []), None)
+  | Tspec_breakloop ->
+      (Texp_special(Tspec_breakloop, name, []), None)
 
 and dct_mk_closure ~recurse:recurse state name args =
   if recurse then begin

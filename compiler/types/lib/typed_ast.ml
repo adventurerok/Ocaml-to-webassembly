@@ -38,6 +38,9 @@ type texpression = {
 and tspecial =
 | Tspec_mkclosure
 | Tspec_directapply
+| Tspec_namedloop
+| Tspec_continueloop
+| Tspec_breakloop
 
 and texpression_desc =
   Texp_ident of tident
@@ -110,6 +113,9 @@ and tspecial_to_string tsp =
   match tsp with
   | Tspec_mkclosure -> "mkclosure"
   | Tspec_directapply -> "directapply"
+  | Tspec_namedloop -> "namedloop"
+  | Tspec_continueloop -> "continueloop"
+  | Tspec_breakloop -> "breakloop"
 
 and texpression_to_string (texpr : texpression) =
   "(" ^

@@ -264,7 +264,7 @@ and func_transform_structure next_var (struc: tstructure) =
   in
   let si_list = List.map struc ~f:(func_transform_structure_item state) in
   let funcs' = select_export_functions state.fnames state.funcs in
-  (funcs', si_list)
+  (funcs', si_list, state.next_var)
 
 
 let func_data_to_string fdata =
