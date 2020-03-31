@@ -12,6 +12,28 @@ let replace_var oldvar newvar code =
   in
   iexpression_list_map_vars ~f:check_var code
 
+let print_function (func : ifunction) =
+  if not Config.global.trace then
+    func
+  else begin
+    Stdio.print_endline ("\nFunction code for " ^ func.pf_name);
+    List.iteri func.pf_code ~f:(fun line iexpr -> Stdio.print_endline ((Int.to_string line) ^ " :  " ^ (iexpression_to_string iexpr)));
+    Stdio.print_endline ("/End of function\n");
+    func
+  end
+
+let print_analysis globals (func : ifunction) =
+  if not Config.global.trace then
+    func
+  else begin
+    let fa = Analysis.analyse_function globals func in
+    let str = Analysis.func_analysis_to_string fa in
+    Stdio.print_endline str;
+    let (_, lva) = Analysis.live_variables fa in
+    Analysis.print_live_variables func lva;
+    func
+  end
+
 
 let eliminate_redundant_copies code =
   List.filter_map code ~f:(fun iexpr ->
@@ -28,6 +50,9 @@ let rec eliminate_temp_to_named globals func =
   if not Config.global.optimise_alias_elimination then
     func
   else
+    let () = if Config.global.debug then
+      Stdio.print_endline ("Old eliminate temp to named for " ^ func.pf_name)
+    in
     let fa = Analysis.analyse_function globals func in
     let map = Analysis.temp_to_named func fa in
     if List.is_empty map then
@@ -52,14 +77,21 @@ let rec eliminate_temp_to_named globals func =
 
 (* And the shiny new version that uses reaching definitions *)
 (* Finds variables that have been copied, and replaces them with uncopied version *)
-let rec eliminate_copies globals func =
+let rec propagate_copies globals func =
   if not Config.global.optimise_alias_elimination then
     func
   else
+    let () = if Config.global.debug then
+      (Stdio.print_endline ("Propagate copies for " ^ func.pf_name);
+      let _ : ifunction = print_analysis globals func in ())
+    in
     let fa = Analysis.analyse_function globals func in
     let rds = Analysis.reaching_definitions fa in
+    let () = if Config.global.trace then Analysis.print_reaching_definitions rds in
     let acs = Analysis.active_copies fa in
     let copy_defs = Hashtbl.create (module Int) in
+    (* Safety net set of copy statements we have already used, to prevent modifying them *)
+    let copies_used = Hash_set.create (module Int) in
     List.iteri func.pf_code ~f:(fun line iexpr ->
       (match iexpr with
       | Iexp_copyvar(_, _, arg) ->
@@ -74,7 +106,7 @@ let rec eliminate_copies globals func =
       else
         let line_defs = Hashtbl.find_exn rds line in
         let var_defs_opt = Map.find line_defs var in
-        let target =
+        let defs_lst, target =
           match var_defs_opt with
           | Some(var_defs) ->
               let vd_lst = Set.to_list var_defs in
@@ -82,22 +114,23 @@ let rec eliminate_copies globals func =
               let vd_filter = List.filter_opt vd_copies in
               if List.length vd_copies <> List.length vd_filter then
                 (* There are some definitions which are not copies *)
-                var
+                [], var
               else
                 let vd_unique = List.remove_consecutive_duplicates vd_filter ~equal:equal_ivariable in
                 (* Now we see if there is only 1 definition variable *)
                 (match vd_unique with
-                | [uni] -> uni
-                | _ -> var)
-          | None -> var
+                | [uni] -> vd_lst, uni
+                | _ -> [], var)
+                | None -> [], var
         in
         if equal_ivariable target var then
           var
         else
           let active_copy_defs = Hashtbl.find_exn acs line in
-          let target_copies = Option.value ~default:(Set.empty (module IVariable)) (Map.find active_copy_defs target) in
-          if Set.mem target_copies var then
+          let target_copies = Option.value ~default:Analysis.vns_empty (Map.find active_copy_defs target) in
+          if Analysis.vns_mem target_copies var then
             (changed := true;
+            List.iter defs_lst ~f:(fun def_line -> Hash_set.add copies_used def_line);
             target)
           else
             var
@@ -109,7 +142,14 @@ let rec eliminate_copies globals func =
     let new_code = List.mapi func.pf_code ~f:(fun line iexpr ->
       (match iexpr with
       | Iexp_setvar (_, _, _) -> iexpr
-      | Iexp_copyvar (it, res, arg) -> Iexp_copyvar(it, res, map_variable line arg)
+      | Iexp_copyvar (it, res, arg) ->
+          let new_arg = map_variable line arg in
+          if not (Hash_set.mem copies_used line) && not (equal_ivariable arg new_arg) then
+            (* Invalidate the copydef. We loop this whole analysis to give this copydef a chance to be useful later *)
+            (Hashtbl.remove copy_defs line;
+            Iexp_copyvar(it, res, map_variable line arg))
+          else
+            iexpr
       | Iexp_return (it, arg) -> Iexp_return(it, map_variable line arg)
       | Iexp_unop (it, unop, res, arg) -> Iexp_unop(it, unop, res, map_variable line arg)
       | Iexp_binop (it, binop, res, arg1, arg2) -> Iexp_binop(it, binop, res, map_variable line arg1, map_variable line arg2)
@@ -138,13 +178,21 @@ let rec eliminate_copies globals func =
     )
     in let new_func = {
       func with
-      pf_code = new_code
+      pf_code = eliminate_redundant_copies new_code
     }
     in
     if !changed then
-      eliminate_copies globals new_func
+      propagate_copies globals new_func
     else
       new_func
+
+
+(* let eliminate_copies globals (func : ifunction) =
+  let fa = Analysis.analyse_function globals func in
+  let rd = Analysis.reaching_definitions fa in
+  let invert_rd = Analysis.invert_reaching_definitions fa rd in
+  *)
+
 
 (* Eliminate from the function vars those vars which are not used anywhere anymore *)
 let eliminate_unused_vars globals (func : ifunction) =
@@ -173,6 +221,9 @@ let rec eliminate_tuple_loads globals func =
   if not Config.global.optimise_tuple_loads then
     func
   else
+    let () = if Config.global.debug then
+      Stdio.print_endline ("Eliminate tuple loads for " ^ func.pf_name)
+    in
     let fa = Analysis.analyse_function globals func in
     let tup_map = Hashtbl.create (module Int) in
     let construct_map = Hashtbl.create (module Int) in
@@ -240,6 +291,9 @@ let rec eliminate_dead_code globals func =
   if not Config.global.optimise_dead_code then
     func
   else
+    let () = if Config.global.debug then
+      Stdio.print_endline ("Eliminate dead code for " ^ func.pf_name)
+    in
     let fa = Analysis.analyse_function globals func in
     let (_, lva_out) = Analysis.live_variables fa in
     let changed = ref false in
@@ -266,6 +320,9 @@ let rec eliminate_redundant_refs globals func =
   if not Config.global.optimise_refs then
     func
   else
+    let () = if Config.global.debug then
+      Stdio.print_endline ("Eliminate redundant refs for " ^ func.pf_name)
+    in
     let fa = Analysis.analyse_function globals func in
     let target_vars = Hash_set.of_list (module IVariable) (Vars.get_ivariables func.pf_vars) in
     (* Remove argument variables as if these are refs, they allow external side effects *)
@@ -322,6 +379,36 @@ let rec eliminate_redundant_refs globals func =
       result_func
 
 
+let eliminate_unreachable_blocks globals (func : ifunction) =
+  let fa = Analysis.analyse_function globals func in
+  (* The blocks will be in order thanks to the map's tree structure *)
+  let bbs = Map.data fa.fa_basic_blocks in
+  let block_codes =
+    List.map bbs ~f:(fun bb ->
+      if bb.bb_start_line = 0 || (List.length bb.bb_pred) > 0 then
+        Array.to_list bb.bb_code
+      else
+        List.filter_map (Array.to_list bb.bb_code) ~f:(fun iexpr ->
+          (* It is still possible for an unreachable basic block to have essential control structure markers in it *)
+          match iexpr with
+          | Iexp_startloop _ -> Some(iexpr)
+          | Iexp_endloop _ -> Some(iexpr)
+          | Iexp_startif _ -> Some(iexpr)
+          | Iexp_else _ -> Some(iexpr)
+          | Iexp_endif _ -> Some(iexpr)
+          | Iexp_startblock _ -> Some(iexpr)
+          | Iexp_endblock _ -> Some(iexpr)
+          | _ -> None
+        )
+    )
+  in
+  let new_code = List.concat block_codes in
+  {
+    func with
+    pf_code = new_code
+  }
+
+
 let optimise_function (prog : iprogram) (func : ifunction) =
   (if Config.global.debug then
     (Stdio.print_endline ("Function " ^ func.pf_name);
@@ -329,21 +416,28 @@ let optimise_function (prog : iprogram) (func : ifunction) =
     let rd = Analysis.reaching_definitions fa in
     Analysis.print_reaching_definitions rd;
     let (_, lva) = Analysis.live_variables fa in
-    Analysis.print_live_variables lva));
+    Analysis.print_live_variables func lva));
   let final_func =
       func
-      (* |> eliminate_temp_to_named prog.prog_globals *)
-      (* |> eliminate_redundant_refs prog.prog_globals *)
-      |> eliminate_copies prog.prog_globals
+      (* Eliminating unreachable blocks is essential as tail call optimisation can generate broken unreachable blocks *)
+      |> eliminate_unreachable_blocks prog.prog_globals
+      |> propagate_copies prog.prog_globals
       |> eliminate_tuple_loads prog.prog_globals
-      |> eliminate_copies prog.prog_globals
+      |> propagate_copies prog.prog_globals
+      |> print_function
       |> eliminate_dead_code prog.prog_globals
+      |> print_function
       |> eliminate_redundant_refs prog.prog_globals
+      |> print_function
       |> eliminate_dead_code prog.prog_globals
-      |> eliminate_copies prog.prog_globals
+      |> print_function
+      |> print_analysis prog.prog_globals
+      |> propagate_copies prog.prog_globals
+      |> print_function
+      |> print_analysis prog.prog_globals
       |> eliminate_dead_code prog.prog_globals
+      |> print_function
       |> eliminate_unused_vars prog.prog_globals
-      (* |> eliminate_temp_to_named prog.prog_globals *)
   in
   final_func
 

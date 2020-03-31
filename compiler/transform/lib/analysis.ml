@@ -91,8 +91,8 @@ let basic_block_to_string bb =
 
 let func_analysis_to_string fa =
   "Function Analysis for " ^ fa.fa_name ^ "\n" ^
-  "Variables: \n" ^
-  (String.concat (List.map ~f:var_stats_to_string (Hashtbl.data fa.fa_var_stats))) ^ "\n" ^
+  (* "Variables: \n" ^
+  (String.concat (List.map ~f:var_stats_to_string (Hashtbl.data fa.fa_var_stats))) ^ "\n" ^ *)
   "Basic Blocks: \n" ^
   (String.concat (List.map ~f:basic_block_to_string (Map.data fa.fa_basic_blocks))) ^ "\n"
 
@@ -273,6 +273,8 @@ let compute_jump_table func fa =
               Hashtbl.add_multi fa.fa_jump_table ~key:line ~data:(line + offset + 2)
           | Iexp_startloop(break, _) ->
               let offset, _ = find_block_end break code' in
+              (if line > 1 then
+                Hashtbl.add_multi fa.fa_jump_table ~key:(line - 1) ~data:line);
               Hashtbl.add_multi fa.fa_jump_table ~key:(line + offset + 1) ~data:line
           | Iexp_exitblock(block) ->
               let offset, is_loop = find_block_end block code' in
@@ -320,10 +322,17 @@ let compute_basic_blocks func fa =
     | [] ->
         add_basic_block block_start block_rev
     | instr :: code' ->
+        (* To account for the pred table computation next, we need to give it the right target line *)
+        let true_start =
+          if Set.mem block_offsets line then
+            line
+          else
+            block_start
+        in
         let () =
           (if Hashtbl.mem fa.fa_jump_table line then
             List.iter (Hashtbl.find_multi fa.fa_jump_table line) ~f:(fun target ->
-              Hashtbl.add_multi pred_table ~key:target ~data:block_start))
+              Hashtbl.add_multi pred_table ~key:target ~data:true_start))
         in
         if Set.mem block_offsets line then
           let () = add_basic_block block_start block_rev in
@@ -444,10 +453,52 @@ let invert_reaching_definitions fa rd =
   );
   du
 
+(* We have three options, we don't have X, we have a positive X or a negative X *)
+type var_negate_set = {
+  pos: (ivariable, IVariable.comparator_witness) Set.t;
+  neg: (ivariable, IVariable.comparator_witness) Set.t
+}
+
+let vns_empty = {
+  pos = Set.empty (module IVariable);
+  neg = Set.empty (module IVariable);
+}
+
+(* AC: we have a new definition after the copy *)
+let vns_negate_positive vns =
+  let neg_new = Set.union vns.neg vns.pos in
+  {
+    pos = vns_empty.pos;
+    neg = neg_new
+  }
+
+let vns_add_positive vns item =
+  let pos_new = Set.add vns.pos item in
+  let neg_new = Set.remove vns.neg item in
+  {
+    pos = pos_new;
+    neg = neg_new;
+  }
+
+let vns_mem vns item =
+  Set.mem vns.pos item
+
+
+let vns_merge vns1 vns2 =
+  let neg_new = Set.union vns1.neg vns2.neg in
+  let pos_new = Set.union vns1.pos vns2.pos in
+  {
+    pos = Set.diff pos_new neg_new;
+    neg = neg_new
+  }
+
+let vns_equal vns1 vns2 =
+  (Set.equal vns1.pos vns2.pos) && (Set.equal vns1.neg vns2.neg)
+
 (* For each line and variable, the set of copy instruction targets known to have copied the current version of the variable *)
 (* A reaching definitions analysis is required for the target as well to determine if the copy is still valid *)
 let active_copies fa =
-  (* Hashtbl of line number to Map of ivariable -> Set of known lines copying it *)
+  (* Hashtbl of line number to Map of ivariable -> VNS *)
   let in_defs = Hashtbl.create (module Int) in
   let out_defs = Hashtbl.create (module Int) in
   let modified = ref true in
@@ -463,12 +514,10 @@ let active_copies fa =
         if List.length pred_defs > 0 then
           List.reduce_exn pred_defs ~f:(fun a b ->
             (* Intersection requires removing keys only present in one *)
-            Map.merge a b ~f:(fun ~key:_ thing ->
-              match thing with
-              | `Left(_) -> None
-              | `Right(_) -> None
-              | `Both(s1, s2) -> Some(Set.inter s1 s2)
+            Map.merge_skewed a b ~combine:(fun ~key:_ vns1 vns2 ->
+              vns_merge vns1 vns2
             )
+
           )
         else
           Map.empty (module IVariable)
@@ -477,7 +526,7 @@ let active_copies fa =
       let changed =
         match old_defs_opt with
         | Some(old_defs) ->
-            not (Map.equal Set.equal old_defs merged)
+            not (Map.equal vns_equal old_defs merged)
         | None -> true
       in
       if changed then
@@ -496,14 +545,16 @@ let active_copies fa =
           let middle_def =
             match assign_opt with
             | Some(assign) ->
-                Map.remove start_def assign
+                let old_vns = Option.value ~default:(vns_empty) (Map.find start_def assign) in
+                let new_vns = vns_negate_positive old_vns in
+                Map.set start_def ~key:assign ~data:new_vns
             | None ->
                 start_def
           in let end_def =
             match copied_opt with
             | Some((target, copy)) ->
-                let old_locs = Option.value ~default:(Set.empty (module IVariable)) (Map.find middle_def copy) in
-                let new_locs = Set.add old_locs target in
+                let old_locs = Option.value ~default:(vns_empty) (Map.find middle_def copy) in
+                let new_locs = vns_add_positive old_locs target in
                 Map.set middle_def ~key:copy ~data:new_locs
             | None ->
                 middle_def
@@ -586,12 +637,12 @@ let print_reaching_definitions rd =
   )
 
 
-let print_live_variables lva =
-  let lva_map = Map.of_alist_exn (module Int) (Hashtbl.to_alist lva) in
+let print_live_variables (func : ifunction) lva =
   Stdio.print_endline ("\nLive variables:\n");
-  Map.iteri lva_map ~f:(fun ~key:line ~data:live ->
+  List.iteri func.pf_code ~f:(fun line iexpr ->
+    let live = Hashtbl.find_exn lva line in
     let var_strs = List.map ~f:ivariable_to_string (Set.to_list live) in
-    let out = (Int.to_string line) ^ " --> " ^ (String.concat ~sep:", " var_strs) in
+    let out = (Int.to_string line) ^ " :  " ^ (iexpression_to_string iexpr) ^ " --> " ^ (String.concat ~sep:", " var_strs) in
     Stdio.print_endline out
   )
 

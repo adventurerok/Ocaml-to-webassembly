@@ -370,8 +370,8 @@ let tailrec_function state (func : Functions.func_data) =
   in
   let result_pat = {
     tpat_loc = Location.none;
-    tpat_type = result_type;
-    tpat_vars = [(result_ref, result_type)];
+    tpat_type = T_constr("ref", [result_type]);
+    tpat_vars = [(result_ref, T_constr("ref", [result_type]))];
     tpat_desc = Tpat_var(result_ref);
   }
   in
