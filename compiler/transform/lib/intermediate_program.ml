@@ -24,7 +24,7 @@ and ifunction = {
   pf_vars: Vars.vars;
 
   (* Code of function *)
-  pf_code: iexpression list;
+  pf_code: iinstruction list;
 
   (* Type of function *)
   pf_type: iftype;
@@ -41,7 +41,7 @@ let ifunction_to_string ifunc =
   "Function " ^ ifunc.pf_name ^ ":\n" ^
   "-type: " ^ (iftype_to_string ifunc.pf_type) ^ "\n" ^
   "-vars:\n" ^ (Vars.vars_to_string ifunc.pf_vars) ^ "\n" ^
-  "-code:\n" ^ (iexpression_list_to_string ifunc.pf_code)
+  "-code:\n" ^ (iinstruction_list_to_string ifunc.pf_code)
 
 let iprogram_to_string iprog =
   "Program\n" ^

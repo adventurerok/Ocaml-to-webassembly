@@ -11,7 +11,7 @@ let parsestring str =
 let openfile name debug output =
   let alltext = In_channel.with_file name ~f:In_channel.input_all in
   let parsed = parsestring alltext in
-  let tresult = Type_expr.type_structure Context.empty_lists_refs parsed in
+  let tresult = Type_infer.type_structure Context.empty_lists_refs parsed in
   if debug then (
     Context.print tresult.tres_context;
     Stdio.print_endline (Typed_ast.tstructure_to_string tresult.tres_structure));

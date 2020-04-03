@@ -19,7 +19,7 @@ type func_analysis = {
 and basic_block = {
   bb_start_line: int;
   bb_end_line: int;
-  bb_code: iexpression array;
+  bb_code: iinstruction array;
   mutable bb_next: int list;
   mutable bb_pred: int list;
 }
@@ -87,7 +87,7 @@ let basic_block_to_string bb =
   "next = " ^ (String.concat ~sep:"," (List.map ~f:Int.to_string bb.bb_next)) ^ "\n" ^
   "pred = " ^ (String.concat ~sep:"," (List.map ~f:Int.to_string bb.bb_pred)) ^ "\n" ^
   "code = \n" ^
-  (iexpression_list_to_string (Array.to_list bb.bb_code)) ^ "\n}\n\n"
+  (iinstruction_list_to_string (Array.to_list bb.bb_code)) ^ "\n}\n\n"
 
 let func_analysis_to_string fa =
   "Function Analysis for " ^ fa.fa_name ^ "\n" ^
@@ -138,74 +138,74 @@ let update_line_vars func globals state line assigned used =
   List.iter ~f:(var_assigned func globals state line) assigned;
   List.iter ~f:(var_used func globals state line) used
 
-(* Result and argument vars of an iexpression *)
-let instr_vars ?fill_closure_is_assign:(fcia = false) (iexpr : iexpression) =
-  match iexpr with
-  | Iexp_setvar (_, res, _) -> (Some(res), [])
-  | Iexp_copyvar (_, res, arg) -> (Some(res), [arg])
-  | Iexp_return (_, arg) -> (None, [arg])
-  | Iexp_unop (_, _, res, arg) -> (Some(res), [arg])
-  | Iexp_binop (_, _, res, arg1, arg2) -> (Some(res), [arg1; arg2])
-  | Iexp_newclosure (_, _, _, res) -> (Some(res), [])
-  | Iexp_fillclosure (_, a1, alst) ->
+(* Result and argument vars of an iinstruction *)
+let instr_vars ?fill_closure_is_assign:(fcia = false) (iins : iinstruction) =
+  match iins with
+  | Iins_setvar (_, res, _) -> (Some(res), [])
+  | Iins_copyvar (_, res, arg) -> (Some(res), [arg])
+  | Iins_return (_, arg) -> (None, [arg])
+  | Iins_unop (_, _, res, arg) -> (Some(res), [arg])
+  | Iins_binop (_, _, res, arg1, arg2) -> (Some(res), [arg1; arg2])
+  | Iins_newclosure (_, _, _, res) -> (Some(res), [])
+  | Iins_fillclosure (_, a1, alst) ->
       if fcia then
         (Some(a1), a1 :: alst)
       else
         (None, (a1 :: alst))
-  | Iexp_callclosure (_, res, clo, arg) -> (Some(res), [clo; arg])
-  | Iexp_calldirect(res, _, _, args) -> (Some(res), args)
-  | Iexp_startblock _ -> (None, [])
-  | Iexp_endblock _ -> (None, [])
-  | Iexp_exitblock _ -> (None, [])
-  | Iexp_exitblockif (_, arg) -> (None, [arg])
-  | Iexp_startif (_, arg) -> (None, [arg])
-  | Iexp_else _ -> (None, [])
-  | Iexp_endif _ -> (None, [])
-  | Iexp_startloop (_, _) -> (None, [])
-  | Iexp_endloop (_, _) -> (None, [])
-  | Iexp_pushtuple (_, res, args) -> (Some(res), args)
-  | Iexp_loadtupleindex (_, _, res, arg) -> (Some(res), [arg])
-  | Iexp_pushconstruct (_, res, _, args) -> (Some(res), args)
-  | Iexp_loadconstructindex (_, _, res, arg) -> (Some(res), [arg])
-  | Iexp_loadconstructid (res, arg) -> (Some(res), [arg])
-  | Iexp_newbox (_, arg, res) -> (Some(res), [arg])
-  | Iexp_updatebox (_, arg, box) -> (None, [arg; box])
-  | Iexp_unbox (_, arg, res) -> (Some(res), [arg])
-  | Iexp_fail -> (None, [])
+  | Iins_callclosure (_, res, clo, arg) -> (Some(res), [clo; arg])
+  | Iins_calldirect(res, _, _, args) -> (Some(res), args)
+  | Iins_startblock _ -> (None, [])
+  | Iins_endblock _ -> (None, [])
+  | Iins_exitblock _ -> (None, [])
+  | Iins_exitblockif (_, arg) -> (None, [arg])
+  | Iins_startif (_, arg) -> (None, [arg])
+  | Iins_else _ -> (None, [])
+  | Iins_endif _ -> (None, [])
+  | Iins_startloop (_, _) -> (None, [])
+  | Iins_endloop (_, _) -> (None, [])
+  | Iins_pushtuple (_, res, args) -> (Some(res), args)
+  | Iins_loadtupleindex (_, _, res, arg) -> (Some(res), [arg])
+  | Iins_pushconstruct (_, res, _, args) -> (Some(res), args)
+  | Iins_loadconstructindex (_, _, res, arg) -> (Some(res), [arg])
+  | Iins_loadconstructid (res, arg) -> (Some(res), [arg])
+  | Iins_newbox (_, arg, res) -> (Some(res), [arg])
+  | Iins_updatebox (_, arg, box) -> (None, [arg; box])
+  | Iins_unbox (_, arg, res) -> (Some(res), [arg])
+  | Iins_fail -> (None, [])
 
-let can_side_effect (iexpr : iexpression) =
-  match iexpr with
-  | Iexp_setvar (_, _, _) -> false
-  | Iexp_copyvar (_, _, _) -> false
-  | Iexp_return (_, _) -> true
-  | Iexp_unop (_, _, _, _) -> false
-  | Iexp_binop (_, _, _, _, _) -> false
-  | Iexp_newclosure (_, _, _, _) -> false
-  | Iexp_fillclosure (_, _, _) -> false
-  | Iexp_callclosure (_, _, _, _) -> true
-  | Iexp_calldirect (_, _, _, _) -> true
-  | Iexp_startblock _ -> false
-  | Iexp_endblock _ -> false
-  | Iexp_exitblock _ -> false
-  | Iexp_exitblockif (_, _) -> false
-  | Iexp_startif (_, _) -> false
-  | Iexp_else _ -> false
-  | Iexp_endif _ -> false
-  | Iexp_startloop (_, _) -> false
-  | Iexp_endloop (_, _) -> false
-  | Iexp_pushtuple (_, _, _) -> false
-  | Iexp_loadtupleindex (_, _, _, _) -> false
-  | Iexp_pushconstruct (_, _, _, _) -> false
-  | Iexp_loadconstructindex (_, _, _, _) -> false
-  | Iexp_loadconstructid (_, _) -> false
-  | Iexp_newbox (_, _, _) -> false
-  | Iexp_updatebox (_, _, _) -> true
-  | Iexp_unbox (_, _, _) -> false
-  | Iexp_fail -> true
+let can_side_effect (iins : iinstruction) =
+  match iins with
+  | Iins_setvar (_, _, _) -> false
+  | Iins_copyvar (_, _, _) -> false
+  | Iins_return (_, _) -> true
+  | Iins_unop (_, _, _, _) -> false
+  | Iins_binop (_, _, _, _, _) -> false
+  | Iins_newclosure (_, _, _, _) -> false
+  | Iins_fillclosure (_, _, _) -> false
+  | Iins_callclosure (_, _, _, _) -> true
+  | Iins_calldirect (_, _, _, _) -> true
+  | Iins_startblock _ -> false
+  | Iins_endblock _ -> false
+  | Iins_exitblock _ -> false
+  | Iins_exitblockif (_, _) -> false
+  | Iins_startif (_, _) -> false
+  | Iins_else _ -> false
+  | Iins_endif _ -> false
+  | Iins_startloop (_, _) -> false
+  | Iins_endloop (_, _) -> false
+  | Iins_pushtuple (_, _, _) -> false
+  | Iins_loadtupleindex (_, _, _, _) -> false
+  | Iins_pushconstruct (_, _, _, _) -> false
+  | Iins_loadconstructindex (_, _, _, _) -> false
+  | Iins_loadconstructid (_, _) -> false
+  | Iins_newbox (_, _, _) -> false
+  | Iins_updatebox (_, _, _) -> true
+  | Iins_unbox (_, _, _) -> false
+  | Iins_fail -> true
 
 (* Variable analysis on instructions *)
-let analyse_instr func globals state line (iexpr : iexpression) =
-  let res_opt, args = instr_vars iexpr in
+let analyse_instr func globals state line (iins : iinstruction) =
+  let res_opt, args = instr_vars iins in
   update_line_vars func globals state line (Option.to_list res_opt) args
 
 
@@ -237,16 +237,16 @@ let analyse_function_block func globals code =
 let find_block_end name code =
   let opt = List.findi code ~f:(fun _ instr ->
     match instr with
-    | Iexp_else(n) -> String.equal name n
-    | Iexp_endif(n) -> String.equal name n
-    | Iexp_endblock(n) -> String.equal name n
-    | Iexp_endloop(n, c) -> (String.equal name n) || (String.equal name c)
+    | Iins_else(n) -> String.equal name n
+    | Iins_endif(n) -> String.equal name n
+    | Iins_endblock(n) -> String.equal name n
+    | Iins_endloop(n, c) -> (String.equal name n) || (String.equal name c)
     | _ -> false)
   in
   match opt with
   | Some(id, instr) ->
       (match instr with
-      | Iexp_endloop(_, c) ->
+      | Iins_endloop(_, c) ->
           if String.equal name c then
             (id, true)
           else
@@ -261,22 +261,22 @@ let compute_jump_table func fa =
     | instr :: code' ->
         let () =
           (match instr with
-          | Iexp_startif(block, _) ->
+          | Iins_startif(block, _) ->
               let offset, _ = find_block_end block code' in
               Hashtbl.set fa.fa_jump_table ~key:line ~data:[line + 1; line + offset + 2]
-          | Iexp_endif(_) ->
+          | Iins_endif(_) ->
               Hashtbl.set fa.fa_jump_table ~key:line ~data:[line + 1]
-          | Iexp_endblock(_) ->
+          | Iins_endblock(_) ->
               Hashtbl.set fa.fa_jump_table ~key:line ~data:[line + 1]
-          | Iexp_else(block) ->
+          | Iins_else(block) ->
               let offset, _ = find_block_end block code' in
               Hashtbl.add_multi fa.fa_jump_table ~key:line ~data:(line + offset + 2)
-          | Iexp_startloop(break, _) ->
+          | Iins_startloop(break, _) ->
               let offset, _ = find_block_end break code' in
               (if line > 1 then
                 Hashtbl.add_multi fa.fa_jump_table ~key:(line - 1) ~data:line);
               Hashtbl.add_multi fa.fa_jump_table ~key:(line + offset + 1) ~data:line
-          | Iexp_exitblock(block) ->
+          | Iins_exitblock(block) ->
               let offset, is_loop = find_block_end block code' in
               let true_line =
                 if is_loop then
@@ -285,7 +285,7 @@ let compute_jump_table func fa =
                   line + offset + 2
               in
               Hashtbl.add_multi fa.fa_jump_table ~key:line ~data:true_line
-          | Iexp_exitblockif(block, _) ->
+          | Iins_exitblockif(block, _) ->
               let offset, is_loop = find_block_end block code' in
               let true_line =
                 if is_loop then
@@ -538,7 +538,7 @@ let active_copies fa =
           let assign_opt, _ = instr_vars (Array.get bb.bb_code index) in
           let copied_opt =
             match Array.get bb.bb_code index with
-            | Iexp_copyvar(_, target, arg) ->
+            | Iins_copyvar(_, target, arg) ->
                 Some((target, arg))
             | _ -> None
           in
@@ -639,10 +639,10 @@ let print_reaching_definitions rd =
 
 let print_live_variables (func : ifunction) lva =
   Stdio.print_endline ("\nLive variables:\n");
-  List.iteri func.pf_code ~f:(fun line iexpr ->
+  List.iteri func.pf_code ~f:(fun line iins ->
     let live = Hashtbl.find_exn lva line in
     let var_strs = List.map ~f:ivariable_to_string (Set.to_list live) in
-    let out = (Int.to_string line) ^ " :  " ^ (iexpression_to_string iexpr) ^ " --> " ^ (String.concat ~sep:", " var_strs) in
+    let out = (Int.to_string line) ^ " :  " ^ (iinstruction_to_string iins) ^ " --> " ^ (String.concat ~sep:", " var_strs) in
     Stdio.print_endline out
   )
 
@@ -652,10 +652,10 @@ let temp_to_named (func : ifunction) (fa : func_analysis) =
   (* We are assuming that no variable is used before it is assigned *)
   (* Only map each variable once, so multi cycle if we want more *)
   let already_mapped = Hash_set.create (module IVariable) in
-  List.filter_mapi func.pf_code ~f:(fun _ iexpr ->
+  List.filter_mapi func.pf_code ~f:(fun _ iins ->
     let mapping =
-      match iexpr with
-      | Iexp_copyvar (_, ((Local, _) as rvar), ((Local, _) as avar)) ->
+      match iins with
+      | Iins_copyvar (_, ((Local, _) as rvar), ((Local, _) as avar)) ->
           let rstats = Hashtbl.find_exn fa.fa_var_stats rvar in
           let astats = Hashtbl.find_exn fa.fa_var_stats avar in
           if Hash_set.mem already_mapped rvar || Hash_set.mem already_mapped avar then
@@ -675,7 +675,7 @@ let temp_to_named (func : ifunction) (fa : func_analysis) =
             Some((rvar, avar))
           else
             None
-      | Iexp_copyvar (_, ((Global, _) as gvar), ((Local, _) as avar)) ->
+      | Iins_copyvar (_, ((Global, _) as gvar), ((Local, _) as avar)) ->
           let gstats = Hashtbl.find_exn fa.fa_var_stats gvar in
           let astats = Hashtbl.find_exn fa.fa_var_stats avar in
           if Hash_set.mem already_mapped avar then

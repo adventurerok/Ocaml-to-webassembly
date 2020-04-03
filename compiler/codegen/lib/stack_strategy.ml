@@ -25,77 +25,77 @@ let concat_lines lst =
   (String.concat ~sep:"\n" lst)
 
 (* Order to load variables, and whether to ensure var is ready, or put them on the stack *)
-let load_variable_order (iexpr : iexpression) =
+let load_variable_order (iins : iinstruction) =
   let lv_stack_list lst = List.map ~f:(fun a -> Lv_stack(a)) lst in
-  match iexpr with
-  | Iexp_setvar (_, _, _) -> []
-  | Iexp_copyvar (_, _, arg) -> [Lv_stack(arg)]
-  | Iexp_return (_, arg) -> [Lv_stack(arg)]
-  | Iexp_unop (_, _, _, arg) -> [Lv_stack(arg)]
-  | Iexp_binop (_, _, _, arg1, arg2) -> [Lv_stack(arg1); Lv_stack(arg2)]
-  | Iexp_newclosure (_, _, _, _) -> []
-  | Iexp_fillclosure (_, clo, arg_lst) -> (Lv_var(clo)) :: (lv_stack_list arg_lst)
-  | Iexp_callclosure (_, _, clo, arg) -> [Lv_stack(clo); Lv_stack(arg)]
-  | Iexp_calldirect(_, _, _, arg_lst) -> (lv_stack_list arg_lst)
-  | Iexp_startblock _ -> []
-  | Iexp_endblock _ -> []
-  | Iexp_exitblock _ -> []
-  | Iexp_exitblockif (_, cond) -> [Lv_stack(cond)]
-  | Iexp_startif (_, cond) -> [Lv_stack(cond)]
-  | Iexp_else _ -> []
-  | Iexp_endif _ -> []
-  | Iexp_startloop (_, _) -> []
-  | Iexp_endloop (_, _) -> []
-  | Iexp_pushtuple (_, _, args) -> lv_stack_list args
-  | Iexp_loadtupleindex (_, _, _, arg) -> [Lv_stack(arg)]
-  | Iexp_pushconstruct (_, _, _, args) -> lv_stack_list args
-  | Iexp_loadconstructindex (_, _, _, arg) -> [Lv_stack(arg)]
-  | Iexp_loadconstructid (_, arg) -> [Lv_stack(arg)]
-  | Iexp_newbox (_, arg, _) -> [Lv_stack(arg)]
-  | Iexp_updatebox (_, arg, box) -> [Lv_stack(box); Lv_stack(arg)]
-  | Iexp_unbox (_, box, _) -> [Lv_stack(box)]
-  | Iexp_fail -> []
+  match iins with
+  | Iins_setvar (_, _, _) -> []
+  | Iins_copyvar (_, _, arg) -> [Lv_stack(arg)]
+  | Iins_return (_, arg) -> [Lv_stack(arg)]
+  | Iins_unop (_, _, _, arg) -> [Lv_stack(arg)]
+  | Iins_binop (_, _, _, arg1, arg2) -> [Lv_stack(arg1); Lv_stack(arg2)]
+  | Iins_newclosure (_, _, _, _) -> []
+  | Iins_fillclosure (_, clo, arg_lst) -> (Lv_var(clo)) :: (lv_stack_list arg_lst)
+  | Iins_callclosure (_, _, clo, arg) -> [Lv_stack(clo); Lv_stack(arg)]
+  | Iins_calldirect(_, _, _, arg_lst) -> (lv_stack_list arg_lst)
+  | Iins_startblock _ -> []
+  | Iins_endblock _ -> []
+  | Iins_exitblock _ -> []
+  | Iins_exitblockif (_, cond) -> [Lv_stack(cond)]
+  | Iins_startif (_, cond) -> [Lv_stack(cond)]
+  | Iins_else _ -> []
+  | Iins_endif _ -> []
+  | Iins_startloop (_, _) -> []
+  | Iins_endloop (_, _) -> []
+  | Iins_pushtuple (_, _, args) -> lv_stack_list args
+  | Iins_loadtupleindex (_, _, _, arg) -> [Lv_stack(arg)]
+  | Iins_pushconstruct (_, _, _, args) -> lv_stack_list args
+  | Iins_loadconstructindex (_, _, _, arg) -> [Lv_stack(arg)]
+  | Iins_loadconstructid (_, arg) -> [Lv_stack(arg)]
+  | Iins_newbox (_, arg, _) -> [Lv_stack(arg)]
+  | Iins_updatebox (_, arg, box) -> [Lv_stack(box); Lv_stack(arg)]
+  | Iins_unbox (_, box, _) -> [Lv_stack(box)]
+  | Iins_fail -> []
 
 
-let variable_result (iexpr : iexpression) =
-  match iexpr with
-  | Iexp_setvar (_, res, _) -> Some(Lv_stack(res))
-  | Iexp_copyvar (_, res, _) -> Some(Lv_stack(res))
-  | Iexp_return (_, _) -> None
-  | Iexp_unop (_, _, res, _) -> Some(Lv_stack(res))
-  | Iexp_binop (_, _, res, _, _) -> Some(Lv_stack(res))
-  | Iexp_newclosure (_, _, _, res) -> Some(Lv_var(res))
-  | Iexp_fillclosure (_, res, _) -> Some(Lv_var(res))
-  | Iexp_callclosure (_, res, _, _) -> Some(Lv_stack(res))
-  | Iexp_calldirect (res, _, _, _) -> Some(Lv_stack(res))
-  | Iexp_startblock _ -> None
-  | Iexp_endblock _ -> None
-  | Iexp_exitblock _ -> None
-  | Iexp_exitblockif (_, _) -> None
-  | Iexp_startif (_, _) -> None
-  | Iexp_else _ -> None
-  | Iexp_endif _ -> None
-  | Iexp_startloop (_, _) -> None
-  | Iexp_endloop (_, _) -> None
-  | Iexp_pushtuple (_, res, _) -> Some(Lv_var(res))
-  | Iexp_loadtupleindex (_, _, res, _) -> Some(Lv_stack(res))
-  | Iexp_pushconstruct (_, res, _, _) -> Some(Lv_var(res))
-  | Iexp_loadconstructindex (_, _, res, _) -> Some(Lv_stack(res))
-  | Iexp_loadconstructid (res, _) -> Some(Lv_stack(res))
-  | Iexp_newbox (_, _, box) -> Some(Lv_var(box))
-  | Iexp_updatebox (_, _, box) -> Some(Lv_var(box))
-  | Iexp_unbox (_, _, unbox) -> Some(Lv_stack(unbox))
-  | Iexp_fail -> None
+let variable_result (iins : iinstruction) =
+  match iins with
+  | Iins_setvar (_, res, _) -> Some(Lv_stack(res))
+  | Iins_copyvar (_, res, _) -> Some(Lv_stack(res))
+  | Iins_return (_, _) -> None
+  | Iins_unop (_, _, res, _) -> Some(Lv_stack(res))
+  | Iins_binop (_, _, res, _, _) -> Some(Lv_stack(res))
+  | Iins_newclosure (_, _, _, res) -> Some(Lv_var(res))
+  | Iins_fillclosure (_, res, _) -> Some(Lv_var(res))
+  | Iins_callclosure (_, res, _, _) -> Some(Lv_stack(res))
+  | Iins_calldirect (res, _, _, _) -> Some(Lv_stack(res))
+  | Iins_startblock _ -> None
+  | Iins_endblock _ -> None
+  | Iins_exitblock _ -> None
+  | Iins_exitblockif (_, _) -> None
+  | Iins_startif (_, _) -> None
+  | Iins_else _ -> None
+  | Iins_endif _ -> None
+  | Iins_startloop (_, _) -> None
+  | Iins_endloop (_, _) -> None
+  | Iins_pushtuple (_, res, _) -> Some(Lv_var(res))
+  | Iins_loadtupleindex (_, _, res, _) -> Some(Lv_stack(res))
+  | Iins_pushconstruct (_, res, _, _) -> Some(Lv_var(res))
+  | Iins_loadconstructindex (_, _, res, _) -> Some(Lv_stack(res))
+  | Iins_loadconstructid (res, _) -> Some(Lv_stack(res))
+  | Iins_newbox (_, _, box) -> Some(Lv_var(box))
+  | Iins_updatebox (_, _, box) -> Some(Lv_var(box))
+  | Iins_unbox (_, _, unbox) -> Some(Lv_stack(unbox))
+  | Iins_fail -> None
 
-let needs_clear_stack (iexpr : iexpression) =
-  match iexpr with
-  | Iexp_startblock _ -> true
-  | Iexp_endblock _ -> true
-  | Iexp_startif _ -> true
-  | Iexp_endif _ -> true
-  | Iexp_else _ -> true
-  | Iexp_startloop _ -> true
-  | Iexp_endloop _ -> true
+let needs_clear_stack (iins : iinstruction) =
+  match iins with
+  | Iins_startblock _ -> true
+  | Iins_endblock _ -> true
+  | Iins_startif _ -> true
+  | Iins_endif _ -> true
+  | Iins_else _ -> true
+  | Iins_startloop _ -> true
+  | Iins_endloop _ -> true
   | _ -> false
 
 let codegen_setvar state (scope, name) =
@@ -115,34 +115,34 @@ let codegen_teevar state (scope, name) =
   | Local ->
       (iscope_to_string scope) ^ ".tee " ^ name
 
-let rec codegen_iexpression_core (state : state) saved_vars lvo (expr : iexpression) =
+let rec codegen_iinstruction_core (state : state) saved_vars lvo (expr : iinstruction) =
   (* If vout is Lv_stack, then that is top of the stack *)
   (* If vout is Lv_var, the var was saved but it isn't top of stack *)
   (* If vout is None, no variable *)
   match expr with
-  | Iexp_setvar (ityp, _, str_rep) ->
+  | Iins_setvar (ityp, _, str_rep) ->
       (concat_lines lvo) ^ "\n" ^
       (codegen_const ityp str_rep) ^ "\n"
-  | Iexp_copyvar(_, _, _) ->
+  | Iins_copyvar(_, _, _) ->
       (concat_lines lvo) ^ "\n"
-  | Iexp_return(_, _) ->
+  | Iins_return(_, _) ->
       (concat_lines lvo) ^ "\n"
-  | Iexp_unop (ityp, unop, _, _) ->
+  | Iins_unop (ityp, unop, _, _) ->
       (concat_lines lvo) ^ "\n" ^
       (codegen_unop ityp unop)
-  | Iexp_binop (ityp, binop, _, _, _) ->
+  | Iins_binop (ityp, binop, _, _, _) ->
       (concat_lines lvo) ^ "\n" ^
       (codegen_binop ityp binop)
-  | Iexp_newclosure (ift, func_name, itt, var) -> codegen_newclosure state ift func_name itt var
-  | Iexp_fillclosure(itt, var, _) -> codegen_fillclosure state lvo itt var
-  | Iexp_callclosure(_, _, clo, _) -> codegen_callclosure state saved_vars lvo clo
-  | Iexp_calldirect(_, name, _, _) -> codegen_calldirect state name lvo
-  | Iexp_startblock (name) ->
+  | Iins_newclosure (ift, func_name, itt, var) -> codegen_newclosure state ift func_name itt var
+  | Iins_fillclosure(itt, var, _) -> codegen_fillclosure state lvo itt var
+  | Iins_callclosure(_, _, clo, _) -> codegen_callclosure state saved_vars lvo clo
+  | Iins_calldirect(_, name, _, _) -> codegen_calldirect state name lvo
+  | Iins_startblock (name) ->
       "block " ^ name ^ "\n"
-  | Iexp_endblock(name) ->
+  | Iins_endblock(name) ->
       "end " ^ name ^ "\n"
-  | Iexp_exitblock(name) -> "br " ^ name ^ "\n"
-  | Iexp_exitblockif(name, _) ->
+  | Iins_exitblock(name) -> "br " ^ name ^ "\n"
+  | Iins_exitblockif(name, _) ->
       let get_arg =
         match lvo with
         | [ga] -> ga
@@ -150,7 +150,7 @@ let rec codegen_iexpression_core (state : state) saved_vars lvo (expr : iexpress
       in
       get_arg ^ "\n" ^
       "br_if " ^ name ^ "\n"
-  | Iexp_startif(name, _) ->
+  | Iins_startif(name, _) ->
       let get_arg =
         match lvo with
         | [ga] -> ga
@@ -158,28 +158,28 @@ let rec codegen_iexpression_core (state : state) saved_vars lvo (expr : iexpress
       in
       get_arg ^ "\n" ^
       "if " ^ name ^ "\n"
-  | Iexp_else(name) ->
+  | Iins_else(name) ->
       "else " ^ name ^ "\n"
-  | Iexp_endif(name) ->
+  | Iins_endif(name) ->
       "end " ^ name ^ "\n"
-  | Iexp_startloop(break, continue) ->
+  | Iins_startloop(break, continue) ->
       "block " ^ break ^ "\n" ^
       "loop " ^ continue ^ "\n"
-  | Iexp_endloop(break, continue) ->
+  | Iins_endloop(break, continue) ->
       "br " ^ continue ^ "\n" ^
       "end " ^ continue ^ "\n" ^
       "end " ^ break
-  | Iexp_pushtuple(itt, res, _) -> codegen_pushtuple state lvo itt res
-  | Iexp_loadtupleindex (itt, index, _, _) -> codegen_tupleindex ~boxed:true state lvo itt index 0
-  | Iexp_pushconstruct (itt, res, id, _) ->
+  | Iins_pushtuple(itt, res, _) -> codegen_pushtuple state lvo itt res
+  | Iins_loadtupleindex (itt, index, _, _) -> codegen_tupleindex ~boxed:true state lvo itt index 0
+  | Iins_pushconstruct (itt, res, id, _) ->
       codegen_construct state lvo itt res id
-  | Iexp_loadconstructindex (itt, index, _, _) ->
+  | Iins_loadconstructindex (itt, index, _, _) ->
       codegen_tupleindex ~boxed:true state lvo (It_int :: itt) (index + 1) 0
-  | Iexp_loadconstructid(_, _) -> codegen_tupleindex ~boxed:true state lvo [It_int] 0 0
-  | Iexp_newbox(ityp, _, box) -> codegen_box state lvo ityp box
-  | Iexp_updatebox(ityp, _, _) -> codegen_updatebox state lvo ityp
-  | Iexp_unbox(ityp, _, _) -> codegen_unbox state lvo ityp
-  | Iexp_fail -> "unreachable"
+  | Iins_loadconstructid(_, _) -> codegen_tupleindex ~boxed:true state lvo [It_int] 0 0
+  | Iins_newbox(ityp, _, box) -> codegen_box state lvo ityp box
+  | Iins_updatebox(ityp, _, _) -> codegen_updatebox state lvo ityp
+  | Iins_unbox(ityp, _, _) -> codegen_unbox state lvo ityp
+  | Iins_fail -> "unreachable"
 
 and codegen_const ityp str_rep =
   match ityp with
@@ -365,15 +365,15 @@ and codegen_unbox _state lvo ityp =
   watyp ^ ".load offset=0\n"
 
 
-let codegen_iexpression_simple state iexpr =
-  let lvo_req = load_variable_order iexpr in
+let codegen_iinstruction_simple state iins =
+  let lvo_req = load_variable_order iins in
   let lvo = List.map lvo_req ~f:(fun req ->
     match req with
     | Lv_var(_) -> ""
     | Lv_stack(var) -> codegen_getvar state var)
   in
-  let main_code = codegen_iexpression_core state (Set.empty (module IVariable)) lvo iexpr in
-  let expected_output = variable_result iexpr in
+  let main_code = codegen_iinstruction_core state (Set.empty (module IVariable)) lvo iins in
+  let expected_output = variable_result iins in
   match expected_output with
   | Some(Lv_stack(var)) ->
       main_code ^
@@ -589,8 +589,8 @@ let empty_stack state gen_stack saved_vars =
 
 (* Gives a list of gen blocks, and set of available vars on stack *)
 (* Prev gens is backwards *)
-let codegen_add_line state prev_gens avail_vars saved_vars line iexpr =
-  let lvo_req = load_variable_order iexpr in
+let codegen_add_line state prev_gens avail_vars saved_vars line iins =
+  let lvo_req = load_variable_order iins in
   let lvo_stack = List.rev lvo_req in
   let lvo_count_map = List.fold lvo_stack ~init:(Map.empty (module IVariable)) ~f:(fun map lvd ->
     let var = lvd_var lvd in
@@ -603,16 +603,16 @@ let codegen_add_line state prev_gens avail_vars saved_vars line iexpr =
   (*let () = List.iteri lvo_code ~f:(fun id code ->
     Stdio.print_endline ("LVO " ^ (Int.to_string id) ^ ":\n" ^ code ^ "\n")
   ) in *)
-  let full_code = codegen_iexpression_core state saved_vars1 lvo_code iexpr in
+  let full_code = codegen_iinstruction_core state saved_vars1 lvo_code iins in
   let (prev_gens2, avail_vars2, saved_vars2) =
-    if needs_clear_stack iexpr then
+    if needs_clear_stack iins then
       let (gs_opt, sv') = empty_stack state prev_gens1 saved_vars1 in
       (match gs_opt with
       | Some(gs) -> ([gs], Set.empty (module IVariable), sv')
       | None -> ([], Set.empty (module IVariable), sv'))
     else (prev_gens1, avail_vars1, saved_vars1)
   in
-  let result = variable_result iexpr in
+  let result = variable_result iins in
   let (gb, avail_vars3, saved_vars3) =
     match result with
     | None ->
@@ -667,7 +667,7 @@ let codegen_basic_block state func (bb : Analysis.basic_block) =
 
 let codegen_basic_block_nostack state (bb : Analysis.basic_block) =
   let lines = Array.to_list bb.bb_code in
-  let line_codes = List.map ~f:(codegen_iexpression_simple state) lines in
+  let line_codes = List.map ~f:(codegen_iinstruction_simple state) lines in
   String.concat ~sep:"\n" line_codes
 
 let remove_unused_vars state func =

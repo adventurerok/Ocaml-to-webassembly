@@ -144,217 +144,217 @@ let ivariable_is_global ((is, _) : ivariable) =
   | Global -> true
   | Local -> false
 
-type iexpression =
+type iinstruction =
 (* Create a new var from a constant *)
 (* type of variable, name of variable *)
-| Iexp_setvar of itype * ivariable * string
+| Iins_setvar of itype * ivariable * string
 (* Copy a variable into another *)
 (* type of variable, name of new variable, name of old variable *)
-| Iexp_copyvar of itype * ivariable * ivariable
+| Iins_copyvar of itype * ivariable * ivariable
 (* Return var *)
 (* type of variable, name of variable *)
-| Iexp_return of itype * ivariable
+| Iins_return of itype * ivariable
 (* Unary operation using one stack value *)
 (* type of operand, unary operation, result var, input var *)
-| Iexp_unop of itype * iunop * ivariable * ivariable
+| Iins_unop of itype * iunop * ivariable * ivariable
 (* Binary operation using two stack values *)
 (* type of operands, binary operation *)
-| Iexp_binop of itype * ibinop * ivariable * ivariable * ivariable
+| Iins_binop of itype * ibinop * ivariable * ivariable * ivariable
 (* Make a new closure for specified function and tuple type, and put it in given variable *)
 (* type of function, name of function, type of closure variables, variable to put closure in *)
-| Iexp_newclosure of iftype * string * ituptype * ivariable
+| Iins_newclosure of iftype * string * ituptype * ivariable
 (* Fill a closure in the named variable using the code to generate those values *)
 (* type of closure variables, name of variable, list of variables to copy in *)
-| Iexp_fillclosure of ituptype * ivariable * ivariable list
+| Iins_fillclosure of ituptype * ivariable * ivariable list
 (* Call closure in variable using argument generated from code *)
 (* type of function, output variable, closure variable, variable for argument *)
-| Iexp_callclosure of iftype * ivariable * ivariable * ivariable
+| Iins_callclosure of iftype * ivariable * ivariable * ivariable
 (* Directly call a function *)
 (* output variable, name of function, type of args, arg vars *)
-| Iexp_calldirect of ivariable * string * ituptype * (ivariable list)
+| Iins_calldirect of ivariable * string * ituptype * (ivariable list)
 (* Start a block *)
 (* name of block *)
-| Iexp_startblock of string
+| Iins_startblock of string
 (* End a block *)
 (* name of block *)
-| Iexp_endblock of string
+| Iins_endblock of string
 (* Exit from the named block *)
 (* name of block *)
-| Iexp_exitblock of string
+| Iins_exitblock of string
 (* Exit from the named block if variable is true *)
 (* name of block *)
-| Iexp_exitblockif of string * ivariable
+| Iins_exitblockif of string * ivariable
 (* Start an if statement *)
 (* name of block, condition var *)
-| Iexp_startif of string * ivariable
+| Iins_startif of string * ivariable
 (* Else clause of an if statement *)
 (* name of block *)
-| Iexp_else of string
+| Iins_else of string
 (* End an if statement *)
 (* name of block *)
-| Iexp_endif of string
+| Iins_endif of string
 (* Starts a loop, loops until an exitblock or exitblockif *)
 (* Name of escape block (to break to), name of loop block (to continue to) *)
-| Iexp_startloop of string * string
+| Iins_startloop of string * string
 (* Ends a loop *)
 (* Name of break block, name of continue block *)
-| Iexp_endloop of string * string
+| Iins_endloop of string * string
 (* Create a tuple from the given code, push pointer to stack and put it in that variable *)
 (* type of tuple, name of variable, code to generate each part of tuple *)
-| Iexp_pushtuple of ituptype * ivariable * ivariable list
+| Iins_pushtuple of ituptype * ivariable * ivariable list
 (* Pop tuple, push its value at index i to the stack *)
 (* type of tuple, index in tuple, output var, tuple var *)
-| Iexp_loadtupleindex of ituptype * int * ivariable * ivariable
+| Iins_loadtupleindex of ituptype * int * ivariable * ivariable
 (* Create a construct from the given code, push pointer to stack and put it in variable *)
 (* type of construct arguments, name of variable, id of construct, code to generate each part of construct *)
-| Iexp_pushconstruct of ituptype * ivariable * int * ivariable list
+| Iins_pushconstruct of ituptype * ivariable * int * ivariable list
 (* Pop construct, push its value at index i to the stack *)
 (* type of construct arguments, index in arguments, output variable, tuple variable *)
-| Iexp_loadconstructindex of ituptype * int * ivariable * ivariable
+| Iins_loadconstructindex of ituptype * int * ivariable * ivariable
 (* Pop construct, push its id to the stack *)
 (* output variable, construct variable *)
-| Iexp_loadconstructid of ivariable * ivariable
+| Iins_loadconstructid of ivariable * ivariable
 (* Box a value (on stack) of a type that needs boxing, or for a ref *)
 (* unboxed type, unboxped variable, variable to store boxed result *)
-| Iexp_newbox of itype * ivariable * ivariable
+| Iins_newbox of itype * ivariable * ivariable
 (* Update a boxed value, useful for refs *)
 (* unboxed type, unboxped variable, boxed variable *)
-| Iexp_updatebox of itype * ivariable * ivariable
+| Iins_updatebox of itype * ivariable * ivariable
 (* Unbox a value / dereference a ref *)
 (* unboxped type, wrapped variable, unboxped target variable *)
-| Iexp_unbox of itype * ivariable * ivariable
+| Iins_unbox of itype * ivariable * ivariable
 (* Fail *)
 (* No parameters *)
-| Iexp_fail
+| Iins_fail
 [@@deriving sexp_of]
 
-let rec iexpression_to_string (iexp : iexpression) =
-  match iexp with
-  | Iexp_setvar (t, name, con) ->
+let rec iinstruction_to_string (iins : iinstruction) =
+  match iins with
+  | Iins_setvar (t, name, con) ->
       "setvar " ^ (itype_to_string t) ^ " " ^ (ivariable_to_string name) ^ " " ^ con
-  | Iexp_copyvar(t, res, arg) ->
+  | Iins_copyvar(t, res, arg) ->
       "copyvar " ^ (itype_to_string t) ^ " " ^ (ivariable_to_string res) ^ " " ^
       (ivariable_to_string arg)
-  | Iexp_return (t, name) -> "return " ^ (itype_to_string t) ^ " " ^ (ivariable_to_string name)
-  | Iexp_unop (t, op, res, arg) ->
+  | Iins_return (t, name) -> "return " ^ (itype_to_string t) ^ " " ^ (ivariable_to_string name)
+  | Iins_unop (t, op, res, arg) ->
       "unop " ^ (itype_to_string t) ^ " " ^ (iunop_to_string op) ^
       " " ^ (ivariable_to_string res) ^ " " ^ (ivariable_to_string arg)
-  | Iexp_binop (t, op, res, arg1, arg2) ->
+  | Iins_binop (t, op, res, arg1, arg2) ->
       "binop " ^ (itype_to_string t) ^ " " ^ (ibinop_to_string op) ^
       " " ^ (ivariable_to_string res) ^ " " ^ (ivariable_to_string arg1) ^
       " " ^ (ivariable_to_string arg2)
-  | Iexp_newclosure (ift, name, itt, var_name) ->
+  | Iins_newclosure (ift, name, itt, var_name) ->
       "newclosure " ^ (iftype_to_string ift) ^ " " ^ name ^ " " ^ (ituptype_to_string itt) ^ " " ^
       (ivariable_to_string var_name)
-  | Iexp_fillclosure(itt, name, vars) ->
+  | Iins_fillclosure(itt, name, vars) ->
       "fillclosure " ^ (ituptype_to_string itt) ^ " " ^ (ivariable_to_string name) ^ " " ^
       vars_to_string vars
-  | Iexp_callclosure(ift, res, clo, arg) ->
+  | Iins_callclosure(ift, res, clo, arg) ->
       "callclosure " ^ (iftype_to_string ift) ^ " " ^ (ivariable_to_string res) ^
       " " ^ (ivariable_to_string clo) ^ " " ^ (ivariable_to_string arg)
-  | Iexp_calldirect(res, name, itt, arg_lst) ->
+  | Iins_calldirect(res, name, itt, arg_lst) ->
       "calldirect " ^ (ivariable_to_string res) ^ " " ^ name ^ " " ^
       (ituptype_to_string itt) ^ " " ^ (vars_to_string arg_lst)
-  | Iexp_startblock(name) ->
+  | Iins_startblock(name) ->
       "startblock " ^ name
-  | Iexp_endblock(name) ->
+  | Iins_endblock(name) ->
       "endblock " ^ name
-  | Iexp_exitblock(name) -> "exitblock " ^ name
-  | Iexp_exitblockif(name, var) -> "exitblockif " ^ name ^ " " ^ (ivariable_to_string var)
-  | Iexp_startif(name, cond) -> "startif " ^ name ^ " " ^ (ivariable_to_string cond)
-  | Iexp_else(name) -> "else " ^ name
-  | Iexp_endif(name) -> "endif " ^ name
-  | Iexp_startloop(break, cont) -> "startloop " ^ break ^ " " ^ cont
-  | Iexp_endloop(break, cont) -> "endloop " ^ break ^ " " ^ cont
-  | Iexp_pushtuple(itt, name, vars) ->
+  | Iins_exitblock(name) -> "exitblock " ^ name
+  | Iins_exitblockif(name, var) -> "exitblockif " ^ name ^ " " ^ (ivariable_to_string var)
+  | Iins_startif(name, cond) -> "startif " ^ name ^ " " ^ (ivariable_to_string cond)
+  | Iins_else(name) -> "else " ^ name
+  | Iins_endif(name) -> "endif " ^ name
+  | Iins_startloop(break, cont) -> "startloop " ^ break ^ " " ^ cont
+  | Iins_endloop(break, cont) -> "endloop " ^ break ^ " " ^ cont
+  | Iins_pushtuple(itt, name, vars) ->
       "pushtuple " ^ (ituptype_to_string itt) ^ " " ^ (ivariable_to_string name) ^ " " ^
       vars_to_string vars
-  | Iexp_loadtupleindex (itt, id, res, arg) ->
+  | Iins_loadtupleindex (itt, id, res, arg) ->
       "loadtupleindex " ^ (ituptype_to_string itt) ^ " " ^ (Int.to_string id) ^
       " " ^ (ivariable_to_string res) ^ " " ^ (ivariable_to_string arg)
-  | Iexp_pushconstruct(itt, name, id, vars) ->
+  | Iins_pushconstruct(itt, name, id, vars) ->
       "pushconstruct " ^ (ituptype_to_string itt) ^ " " ^ (ivariable_to_string name) ^
       " " ^ (Int.to_string id) ^ " " ^
       vars_to_string vars
-  | Iexp_loadconstructindex(itt, id, res, arg) ->
+  | Iins_loadconstructindex(itt, id, res, arg) ->
       "loadconstructindex " ^ (ituptype_to_string itt) ^ " " ^ (Int.to_string id) ^
       " " ^ (ivariable_to_string res) ^ " " ^ (ivariable_to_string arg)
-  | Iexp_loadconstructid(res, arg) ->
+  | Iins_loadconstructid(res, arg) ->
       "loadconstructid " ^ (ivariable_to_string res) ^ (ivariable_to_string arg)
-  | Iexp_newbox(typ, unbox, wrap) ->
+  | Iins_newbox(typ, unbox, wrap) ->
       "newbox " ^ (itype_to_string typ) ^ " " ^ (ivariable_to_string unbox) ^ " " ^ (ivariable_to_string wrap)
-  | Iexp_updatebox(typ, unbox, wrap) ->
+  | Iins_updatebox(typ, unbox, wrap) ->
       "updatebox " ^ (itype_to_string typ) ^ " " ^ (ivariable_to_string unbox) ^ " " ^ (ivariable_to_string wrap)
-  | Iexp_unbox(typ, wrap, unbox) ->
+  | Iins_unbox(typ, wrap, unbox) ->
       "unbox " ^ (itype_to_string typ) ^ " " ^ (ivariable_to_string wrap) ^ " " ^ (ivariable_to_string unbox)
-  | Iexp_fail -> "fail"
+  | Iins_fail -> "fail"
 
 
-and iexpression_list_to_string ls =
-  String.concat ~sep:"\n" (List.map ls ~f:iexpression_to_string)
+and iinstruction_list_to_string ls =
+  String.concat ~sep:"\n" (List.map ls ~f:iinstruction_to_string)
 
 and vars_to_string vars =
   let parts = List.map vars ~f:ivariable_to_string in
   "(" ^ (String.concat ~sep:" " parts) ^ ")"
 
 
-let iexpression_map_vars ~f:map_var (iexp : iexpression) =
-  match iexp with
-  | Iexp_setvar(t, name, str) ->
-      Iexp_setvar(t, map_var name, str)
-  | Iexp_copyvar(t, res, arg) ->
-      Iexp_copyvar(t, map_var res, map_var arg)
-  | Iexp_return(t, res) ->
-      Iexp_return(t, map_var res)
-  | Iexp_unop(t, un, res, arg) ->
-      Iexp_unop(t, un, map_var res, map_var arg)
-  | Iexp_binop(t, un, res, arg1, arg2) ->
-      Iexp_binop(t, un, map_var res, map_var arg1, map_var arg2)
-  | Iexp_newclosure(ift, fname, itt, var) ->
-      Iexp_newclosure(ift, fname, itt, map_var var)
-  | Iexp_fillclosure(itt, name, var_lst) ->
-      Iexp_fillclosure(itt, map_var name, List.map ~f:map_var var_lst)
-  | Iexp_callclosure(ift, res, clo, arg) ->
-      Iexp_callclosure(ift, map_var res, map_var clo, map_var arg)
-  | Iexp_calldirect(res, name, itt, arg_lst) ->
-      Iexp_calldirect(map_var res, name, itt, List.map ~f:map_var arg_lst)
-  | Iexp_startblock(name) ->
-      Iexp_startblock(name)
-  | Iexp_endblock(name) ->
-      Iexp_endblock(name)
-  | Iexp_exitblock(str) ->
-      Iexp_exitblock(str)
-  | Iexp_exitblockif(str, cond) ->
-      Iexp_exitblockif(str, map_var cond)
-  | Iexp_startif(name, cond) ->
-      Iexp_startif(name, map_var cond)
-  | Iexp_else(name) ->
-      Iexp_else(name)
-  | Iexp_endif(name) ->
-      Iexp_endif(name)
-  | Iexp_startloop(break, cont) ->
-      Iexp_startloop(break, cont)
-  | Iexp_endloop(break, cont) ->
-      Iexp_endloop(break, cont)
-  | Iexp_pushtuple(itt, name, var_lst) ->
-      Iexp_pushtuple(itt, map_var name, List.map ~f:map_var var_lst)
-  | Iexp_loadtupleindex(itt, id, res, tup) ->
-      Iexp_loadtupleindex(itt, id, map_var res, map_var tup)
-  | Iexp_pushconstruct(itt, name, id, var_lst) ->
-      Iexp_pushconstruct(itt, map_var name, id, List.map ~f:map_var var_lst)
-  | Iexp_loadconstructindex(itt, id, res, con) ->
-      Iexp_loadconstructindex(itt, id, map_var res, map_var con)
-  | Iexp_loadconstructid(res, con) ->
-      Iexp_loadconstructid(map_var res, map_var con)
-  | Iexp_newbox(t, unbox, box) ->
-      Iexp_newbox(t, map_var unbox, map_var box)
-  | Iexp_updatebox(t, unbox, box) ->
-      Iexp_updatebox(t, map_var unbox, map_var box)
-  | Iexp_unbox(t, boxed, unboxed) ->
-      Iexp_unbox(t, map_var boxed, map_var unboxed)
-  | Iexp_fail ->
-      Iexp_fail
+let iinstruction_map_vars ~f:map_var (iins : iinstruction) =
+  match iins with
+  | Iins_setvar(t, name, str) ->
+      Iins_setvar(t, map_var name, str)
+  | Iins_copyvar(t, res, arg) ->
+      Iins_copyvar(t, map_var res, map_var arg)
+  | Iins_return(t, res) ->
+      Iins_return(t, map_var res)
+  | Iins_unop(t, un, res, arg) ->
+      Iins_unop(t, un, map_var res, map_var arg)
+  | Iins_binop(t, un, res, arg1, arg2) ->
+      Iins_binop(t, un, map_var res, map_var arg1, map_var arg2)
+  | Iins_newclosure(ift, fname, itt, var) ->
+      Iins_newclosure(ift, fname, itt, map_var var)
+  | Iins_fillclosure(itt, name, var_lst) ->
+      Iins_fillclosure(itt, map_var name, List.map ~f:map_var var_lst)
+  | Iins_callclosure(ift, res, clo, arg) ->
+      Iins_callclosure(ift, map_var res, map_var clo, map_var arg)
+  | Iins_calldirect(res, name, itt, arg_lst) ->
+      Iins_calldirect(map_var res, name, itt, List.map ~f:map_var arg_lst)
+  | Iins_startblock(name) ->
+      Iins_startblock(name)
+  | Iins_endblock(name) ->
+      Iins_endblock(name)
+  | Iins_exitblock(str) ->
+      Iins_exitblock(str)
+  | Iins_exitblockif(str, cond) ->
+      Iins_exitblockif(str, map_var cond)
+  | Iins_startif(name, cond) ->
+      Iins_startif(name, map_var cond)
+  | Iins_else(name) ->
+      Iins_else(name)
+  | Iins_endif(name) ->
+      Iins_endif(name)
+  | Iins_startloop(break, cont) ->
+      Iins_startloop(break, cont)
+  | Iins_endloop(break, cont) ->
+      Iins_endloop(break, cont)
+  | Iins_pushtuple(itt, name, var_lst) ->
+      Iins_pushtuple(itt, map_var name, List.map ~f:map_var var_lst)
+  | Iins_loadtupleindex(itt, id, res, tup) ->
+      Iins_loadtupleindex(itt, id, map_var res, map_var tup)
+  | Iins_pushconstruct(itt, name, id, var_lst) ->
+      Iins_pushconstruct(itt, map_var name, id, List.map ~f:map_var var_lst)
+  | Iins_loadconstructindex(itt, id, res, con) ->
+      Iins_loadconstructindex(itt, id, map_var res, map_var con)
+  | Iins_loadconstructid(res, con) ->
+      Iins_loadconstructid(map_var res, map_var con)
+  | Iins_newbox(t, unbox, box) ->
+      Iins_newbox(t, map_var unbox, map_var box)
+  | Iins_updatebox(t, unbox, box) ->
+      Iins_updatebox(t, map_var unbox, map_var box)
+  | Iins_unbox(t, boxed, unboxed) ->
+      Iins_unbox(t, map_var boxed, map_var unboxed)
+  | Iins_fail ->
+      Iins_fail
 
 
-let iexpression_list_map_vars ~f:map_vars lst =
-  List.map ~f:(iexpression_map_vars ~f:map_vars) lst
+let iinstruction_list_map_vars ~f:map_vars lst =
+  List.map ~f:(iinstruction_map_vars ~f:map_vars) lst

@@ -8,6 +8,7 @@ type tvalue =
   | V_float
   [@@deriving sexp_of, equal]
 
+(* TODO change to String.Set.t as I said in diss *)
 type tvar_set = string Set.Poly.t
 
 let sexp_of_tvar_set (tvs : tvar_set) =

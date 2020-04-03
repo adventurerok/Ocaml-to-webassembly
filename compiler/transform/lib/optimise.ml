@@ -10,14 +10,14 @@ let replace_var oldvar newvar code =
     else
       var
   in
-  iexpression_list_map_vars ~f:check_var code
+  iinstruction_list_map_vars ~f:check_var code
 
 let print_function (func : ifunction) =
   if not Config.global.trace then
     func
   else begin
     Stdio.print_endline ("\nFunction code for " ^ func.pf_name);
-    List.iteri func.pf_code ~f:(fun line iexpr -> Stdio.print_endline ((Int.to_string line) ^ " :  " ^ (iexpression_to_string iexpr)));
+    List.iteri func.pf_code ~f:(fun line iins -> Stdio.print_endline ((Int.to_string line) ^ " :  " ^ (iinstruction_to_string iins)));
     Stdio.print_endline ("/End of function\n");
     func
   end
@@ -36,14 +36,14 @@ let print_analysis globals (func : ifunction) =
 
 
 let eliminate_redundant_copies code =
-  List.filter_map code ~f:(fun iexpr ->
-    match iexpr with
-    | Iexp_copyvar(_, res, arg) ->
+  List.filter_map code ~f:(fun iins ->
+    match iins with
+    | Iins_copyvar(_, res, arg) ->
         if equal_ivariable res arg then
           None
         else
-          Some(iexpr)
-    | _ -> Some(iexpr))
+          Some(iins)
+    | _ -> Some(iins))
 
 (* This is the shitty old version that uses variable statistics *)
 let rec eliminate_temp_to_named globals func =
@@ -92,9 +92,9 @@ let rec propagate_copies globals func =
     let copy_defs = Hashtbl.create (module Int) in
     (* Safety net set of copy statements we have already used, to prevent modifying them *)
     let copies_used = Hash_set.create (module Int) in
-    List.iteri func.pf_code ~f:(fun line iexpr ->
-      (match iexpr with
-      | Iexp_copyvar(_, _, arg) ->
+    List.iteri func.pf_code ~f:(fun line iins ->
+      (match iins with
+      | Iins_copyvar(_, _, arg) ->
           Hashtbl.set copy_defs ~key:line ~data:arg
       | _ -> ())
     );
@@ -139,42 +139,42 @@ let rec propagate_copies globals func =
     let map_variables line vars =
       List.map vars ~f:(map_variable line)
     in
-    let new_code = List.mapi func.pf_code ~f:(fun line iexpr ->
-      (match iexpr with
-      | Iexp_setvar (_, _, _) -> iexpr
-      | Iexp_copyvar (it, res, arg) ->
+    let new_code = List.mapi func.pf_code ~f:(fun line iins ->
+      (match iins with
+      | Iins_setvar (_, _, _) -> iins
+      | Iins_copyvar (it, res, arg) ->
           let new_arg = map_variable line arg in
           if not (Hash_set.mem copies_used line) && not (equal_ivariable arg new_arg) then
             (* Invalidate the copydef. We loop this whole analysis to give this copydef a chance to be useful later *)
             (Hashtbl.remove copy_defs line;
-            Iexp_copyvar(it, res, map_variable line arg))
+            Iins_copyvar(it, res, map_variable line arg))
           else
-            iexpr
-      | Iexp_return (it, arg) -> Iexp_return(it, map_variable line arg)
-      | Iexp_unop (it, unop, res, arg) -> Iexp_unop(it, unop, res, map_variable line arg)
-      | Iexp_binop (it, binop, res, arg1, arg2) -> Iexp_binop(it, binop, res, map_variable line arg1, map_variable line arg2)
-      | Iexp_newclosure (_, _, _, _) -> iexpr
-      | Iexp_fillclosure (itt, res, args) -> Iexp_fillclosure(itt, res, map_variables line args)
-      | Iexp_callclosure (ift, out, clo, arg) -> Iexp_callclosure(ift, out, map_variable line clo, map_variable line arg)
-      | Iexp_calldirect (out, name, itt, args) -> Iexp_calldirect(out, name, itt, map_variables line args)
-      | Iexp_startblock _ -> iexpr
-      | Iexp_endblock _ -> iexpr
-      | Iexp_exitblock _ -> iexpr
-      | Iexp_exitblockif (block, arg) -> Iexp_exitblockif(block, map_variable line arg)
-      | Iexp_startif (block, arg) -> Iexp_startif(block, map_variable line arg)
-      | Iexp_else _ -> iexpr
-      | Iexp_endif _ -> iexpr
-      | Iexp_startloop (_, _) -> iexpr
-      | Iexp_endloop (_, _) -> iexpr
-      | Iexp_pushtuple (itt, res, args) -> Iexp_pushtuple(itt, res, map_variables line args)
-      | Iexp_loadtupleindex (itt, id, res, tup) -> Iexp_loadtupleindex(itt, id, res, map_variable line tup)
-      | Iexp_pushconstruct (itt, res, id, args) -> Iexp_pushconstruct(itt, res, id, map_variables line args)
-      | Iexp_loadconstructindex (itt, id, res, tup) -> Iexp_loadconstructindex(itt, id, res, map_variable line tup)
-      | Iexp_loadconstructid (res, tup) -> Iexp_loadconstructid(res, map_variable line tup)
-      | Iexp_newbox (it, unbox, box) -> Iexp_newbox(it, map_variable line unbox, box)
-      | Iexp_updatebox (it, unbox, box) -> Iexp_updatebox(it, map_variable line unbox, map_variable line box)
-      | Iexp_unbox (it, box, unbox) -> Iexp_unbox(it, map_variable line box, unbox)
-      | Iexp_fail -> iexpr)
+            iins
+      | Iins_return (it, arg) -> Iins_return(it, map_variable line arg)
+      | Iins_unop (it, unop, res, arg) -> Iins_unop(it, unop, res, map_variable line arg)
+      | Iins_binop (it, binop, res, arg1, arg2) -> Iins_binop(it, binop, res, map_variable line arg1, map_variable line arg2)
+      | Iins_newclosure (_, _, _, _) -> iins
+      | Iins_fillclosure (itt, res, args) -> Iins_fillclosure(itt, res, map_variables line args)
+      | Iins_callclosure (ift, out, clo, arg) -> Iins_callclosure(ift, out, map_variable line clo, map_variable line arg)
+      | Iins_calldirect (out, name, itt, args) -> Iins_calldirect(out, name, itt, map_variables line args)
+      | Iins_startblock _ -> iins
+      | Iins_endblock _ -> iins
+      | Iins_exitblock _ -> iins
+      | Iins_exitblockif (block, arg) -> Iins_exitblockif(block, map_variable line arg)
+      | Iins_startif (block, arg) -> Iins_startif(block, map_variable line arg)
+      | Iins_else _ -> iins
+      | Iins_endif _ -> iins
+      | Iins_startloop (_, _) -> iins
+      | Iins_endloop (_, _) -> iins
+      | Iins_pushtuple (itt, res, args) -> Iins_pushtuple(itt, res, map_variables line args)
+      | Iins_loadtupleindex (itt, id, res, tup) -> Iins_loadtupleindex(itt, id, res, map_variable line tup)
+      | Iins_pushconstruct (itt, res, id, args) -> Iins_pushconstruct(itt, res, id, map_variables line args)
+      | Iins_loadconstructindex (itt, id, res, tup) -> Iins_loadconstructindex(itt, id, res, map_variable line tup)
+      | Iins_loadconstructid (res, tup) -> Iins_loadconstructid(res, map_variable line tup)
+      | Iins_newbox (it, unbox, box) -> Iins_newbox(it, map_variable line unbox, box)
+      | Iins_updatebox (it, unbox, box) -> Iins_updatebox(it, map_variable line unbox, map_variable line box)
+      | Iins_unbox (it, box, unbox) -> Iins_unbox(it, map_variable line box, unbox)
+      | Iins_fail -> iins)
     )
     in let new_func = {
       func with
@@ -227,20 +227,20 @@ let rec eliminate_tuple_loads globals func =
     let fa = Analysis.analyse_function globals func in
     let tup_map = Hashtbl.create (module Int) in
     let construct_map = Hashtbl.create (module Int) in
-    List.iteri func.pf_code ~f:(fun line iexpr ->
-      (match iexpr with
-      | Iexp_pushtuple (_, _, vars) ->
+    List.iteri func.pf_code ~f:(fun line iins ->
+      (match iins with
+      | Iins_pushtuple (_, _, vars) ->
           Hashtbl.set tup_map ~key:line ~data:(Array.of_list vars)
-      | Iexp_pushconstruct (_, _, id, vars) ->
+      | Iins_pushconstruct (_, _, id, vars) ->
           Hashtbl.set construct_map ~key:line ~data:((id, Array.of_list vars))
       | _ -> ())
     );
     let rds = Analysis.reaching_definitions fa in
     let changed = ref false in
-    let new_code = List.mapi func.pf_code ~f:(fun line iexpr ->
+    let new_code = List.mapi func.pf_code ~f:(fun line iins ->
       let line_defs = Hashtbl.find_exn rds line in
-      (match iexpr with
-      | Iexp_loadtupleindex (itt, index, dest, tup) ->
+      (match iins with
+      | Iins_loadtupleindex (itt, index, dest, tup) ->
           let tup_def_opt = Analysis.unique_reaching_definition line_defs tup in
           (match tup_def_opt with
           | Some(def_line) ->
@@ -250,10 +250,10 @@ let rec eliminate_tuple_loads globals func =
                   let source_var = Array.get tup_vars index in
                   let var_typ = List.nth_exn itt index in
                   changed := true;
-                  (Iexp_copyvar(var_typ, dest, source_var))
-              | None -> iexpr)
-          | None -> iexpr)
-      | Iexp_loadconstructindex (itt, index, dest, construct) ->
+                  (Iins_copyvar(var_typ, dest, source_var))
+              | None -> iins)
+          | None -> iins)
+      | Iins_loadconstructindex (itt, index, dest, construct) ->
           let construct_def_opt = Analysis.unique_reaching_definition line_defs construct in
           (match construct_def_opt with
           | Some(def_line) ->
@@ -263,10 +263,10 @@ let rec eliminate_tuple_loads globals func =
                   let source_var = Array.get construct_vars index in
                   let var_typ = List.nth_exn itt index in
                   changed := true;
-                  (Iexp_copyvar(var_typ, dest, source_var))
-              | None -> iexpr)
-          | None -> iexpr)
-      | Iexp_loadconstructid (dest, construct) ->
+                  (Iins_copyvar(var_typ, dest, source_var))
+              | None -> iins)
+          | None -> iins)
+      | Iins_loadconstructid (dest, construct) ->
           let construct_def_opt = Analysis.unique_reaching_definition line_defs construct in
           (match construct_def_opt with
           | Some(def_line) ->
@@ -274,10 +274,10 @@ let rec eliminate_tuple_loads globals func =
               (match construct_data_opt with
               | Some((construct_id, _)) ->
                   changed := true;
-                  (Iexp_setvar(It_int, dest, Int.to_string construct_id))
-              | None -> iexpr)
-          | None -> iexpr)
-      | _ -> iexpr)
+                  (Iins_setvar(It_int, dest, Int.to_string construct_id))
+              | None -> iins)
+          | None -> iins)
+      | _ -> iins)
     )
     in
     let result_func = { func with pf_code = new_code } in
@@ -297,17 +297,17 @@ let rec eliminate_dead_code globals func =
     let fa = Analysis.analyse_function globals func in
     let (_, lva_out) = Analysis.live_variables fa in
     let changed = ref false in
-    let new_code = List.filter_mapi func.pf_code ~f:(fun line iexpr ->
+    let new_code = List.filter_mapi func.pf_code ~f:(fun line iins ->
       let live_vars = Hashtbl.find_exn lva_out line in
-      let assign_var_opt, _ = Analysis.instr_vars iexpr in
+      let assign_var_opt, _ = Analysis.instr_vars iins in
       match assign_var_opt with
       | Some(assign) ->
-          if (ivariable_is_local assign) && (not (Set.mem live_vars assign)) && (not (Analysis.can_side_effect iexpr)) then
+          if (ivariable_is_local assign) && (not (Set.mem live_vars assign)) && (not (Analysis.can_side_effect iins)) then
             (changed := true;
             None)
           else
-            Some(iexpr)
-      | None -> Some(iexpr))
+            Some(iins)
+      | None -> Some(iins))
     in
     let result_func = { func with pf_code = new_code } in
     if !changed then
@@ -327,44 +327,44 @@ let rec eliminate_redundant_refs globals func =
     let target_vars = Hash_set.of_list (module IVariable) (Vars.get_ivariables func.pf_vars) in
     (* Remove argument variables as if these are refs, they allow external side effects *)
     List.iter fa.fa_args ~f:(Hash_set.remove target_vars);
-    List.iter func.pf_code ~f:(fun iexpr ->
-      match iexpr with
-      | Iexp_newbox(_, unboxed, _) ->
+    List.iter func.pf_code ~f:(fun iins ->
+      match iins with
+      | Iins_newbox(_, unboxed, _) ->
           Hash_set.remove target_vars unboxed
-      | Iexp_updatebox(_, unboxed, _) ->
+      | Iins_updatebox(_, unboxed, _) ->
           Hash_set.remove target_vars unboxed
-      | Iexp_unbox(_, _, unboxed) ->
+      | Iins_unbox(_, _, unboxed) ->
           Hash_set.remove target_vars unboxed
       | _ ->
-          let assign_opt, used = Analysis.instr_vars iexpr in
+          let assign_opt, used = Analysis.instr_vars iins in
           List.iter ((Option.to_list assign_opt) @ used) ~f:(Hash_set.remove target_vars)
     );
     let changed = ref false in
     let vars_ref = ref func.pf_vars in
-    let new_code = List.map func.pf_code ~f:(fun iexpr ->
-      match iexpr with
-      | Iexp_newbox(it, unboxed, ((_, bname) as boxed)) ->
+    let new_code = List.map func.pf_code ~f:(fun iins ->
+      match iins with
+      | Iins_newbox(it, unboxed, ((_, bname) as boxed)) ->
           if Hash_set.mem target_vars boxed then
             (changed := true;
             let vars = !vars_ref in
             let vars1 = Vars.change_var_type vars bname it in
             vars_ref := vars1;
-            (Iexp_copyvar(it, boxed, unboxed)))
+            (Iins_copyvar(it, boxed, unboxed)))
           else
-            iexpr
-      | Iexp_updatebox(it, unboxed, boxed) ->
+            iins
+      | Iins_updatebox(it, unboxed, boxed) ->
           if Hash_set.mem target_vars boxed then
             (changed := true;
-            (Iexp_copyvar(it, boxed, unboxed)))
+            (Iins_copyvar(it, boxed, unboxed)))
           else
-            iexpr
-      | Iexp_unbox(it, boxed, unboxed) ->
+            iins
+      | Iins_unbox(it, boxed, unboxed) ->
           if Hash_set.mem target_vars boxed then
             (changed := true;
-            (Iexp_copyvar(it, unboxed, boxed)))
+            (Iins_copyvar(it, unboxed, boxed)))
           else
-            iexpr
-      | _ -> iexpr
+            iins
+      | _ -> iins
     )
     in
     let result_func = {
@@ -388,16 +388,16 @@ let eliminate_unreachable_blocks globals (func : ifunction) =
       if bb.bb_start_line = 0 || (List.length bb.bb_pred) > 0 then
         Array.to_list bb.bb_code
       else
-        List.filter_map (Array.to_list bb.bb_code) ~f:(fun iexpr ->
+        List.filter_map (Array.to_list bb.bb_code) ~f:(fun iins ->
           (* It is still possible for an unreachable basic block to have essential control structure markers in it *)
-          match iexpr with
-          | Iexp_startloop _ -> Some(iexpr)
-          | Iexp_endloop _ -> Some(iexpr)
-          | Iexp_startif _ -> Some(iexpr)
-          | Iexp_else _ -> Some(iexpr)
-          | Iexp_endif _ -> Some(iexpr)
-          | Iexp_startblock _ -> Some(iexpr)
-          | Iexp_endblock _ -> Some(iexpr)
+          match iins with
+          | Iins_startloop _ -> Some(iins)
+          | Iins_endloop _ -> Some(iins)
+          | Iins_startif _ -> Some(iins)
+          | Iins_else _ -> Some(iins)
+          | Iins_endif _ -> Some(iins)
+          | Iins_startblock _ -> Some(iins)
+          | Iins_endblock _ -> Some(iins)
           | _ -> None
         )
     )

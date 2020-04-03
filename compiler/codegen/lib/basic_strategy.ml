@@ -21,53 +21,53 @@ let codegen_setvar (scope, name) =
 let codegen_getvar (scope, name) =
   (iscope_to_string scope) ^ ".get " ^ name
 
-let rec codegen_iexpr_list (state : state) lst =
-  let codes = List.map lst ~f:(codegen_iexpr state) in
+let rec codegen_iins_list (state : state) lst =
+  let codes = List.map lst ~f:(codegen_iins state) in
   String.concat ~sep:"\n" codes
 
-and codegen_iexpr (state : state) (expr : iexpression) =
+and codegen_iins (state : state) (expr : iinstruction) =
   match expr with
-  | Iexp_setvar (ityp, var, str_rep) ->
+  | Iins_setvar (ityp, var, str_rep) ->
       (codegen_const ityp str_rep) ^ "\n" ^
       (codegen_setvar var)
-  | Iexp_copyvar(_, res, arg) ->
+  | Iins_copyvar(_, res, arg) ->
       (codegen_getvar arg) ^ "\n" ^
       (codegen_setvar res)
-  | Iexp_return(_, arg) ->
+  | Iins_return(_, arg) ->
       (codegen_getvar arg)
-  | Iexp_unop (ityp, unop, res, arg) -> codegen_unop ityp unop res arg
-  | Iexp_binop (ityp, binop, res, arg1, arg2) -> codegen_binop ityp binop res arg1 arg2
-  | Iexp_newclosure (ift, func_name, itt, var) -> codegen_newclosure state ift func_name itt var
-  | Iexp_fillclosure(itt, var, arg_lst) -> codegen_fillclosure state itt var arg_lst
-  | Iexp_callclosure(_, res, clo, arg) -> codegen_callclosure res clo arg
-  | Iexp_calldirect(res, name, itt, arg) -> codegen_calldirect state res name itt arg
-  | Iexp_startblock (name) ->
+  | Iins_unop (ityp, unop, res, arg) -> codegen_unop ityp unop res arg
+  | Iins_binop (ityp, binop, res, arg1, arg2) -> codegen_binop ityp binop res arg1 arg2
+  | Iins_newclosure (ift, func_name, itt, var) -> codegen_newclosure state ift func_name itt var
+  | Iins_fillclosure(itt, var, arg_lst) -> codegen_fillclosure state itt var arg_lst
+  | Iins_callclosure(_, res, clo, arg) -> codegen_callclosure res clo arg
+  | Iins_calldirect(res, name, itt, arg) -> codegen_calldirect state res name itt arg
+  | Iins_startblock (name) ->
       "block " ^ name
-  | Iexp_endblock(name) ->
+  | Iins_endblock(name) ->
       "end " ^ name
-  | Iexp_exitblock(name) -> "br " ^ name
-  | Iexp_exitblockif(name, cond) ->
+  | Iins_exitblock(name) -> "br " ^ name
+  | Iins_exitblockif(name, cond) ->
       (codegen_getvar cond) ^ "\n" ^
       "br_if " ^ name
-  | Iexp_startif(name, cond) ->
+  | Iins_startif(name, cond) ->
       (codegen_getvar cond) ^ "\n" ^
       "if " ^ name
-  | Iexp_else(name) ->
+  | Iins_else(name) ->
       "else " ^ name
-  | Iexp_endif(name) ->
+  | Iins_endif(name) ->
       "end " ^ name
-  | Iexp_startloop(break, continue) -> codegen_startloop state break continue
-  | Iexp_endloop(break, continue) -> codegen_endloop state break continue
-  | Iexp_pushtuple(itt, res, args) -> codegen_pushtuple state itt res args
-  | Iexp_loadtupleindex (itt, index, res, arg) -> codegen_tupleindex ~boxed:true itt index 0 res arg
-  | Iexp_pushconstruct (itt, res, id, arg_vars) ->
+  | Iins_startloop(break, continue) -> codegen_startloop state break continue
+  | Iins_endloop(break, continue) -> codegen_endloop state break continue
+  | Iins_pushtuple(itt, res, args) -> codegen_pushtuple state itt res args
+  | Iins_loadtupleindex (itt, index, res, arg) -> codegen_tupleindex ~boxed:true itt index 0 res arg
+  | Iins_pushconstruct (itt, res, id, arg_vars) ->
       codegen_construct state itt res id arg_vars
-  | Iexp_loadconstructindex (itt, index, res, arg) -> codegen_tupleindex ~boxed:true (It_int :: itt) (index + 1) 0 res arg
-  | Iexp_loadconstructid(res, arg) -> codegen_tupleindex ~boxed:false [It_int] 0 0 res arg
-  | Iexp_newbox(ityp, unbox, box) -> codegen_box ityp unbox box
-  | Iexp_updatebox(ityp, unbox, box) -> codegen_updatebox ityp unbox box
-  | Iexp_unbox(ityp, box, unbox) -> codegen_unbox ityp box unbox
-  | Iexp_fail -> "unreachable"
+  | Iins_loadconstructindex (itt, index, res, arg) -> codegen_tupleindex ~boxed:true (It_int :: itt) (index + 1) 0 res arg
+  | Iins_loadconstructid(res, arg) -> codegen_tupleindex ~boxed:false [It_int] 0 0 res arg
+  | Iins_newbox(ityp, unbox, box) -> codegen_box ityp unbox box
+  | Iins_updatebox(ityp, unbox, box) -> codegen_updatebox ityp unbox box
+  | Iins_unbox(ityp, box, unbox) -> codegen_unbox ityp box unbox
+  | Iins_fail -> "unreachable"
 
 and codegen_unop ityp unop res arg =
   let watyp = itype_to_watype ityp in
@@ -152,19 +152,19 @@ and codegen_calldirect _state res name _itt args =
   (codegen_setvar res)
 
 and codegen_block state name code_lst =
-  let wa_lst = codegen_iexpr_list state code_lst in
+  let wa_lst = codegen_iins_list state code_lst in
   "block " ^ name ^ "\n" ^
   wa_lst ^ "\n" ^
   "end " ^ name
 
 and codegen_ifthenelse state name cond tcode ecode_opt =
-  let wa_tcode = codegen_iexpr_list state tcode in
+  let wa_tcode = codegen_iins_list state tcode in
   (codegen_getvar cond) ^ "\n" ^
   "if " ^ name ^ "\n" ^
   wa_tcode ^ "\n" ^
   (match ecode_opt with
   | Some(ecode) ->
-      let wa_ecode = codegen_iexpr_list state ecode in
+      let wa_ecode = codegen_iins_list state ecode in
       "else\n" ^ wa_ecode ^ "\n"
   | None -> "") ^
   "end"
@@ -256,5 +256,5 @@ let codegen_ifunction_code (wrap_table : string_int_map) (func : ifunction) =
     vars = func.pf_vars
   }
   in
-  let func_code = codegen_iexpr_list state func.pf_code in
+  let func_code = codegen_iins_list state func.pf_code in
   (state.vars, func_code)

@@ -39,7 +39,7 @@ let add_named_var ?global:(global = false) (state : state) name typ =
 let quick_temp_var (state : state) typ =
   update_vars state (Vars.add_temp_var state.vars typ)
 
-(* Gives a new vars and list of iexpression *)
+(* Gives a new vars and list of iinstruction *)
 let rec transform_expr (state: state) (expr: texpression) =
   let ityp = stoitype expr.texp_type in
   match expr.texp_desc with
@@ -48,11 +48,11 @@ let rec transform_expr (state: state) (expr: texpression) =
       (var_id, [])
   | Texp_constant(str) ->
       let var = quick_temp_var state ityp in
-      (var, [Iexp_setvar(ityp, var, str)])
+      (var, [Iins_setvar(ityp, var, str)])
   | Texp_let (rf, tvb_list, expr) ->
-      let tvb_iexprs = transform_value_bindings state rf tvb_list in
-      let (res, in_iexprs) = transform_expr state expr in
-      (res, tvb_iexprs @ in_iexprs)
+      let tvb_iinss = transform_value_bindings state rf tvb_list in
+      let (res, in_iinss) = transform_expr state expr in
+      (res, tvb_iinss @ in_iinss)
   | Texp_fun (_, _) -> raise (IntermediateFailure "Perform closure conversion first")
   | Texp_apply (fexpr, args) -> transform_apply state expr.texp_type fexpr args
   | Texp_special (mode, name, args) -> transform_special state expr.texp_type mode name args
@@ -62,7 +62,7 @@ let rec transform_expr (state: state) (expr: texpression) =
       let tuple_lincode = List.concat tuple_codelst in
       let var_name = update_vars state (Vars.add_temp_var state.vars It_pointer) in
       let ituptype = tupletoitype expr.texp_type in
-      (var_name, tuple_lincode @ [Iexp_pushtuple(ituptype, var_name, tuple_vars)])
+      (var_name, tuple_lincode @ [Iins_pushtuple(ituptype, var_name, tuple_vars)])
   | Texp_construct (name, ls) -> transform_construct state name ls
   | Texp_ifthenelse (i, t, e_opt) ->
       let block_name = update_vars state (Vars.add_block state.vars) in
@@ -74,20 +74,20 @@ let rec transform_expr (state: state) (expr: texpression) =
           let res = quick_temp_var state ityp in
           (res,
             icode
-            @ [Iexp_startif(block_name, ires)]
+            @ [Iins_startif(block_name, ires)]
             @ tcode
-            @ [Iexp_copyvar(ityp, res, tres);
-               Iexp_else(block_name)]
+            @ [Iins_copyvar(ityp, res, tres);
+               Iins_else(block_name)]
             @ ecode
-            @ [Iexp_copyvar(ityp, res, eres);
-               Iexp_endif(block_name)]
+            @ [Iins_copyvar(ityp, res, eres);
+               Iins_endif(block_name)]
           )
       | None ->
           (tres,
             icode
-            @ [Iexp_startif(block_name, ires)]
+            @ [Iins_startif(block_name, ires)]
             @ tcode
-            @ [Iexp_endif(block_name)]
+            @ [Iins_endif(block_name)]
           ))
   | Texp_while(cond, inner) ->
       transform_while state cond inner
@@ -115,16 +115,16 @@ and transform_value_bindings_nonrecursive ?global:(global = false) state tvb_lis
 and transform_pat_escape state escape test_var =
   match escape with
   | [] -> []
-  | [Iexp_exitblock(leave_block)] ->
-      [Iexp_exitblockif(leave_block, test_var)]
+  | [Iins_exitblock(leave_block)] ->
+      [Iins_exitblockif(leave_block, test_var)]
   | _ ->
       let escape_block = update_vars state (Vars.add_block state.vars) in
-      [Iexp_startif(escape_block, test_var)]
+      [Iins_startif(escape_block, test_var)]
       @ escape
-      @ [Iexp_endif(escape_block)]
+      @ [Iins_endif(escape_block)]
 
 and transform_pat ?check:(check = true)
-                  ?escape:(escape = [Iexp_fail])
+                  ?escape:(escape = [Iins_fail])
                   ?boxed:(boxed = false)
                   ?global:(global = false)
                   state
@@ -137,9 +137,9 @@ and transform_pat ?check:(check = true)
       let ityp = stoitype pat.tpat_type in
       let named_var = add_named_var ~global:global state name ityp in
       if (boxed && (itype_needs_box ityp)) then
-        [Iexp_unbox(ityp, var, named_var)]
+        [Iins_unbox(ityp, var, named_var)]
       else
-      [Iexp_copyvar(ityp, named_var, var)]
+      [Iins_copyvar(ityp, named_var, var)]
   | Tpat_constant(const) ->
       (* This would be shorthand for an equality check, e.g. evaluate this and make sure it's equal to 3 *)
       if check then
@@ -149,13 +149,13 @@ and transform_pat ?check:(check = true)
         let escape_code = transform_pat_escape state escape test_var in
         if (boxed && (itype_needs_box ityp)) then
           let unbox_var = quick_temp_var state ityp in
-            [Iexp_unbox(ityp, var, unbox_var);
-            Iexp_setvar(ityp, const_var, const);
-            Iexp_binop(ityp, Ibin_ne, test_var, unbox_var, const_var)]
+            [Iins_unbox(ityp, var, unbox_var);
+            Iins_setvar(ityp, const_var, const);
+            Iins_binop(ityp, Ibin_ne, test_var, unbox_var, const_var)]
           @ escape_code
         else
-            [Iexp_setvar(ityp, const_var, const);
-            Iexp_binop(ityp, Ibin_ne, test_var, var, const_var)]
+            [Iins_setvar(ityp, const_var, const);
+            Iins_binop(ityp, Ibin_ne, test_var, var, const_var)]
           @ escape_code
       else []
   | Tpat_tuple(plist) ->
@@ -163,7 +163,7 @@ and transform_pat ?check:(check = true)
       let code = transform_listi plist ~f:(fun pos tpat ->
         let pvar = quick_temp_var state It_poly in
         let pat_code = transform_pat ~check:check ~escape:escape ~boxed:true ~global:global state tpat pvar in
-        (Iexp_loadtupleindex(ituptype, pos, pvar, var) :: pat_code))
+        (Iins_loadtupleindex(ituptype, pos, pvar, var) :: pat_code))
       in
       code
   | Tpat_construct (name, plist) ->
@@ -174,9 +174,9 @@ and transform_pat ?check:(check = true)
           let const_var = quick_temp_var state It_int in
           let test_var = quick_temp_var state It_bool in
           let escape_code = transform_pat_escape state escape test_var in
-            [Iexp_loadconstructid(id_var, var);
-            Iexp_setvar(It_int, const_var, Int.to_string construct.index);
-            Iexp_binop(It_int, Ibin_ne, test_var, id_var, const_var)]
+            [Iins_loadconstructid(id_var, var);
+            Iins_setvar(It_int, const_var, Int.to_string construct.index);
+            Iins_binop(It_int, Ibin_ne, test_var, id_var, const_var)]
           @ escape_code
         else []
       in
@@ -185,7 +185,7 @@ and transform_pat ?check:(check = true)
         transform_listi plist ~f:(fun pos cpat ->
           let pvar = quick_temp_var state It_poly in
           let pat_code = transform_pat ~check:check ~escape:escape ~boxed:true ~global:global state cpat pvar in
-          (Iexp_loadconstructindex(ituptype, pos, pvar, var) :: pat_code))
+          (Iins_loadconstructindex(ituptype, pos, pvar, var) :: pat_code))
       in
       (check_code @ destruct_code)
 
@@ -212,7 +212,7 @@ and transform_value_bindings_recursive ?global:(global = false) state tvb_list =
   let new_closure_code = transform_list details
                                     ~f:(fun (rec_name, func_name, iftype, ituptype, _) ->
     let var_name = add_named_var ~global:global state rec_name It_pointer in
-    [Iexp_newclosure(iftype, func_name, ituptype, var_name)]
+    [Iins_newclosure(iftype, func_name, ituptype, var_name)]
   )
   in
   let fill_closure_code = transform_list details
@@ -225,7 +225,7 @@ and transform_value_bindings_recursive ?global:(global = false) state tvb_list =
     in
     let (tuple_varlst, tuple_codelst) = transform_tupleargs ~poly_box:false state tuple_expr in
     let tuple_lincode = List.concat tuple_codelst in
-    tuple_lincode @ [Iexp_fillclosure(ituptype, var_name, tuple_varlst)]
+    tuple_lincode @ [Iins_fillclosure(ituptype, var_name, tuple_varlst)]
   )
   in
   new_closure_code @ fill_closure_code
@@ -239,26 +239,26 @@ and transform_match state st_res_typ expr cases =
   let inner_code = transform_list cases ~f:(fun case ->
     let case_block = update_vars state (Vars.add_block state.vars) in
     (* These instructions check and destructure the pattern *)
-    let pat_code = transform_pat ~check:true ~escape:([Iexp_exitblock(case_block)])
+    let pat_code = transform_pat ~check:true ~escape:([Iins_exitblock(case_block)])
                                             state case.tc_lhs expr_var
     in
     (* Case expression, possibly using variables from the pattern *)
     let (matched_var, matched_code) = transform_expr state case.tc_rhs in
     let inside_block = pat_code @ matched_code @
-                       [Iexp_copyvar(result_type, result_var, matched_var);
-                       Iexp_exitblock(match_block)]
+                       [Iins_copyvar(result_type, result_var, matched_var);
+                       Iins_exitblock(match_block)]
     in
-      [Iexp_startblock(case_block)]
+      [Iins_startblock(case_block)]
     @ inside_block
-    @ [Iexp_endblock(case_block)]
+    @ [Iins_endblock(case_block)]
   )
   in
   (result_var,
     expr_code
-    @ [Iexp_startblock(match_block)]
+    @ [Iins_startblock(match_block)]
     @ inner_code
-    @ [Iexp_fail;
-       Iexp_endblock(match_block)]
+    @ [Iins_fail;
+       Iins_endblock(match_block)]
   )
 
 and transform_apply state _typ fexpr args =
@@ -288,7 +288,7 @@ and transform_special state typ mode name args =
       (match loop_info with
       | Some((break_block, _)) ->
           let res = quick_temp_var state It_unit in
-          (res, [Iexp_setvar(It_unit, res, "()"); Iexp_exitblock(break_block)])
+          (res, [Iins_setvar(It_unit, res, "()"); Iins_exitblock(break_block)])
       | None ->
           raise (IntermediateFailure("No loop named " ^ name)))
   | Tspec_continueloop ->
@@ -296,7 +296,7 @@ and transform_special state typ mode name args =
       match loop_info with
       | Some((_, continue_block)) ->
           let res = quick_temp_var state It_unit in
-          (res, [Iexp_setvar(It_unit, res, "()"); Iexp_exitblock(continue_block)])
+          (res, [Iins_setvar(It_unit, res, "()"); Iins_exitblock(continue_block)])
       | None ->
           raise (IntermediateFailure("No loop named " ^ name))
 
@@ -310,20 +310,20 @@ and transform_op state name args =
       (match ityp with
       | It_float ->
           let res = quick_temp_var state ityp in
-          (res, arg_code @ [Iexp_unop(ityp, Iun_neg, res, List.nth_exn arg_vars 0)])
+          (res, arg_code @ [Iins_unop(ityp, Iun_neg, res, List.nth_exn arg_vars 0)])
       | _ ->
           let const_var = quick_temp_var state ityp in
           let res = quick_temp_var state ityp in
           (res,
-            [Iexp_setvar(ityp, const_var, "0")]
+            [Iins_setvar(ityp, const_var, "0")]
             @ arg_code
-            @ [Iexp_binop(ityp, Ibin_sub, res, const_var, List.nth_exn arg_vars 0)]))
+            @ [Iins_binop(ityp, Ibin_sub, res, const_var, List.nth_exn arg_vars 0)]))
   | "ref" ->
       let (data_var, box_code) = transform_box state typ (List.nth_exn arg_vars 0) in
       let ref_var = update_vars state (Vars.add_temp_var state.vars It_pointer) in
       (ref_var, arg_code
       @ box_code
-      @ [Iexp_newbox(It_poly, data_var, ref_var)])
+      @ [Iins_newbox(It_poly, data_var, ref_var)])
   | "!" ->
       let ref_var = List.nth_exn arg_vars 0 in
       let data_var = update_vars state (Vars.add_temp_var state.vars It_poly) in
@@ -334,7 +334,7 @@ and transform_op state name args =
       in
       let (unbox_var, unbox_code) = transform_unbox state ref_typ data_var in
       (unbox_var, arg_code
-      @ [Iexp_unbox(It_poly, ref_var, data_var)]
+      @ [Iins_unbox(It_poly, ref_var, data_var)]
       @ unbox_code)
   | ":=" ->
       let ref_typ =
@@ -347,11 +347,11 @@ and transform_op state name args =
       let unit_var = quick_temp_var state It_unit in
       (unit_var, arg_code
       @ box_code
-      @ [Iexp_updatebox(It_poly, data_var, ref_var);
-         Iexp_setvar(It_unit, unit_var, "()")])
+      @ [Iins_updatebox(It_poly, data_var, ref_var);
+         Iins_setvar(It_unit, unit_var, "()")])
   | "not" ->
       let res = quick_temp_var state It_bool in
-      (res, (arg_code @ [Iexp_unop(ityp, Iun_eqz, res, List.nth_exn arg_vars 0)]))
+      (res, (arg_code @ [Iins_unop(ityp, Iun_eqz, res, List.nth_exn arg_vars 0)]))
   | _ ->
     let (bop, res_typ) =
       (match name with
@@ -375,7 +375,7 @@ and transform_op state name args =
       | _ -> raise (IntermediateFailure "Unsupported binary operation"))
     in
     let res = quick_temp_var state res_typ in
-    (res, (arg_code @ [Iexp_binop(ityp, bop, res, List.nth_exn arg_vars 0, List.nth_exn arg_vars 1)]))
+    (res, (arg_code @ [Iins_binop(ityp, bop, res, List.nth_exn arg_vars 0, List.nth_exn arg_vars 1)]))
 
 (* Transforms an expression
  * If that expression is a tuple, do not add the final pushtuple instruction *)
@@ -419,8 +419,8 @@ and transform_mk_closure state typ name args =
   let var_name = update_vars state (Vars.add_temp_var state.vars It_pointer) in
   (var_name,
     tuple_lincode
-    @ [Iexp_newclosure(iftype, name, ituptype, var_name);
-      Iexp_fillclosure(ituptype, var_name, tuple_vars)]
+    @ [Iins_newclosure(iftype, name, ituptype, var_name);
+      Iins_fillclosure(ituptype, var_name, tuple_vars)]
   )
 
 and transform_direct_apply state typ name args =
@@ -441,7 +441,7 @@ and transform_direct_apply state typ name args =
   in
   (unbox_var,
     tuple_lincode
-    @ [Iexp_calldirect(var_name, name, ituptype, tuple_vars)]
+    @ [Iins_calldirect(var_name, name, ituptype, tuple_vars)]
     @ unbox_code
   )
 
@@ -458,7 +458,7 @@ and transform_box state typ unbox_var =
   if itype_needs_box ityp then
     let box_var = update_vars state (Vars.add_temp_var state.vars It_poly) in
     (box_var,
-      [Iexp_newbox(ityp, unbox_var, box_var)]
+      [Iins_newbox(ityp, unbox_var, box_var)]
     )
   else (unbox_var, [])
 
@@ -467,7 +467,7 @@ and transform_unbox state typ box_var =
   if itype_needs_box ityp then
     let unbox_var = update_vars state (Vars.add_temp_var state.vars ityp) in
     (unbox_var,
-      [Iexp_unbox(ityp, box_var, unbox_var)]
+      [Iins_unbox(ityp, box_var, unbox_var)]
     )
   else (box_var, [])
 
@@ -486,7 +486,7 @@ and transform_apply_closure state typ var_name args =
             let (final_result, final_code) = loop btyp arg_list' unbox_var in
             (final_result,
               arg_code
-              @ [Iexp_callclosure((iatyp, ibtyp), result_var, prev_result, arg_var)]
+              @ [Iins_callclosure((iatyp, ibtyp), result_var, prev_result, arg_var)]
               @ unbox_code
               @ final_code
             )
@@ -502,7 +502,7 @@ and transform_construct state name ls =
   let tuple_lincode = List.concat tuple_codelst in
   (var_name,
     tuple_lincode
-    @ [Iexp_pushconstruct(ituptype, var_name, constr.index, tuple_vars)]
+    @ [Iins_pushconstruct(ituptype, var_name, constr.index, tuple_vars)]
   )
 
 
@@ -514,10 +514,10 @@ and transform_named_loop state name args =
   let _, inner_code = transform_expr state inner in
   let final_var = quick_temp_var state It_unit in
   (final_var,
-    [Iexp_startloop(break_block, continue_block)]
+    [Iins_startloop(break_block, continue_block)]
     @ inner_code
-    @ [Iexp_endloop(break_block, continue_block);
-       Iexp_setvar(It_unit, final_var, "()")]
+    @ [Iins_endloop(break_block, continue_block);
+       Iins_setvar(It_unit, final_var, "()")]
   )
 
 
@@ -529,16 +529,16 @@ and transform_while state cond inner =
   let continue_block = update_vars state (Vars.add_block state.vars) in
   let loop_inside =
     cond_code
-    @ [Iexp_unop(It_bool, Iun_eqz, test_var, cond_var);
-       Iexp_exitblockif(break_block, test_var)]
+    @ [Iins_unop(It_bool, Iun_eqz, test_var, cond_var);
+       Iins_exitblockif(break_block, test_var)]
     @ inner_code
   in
   let final_var = quick_temp_var state It_unit in
   (final_var,
-    [Iexp_startloop(break_block, continue_block)]
+    [Iins_startloop(break_block, continue_block)]
     @ loop_inside
-    @ [Iexp_endloop(break_block, continue_block);
-       Iexp_setvar(It_unit, final_var, "()")]
+    @ [Iins_endloop(break_block, continue_block);
+       Iins_setvar(It_unit, final_var, "()")]
   )
 
 and transform_for state var_opt min max dir inner =
@@ -559,25 +559,25 @@ and transform_for state var_opt min max dir inner =
   in
   let pre_loop =
     min_code
-    @ [Iexp_copyvar(It_int, for_var, min_var)]
+    @ [Iins_copyvar(It_int, for_var, min_var)]
     @ max_code
   in
   let test_var = quick_temp_var state It_bool in
   let const_1_var = quick_temp_var state It_int in
   let loop_inside =
-    [Iexp_binop(It_int, (if is_forwards then Ibin_gt else Ibin_lt), test_var, for_var, max_var);
-     Iexp_exitblockif(break_block, test_var)]
+    [Iins_binop(It_int, (if is_forwards then Ibin_gt else Ibin_lt), test_var, for_var, max_var);
+     Iins_exitblockif(break_block, test_var)]
     @ inner_code
-    @ [Iexp_setvar(It_int, const_1_var, "1");
-       Iexp_binop(It_int, (if is_forwards then Ibin_add else Ibin_sub), for_var, for_var, const_1_var)]
+    @ [Iins_setvar(It_int, const_1_var, "1");
+       Iins_binop(It_int, (if is_forwards then Ibin_add else Ibin_sub), for_var, for_var, const_1_var)]
   in
   let final_var = quick_temp_var state It_unit in
   (final_var,
     pre_loop
-    @ [Iexp_startloop(break_block, continue_block)]
+    @ [Iins_startloop(break_block, continue_block)]
     @ loop_inside
-    @ [Iexp_endloop(break_block, continue_block);
-       Iexp_setvar(It_unit, final_var, "()")]
+    @ [Iins_endloop(break_block, continue_block);
+       Iins_setvar(It_unit, final_var, "()")]
   )
 
 
@@ -612,7 +612,7 @@ let transform_function globals func_map context (fd : Functions.func_data) =
   let arg_code = transform_pat state fd.fd_pat Vars.function_arg in
   let (result_var, expr_code) = transform_expr state fd.fd_expr in
   let return_type = stoitype fd.fd_expr.texp_type in
-  (state.vars, (arg_code @ expr_code @ [Iexp_return(return_type, result_var)]))
+  (state.vars, (arg_code @ expr_code @ [Iins_return(return_type, result_var)]))
 
 
 let fix_globals globals locals code =
@@ -627,7 +627,7 @@ let fix_globals globals locals code =
         | Some(_) -> (Local, name)
         | None -> raise (IntermediateFailure ("Missing local variable " ^ name)))
   in
-  iexpression_list_map_vars ~f:fix_var code
+  iinstruction_list_map_vars ~f:fix_var code
 
 let transform_program ?debug:(debug = false) context next_var structure =
   let (funcs_1, fast_1, next_var1) = Functions.func_transform_structure next_var structure in
