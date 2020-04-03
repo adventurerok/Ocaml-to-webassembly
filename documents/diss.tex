@@ -8,6 +8,10 @@
 \usepackage{a4}
 \usepackage{verbatim}
 
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{mathtools}
+
 \usepackage{minted}
 %\usemintedstyle{colorful}
 \setmintedinline{breaklines}
@@ -15,6 +19,8 @@
 \newcommand{\textinline}{\mintinline{text}}
 \newcommand{\cinline}{\mintinline{C}}
 \newcommand{\camlinline}{\mintinline{OCaml}}
+
+\newcommand\note[1]{\textcolor{blue}{#1}}
 
 \input{epsf}                            % to allow postscript inclusions
 % On thor and CUS read top of file:
@@ -85,7 +91,7 @@ extent for a comparable purpose.
 \section*{Acknowledgements}
 
 % TODO List the people that check the diss
-LIST THE PEOPLE THAT CHECK THE DISS
+\note{LIST THE PEOPLE THAT CHECK THE DISS}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Proforma, table of contents and list of figures
@@ -103,29 +109,29 @@ LIST THE PEOPLE THAT CHECK THE DISS
 		Project Title:      & \bf Compiling OCaml to WebAssembly \\
 		Examination:        & \bf Part II Computer Science, May 2020        \\
 		Word Count:         & \bf FILL IN LATER  \\
-		Project Originator: & Tim Jones                \\
+		Project Originator: & Timothy M. Jones                \\
 		Supervisor:         & Tobias Kohn            \\ 
 	\end{tabular}
 }
-\footnotetext[1]{This word count was computed
-	by {\tt detex diss.tex | tr -cd '0-9A-Za-z $\tt\backslash$n' | wc -w}
-}
-\stepcounter{footnote}
+%\footnotetext[1]{This word count was computed
+%	by {\tt detex diss.tex | tr -cd '0-9A-Za-z $\tt\backslash$n' | wc -w}
+%}
+%\stepcounter{footnote}
 
 
 \section*{Original Aims of the Project}
 
-At most 100 words describing the original aims of the project. 
+\note{At most 100 words describing the original aims of the project.}
 
 
 \section*{Work Completed}
 
-At most 100 words summarising the work completed. 
+\note{At most 100 words summarising the work completed.}
 
 \section*{Special Difficulties}
 
-At most 100 words describing any special difficulties that you faced.
-(In most cases the special difficulties entry will say “None”.) 
+\note{At most 100 words describing any special difficulties that you faced.
+(In most cases the special difficulties entry will say “None”.) }
 
 \tableofcontents
 
@@ -142,12 +148,9 @@ At most 100 words describing any special difficulties that you faced.
 \pagestyle{headings}
 
 \chapter{Introduction}
-% The Introduction should explain the principal motivation for the project. Show how the work fits into the broad area of surrounding Computer Science and give a brief survey of previous related work. It should generally be unnecessary to quote at length from technical papers or textbooks. If a simple bibliographic reference is insufficient, consign any lengthy quotation to an appendix. 
-
+\note{The Introduction should explain the principal motivation for the project. Show how the work fits into the broad area of surrounding Computer Science and give a brief survey of previous related work. It should generally be unnecessary to quote at length from technical papers or textbooks. If a simple bibliographic reference is insufficient, consign any lengthy quotation to an appendix.}
 %TODO EXPLAIN KEY MOTIVATION, IDEAS BEHIND PROJECT
-
-
-My motivation for this project is to learn how to make a compiler, and to learn both about programming in OCaml and about WebAssembly.
+My motivation for this project is to learn how to make a compiler. Compilers are essential to computing because they enable the transformation of code from high-level languages that are intuitive for use by us, into low-level machine understandable code than can actually be executed, and writing a compiler is a substantial software project that invokes many areas of computer science such as type theory and program analysis.
 
 % TODO PREVIOUS RELATED WORK
 
@@ -156,7 +159,9 @@ OCaml\cite{OCaml} is a strongly-typed functional programming language, with some
 
 \section{WebAssembly}
 % copied from project proposal
-WebAssembly\cite{webassembly} is a stack-based binary instruction format for the web with the main goal of improving performance  of  more  computationally  intensive  functions  in  web  applications.   It  does not  replace  JavaScript  as  there  (currently)  is  no  way  to  perform  tasks  such  as  DOM manipulation  directly  from  WebAssembly  -  it  is  expected  that  a  JavaScript  application might  call  some  functions  implemented  in  WebAssembly  to  perform  computation,  and then display the results itself.
+WebAssembly\cite{webassembly} is a stack-based binary instruction format for the web with the main goal of improving performance  of  more  computationally  intensive  functions  in  web  applications.  It  does not  replace  JavaScript  as  there  (currently)  is  no  way  to  perform  tasks  such  as  DOM manipulation  directly  from  WebAssembly  ---  it  is  expected  that  a  JavaScript  application might  call  some  functions  implemented  in  WebAssembly  to  perform  computation,  and then display the results itself.
+\\\\
+The current MVP (minimum viable product) version of WebAssembly is designed for compiling languages like C and C++ that do not use garbage collection and can make do without exceptions. There are extensions currently being developed to add support for these features, but progress on these is slow as they often depend on other extensions, for instance the garbage collection extension depends on extensions for reference types and typed function references, which seek to expand the WebAssembly type system so for instance a garbage collector would understand the shape of data in memory.\cite{Wgce}
 \\\\
 WebAssembly was chosen as the target instruction set because it is relatively new, with few compilers out there currently targeting it, and it is likely to grow in popularity in the future as more extensions are added to it that make it more viable to be used - such as support for garbage collection and exceptions.
 % TODO
@@ -169,7 +174,9 @@ WebAssembly was chosen as the target instruction set because it is relatively ne
 \section{Related Work}
 % TODO Js\_of\_ocaml, A
 
-There have been a few attempts to compile OCaml to WebAssembly already, such as by Sander Spies\cite{Awbfo}, who modified the existing backend of the OCaml Compiler to target WebAssembly. This differs from my approach in that I am implementing an entire compiler from the type-checker through to the WebAssembly code generator. While Sander's approach allows them to leverage the existing features and optimisations of the OCaml compiler, their approach didn't fit with my goals of learning how to write an entire compiler - including type checker, intermediate translations and optimisations by myself, and such an approach likely wouldn't constitute enough work for a Part II project.
+There have been a few attempts to compile OCaml to WebAssembly already, such as by @SanderSpies\cite{Awbfo}, who modified the existing backend of the OCaml Compiler to target WebAssembly. Their attempt worked from the `CMM' --- the final stage of the OCaml compiler before code generation, modifying that to include extra type information for WebAssembly, and then doing code generation. This differs from my approach in that I am implementing almost an entire compiler from the type-checker through to the WebAssembly code generator, but excluding lexing/parsing.
+\\\\
+While Sander's approach allows them to leverage the existing features and optimisations of the OCaml compiler, their approach didn't fit with my goals of learning how to write an entire compiler - including type checker, intermediate translations and optimisations by myself, and such an approach likely wouldn't constitute enough work for a Part II project.
 
 
 \clearpage
@@ -177,15 +184,15 @@ There have been a few attempts to compile OCaml to WebAssembly already, such as 
 
 
 \chapter{Preparation}
-% Principally, this chapter should describe the work which was undertaken before code was written, hardware built or theories worked on. It should show how the project proposal was further refined and clarified, so that the Implementation stage could go smoothly rather than by trial and error.
+\note{Principally, this chapter should describe the work which was undertaken before code was written, hardware built or theories worked on. It should show how the project proposal was further refined and clarified, so that the Implementation stage could go smoothly rather than by trial and error.}
 
-% Throughout this chapter and indeed the whole dissertation, it is essential to demonstrate that a proper professional approach was employed.
+\note{Throughout this chapter and indeed the whole dissertation, it is essential to demonstrate that a proper professional approach was employed.}
 
-% The nature of this chapter will vary greatly from one dissertation to another but, underlining the professional approach, this chapter will very likely include a section headed “Requirements Analysis” and incorporate other references to software engineering techniques.
+\note{The nature of this chapter will vary greatly from one dissertation to another but, underlining the professional approach, this chapter will very likely include a section headed “Requirements Analysis” and incorporate other references to software engineering techniques.}
 
-% The chapter will cite any new programming languages and systems which had to be learnt and will mention complicated theories or algorithms which required understanding.
+\note{The chapter will cite any new programming languages and systems which had to be learnt and will mention complicated theories or algorithms which required understanding.}
 
-% It is essential to declare the Starting Point (see Section 7). This states any existing codebase or materials that your project builds on. The text here can commonly be identical to the text in your proposal, but it may enlarge on it or report variations. For instance, the true starting point may have turned out to be different from that declared in the proposal and such discrepancies must be explained. 
+\note{It is essential to declare the Starting Point (see Section 7). This states any existing codebase or materials that your project builds on. The text here can commonly be identical to the text in your proposal, but it may enlarge on it or report variations. For instance, the true starting point may have turned out to be different from that declared in the proposal and such discrepancies must be explained. }
 
 \section{Requirements}
 
@@ -200,15 +207,18 @@ The success criteria in the project proposal presents a clearly defined subset o
 \section{Components of the Compiler}
 
 
-\section{Libraries Used}
-
-
 \section{Working Environment and Tools Setup}
+Since I have both a laptop and desktop, I decided the best way to work on both would be to do the work remotely via a remote desktop application on a remote server. Both my laptop and desktop were configured to download backups from the server once per hour (if they were on), so if there proved to be a problem with the server, I could redeploy easily by uploading the backups to a new server if required.
+\\\\
+In addition, I used Git in order to keep a record of my work, to allow me to access previous versions of files, and to backup to GitHub
+
+\subsection{Dune}
 I chose to use the Dune\cite{Dune} build system for OCaml as it is the most widely-used build system for OCaml, and supports multi-module projects and dependencies installed via OPAM, the OCaml Package Manager.
 \\\\
-
-\begin{minipage}{\linewidth}
 Dune build files are specified in each directory a file called \textinline{dune}, with the top-level directory specifying the build file for the entire project, and subdirectories containing the build files for each module. These build files are specified in a LISP-like `s-expression' syntax, for instance here is the top-level build file of the project:
+\\\\
+\begin{minipage}{\linewidth}
+
 \begin{minted}{LISP}
 (executable
     (name toplevel)
@@ -224,59 +234,268 @@ The executable can be build by invoking \textinline{dune build toplevel.exe} in 
 
 % TODO Dune, Git
 
+\section{Libraries / Tools Used}
+\subsection{OCaml Compiler Libs}
+I used the official OCaml compiler libraries to perform lexing and parsing, which provide the same frontend as used by the official OCaml compiler. As the frontend of the official OCaml compiler is liable to change between releases, I stuck to version 4.08, which was the most recent version when I started the project but has now been succeeded by 4.09.
+\note{Citation needed}
+
+\subsection{Web Assembly Binary Toolkit}
+The Web Assembly Binary Toolkit is a separate tool which can compile WebAssembly Text Form (.wast files) outputted by my compiler to the WebAssembly Binary Format (.wasm files) that can be loaded by NodeJS/browsers.
+\note{Citation needed}
+
 \section{Starting Point}
-Below is the starting point as stated in my project proposal.
-% TODO copy from project proposal
-
-\subsection{OCaml and Compilers}
-I have done very little programming in OCaml previously, with the exception of coming up with some code samples when considering which features this compiler should support. However I have some experience in programming in Standard ML, a similar language, from Part IA Foundations of Computer Science.
+I had very little OCaml experience prior to this project, and no recent experience of writing compilers besides from writing a mathematical expression interpreter a few years ago. In addition, I had no experience of using WebAssembly, but I have plenty of experience writing JavaScript.
 \\\\
-I also have little previous experience in writing compilers. I have written basic lexers and parsers, and implemented a system for interpreting mathematical expressions, however I have no experience with a larger compiler that compiles to instructions instead of interpreting.
-
-\subsection{WebAssembly and the Web}
-I have no experience with WebAssembly with the exception of reading through some of the documentation in the weeks leading up to this proposal.
-\\\\
-I have a fair amount of experience with JavaScript and websites: I do not anticipate any issue with coming up with a suitable demonstration of the WASM produced by the compiler.
+I attempted to deal with some of these issues prior to starting the project by coming up with some OCaml samples for the compiler to compile in the future, and by setting up an OCaml workspace where I successfully figured out how to import the OCaml Compiler libraries, and learned to navigate the AST they use by writing a simple example that adds one to integer constants. I also read through the WebAssembly documentation to get a sense of which features would be a challenge to compile to WebAssembly.
 
 \clearpage
 \chapter{Implementation}
-% This chapter should describe what was actually produced: the programs which were written, the hardware which was built or the theory which was developed. Any design strategies that looked ahead to the testing stage might profitably be referred to (the professional approach again).
+\note{This chapter should describe what was actually produced: the programs which were written, the hardware which was built or the theory which was developed. Any design strategies that looked ahead to the testing stage might profitably be referred to (the professional approach again).}
 
-% Descriptions of programs may include fragments of high-level code but large chunks of code are usually best left to appendices or omitted altogether. Analogous advice applies to circuit diagrams.
+\note{Descriptions of programs may include fragments of high-level code but large chunks of code are usually best left to appendices or omitted altogether. Analogous advice applies to circuit diagrams.}
 
-% Draw attention to the parts of the work which are not your own. The Implementation Chapter should include a section labelled "Repository Overview". The repository overview should be around one page in length and should describe the high-level structure of the source code found in your source code Repository. It should describe whether the code was written from scratch or if it built on an existing project or tutorial. Making effective use of powerful tools and pre-existing code is often laudable, and will count to your credit if properly reported.
+\note{Draw attention to the parts of the work which are not your own. The Implementation Chapter should include a section labelled "Repository Overview". The repository overview should be around one page in length and should describe the high-level structure of the source code found in your source code Repository. It should describe whether the code was written from scratch or if it built on an existing project or tutorial. Making effective use of powerful tools and pre-existing code is often laudable, and will count to your credit if properly reported.}
 
-% It should not be necessary to give a day-by-day account of the progress of the work but major milestones may sometimes be highlighted with advantage. 
+\note{It should not be necessary to give a day-by-day account of the progress of the work but major milestones may sometimes be highlighted with advantage. }
 
 % TODO WORK DONE, ONE SECTION PER PART OF THE COMPILER
 
 \section{Front End}
+Lexing and parsing is handled by the OCaml Compiler Libs, which produces a \textinline{structure} object representing the AST of the entire program. This AST and the corresponding typed-AST, which I designed to be very similar (using the same names prefixed with a t), are used throughout the first half of the compilation process before intermediate translation occurs, and as such, I will give an overview of their components:
+\begin{itemize}
+	\item \textinline{(t)structure} A list of \textinline{(t)structure_item} representing the top-level items in a file.
+	\item \textinline{(t)structure_item} A single top-level item in a file. Can either be an \textinline{(t)expression} (e.g. for imperative code), a let binding consisting of a list of \textinline{(t)value_binding}, or a type definition consisting of a list of \textinline{type_decls}
+	\item \textinline{(t)expression} A unit of code that will produce a value. There are various types including identifiers, constants, match statements, function definitions and applications.
+	\item \textinline{(t)pattern} A structure of a value, that can be used both to test if a value conforms to this structure (e.g. in a match statement), and to destructure a value into separate variables (e.g. in a let binding). Can be an identifer, constant, tuple of several patterns, or a construct (effectively a named tuple).
+	\item \textinline{(t)value_binding} An expression and a pattern. The result of evaluating the expression is destructured and bound to the variables in the pattern, for instance in \camlinline{let x,y = (5 + 2, 3)} the pattern is \camlinline{(x, y)} and \camlinline{(5 + 2, 3)} is the expression
+\end{itemize}
+\note{Put the typed AST and the IR in an appendix?}
 
 \section{Type Checker}
+\note{
+	Does multiple things
+	\begin{itemize}
+		\item HM type inference, generating constraints and then unifying them
+		\item Builds up information about type definitions e.g. construct types and their constructors
+		\item Makes the typed-ast
+		\begin{itemize}
+			\item Small differences to make the typed-ast nicer to work with
+			\item Variables get additional unique ID
+			\item Patterns get a list of variables they define and their types
+			\item Value bindings get a similar list with the generalized types
+		\end{itemize}
+	\end{itemize}
+}
+The type-checker is responsible for translating the untyped AST into a typed-AST, and in doing so ensuring that the program is well typed, inferring types that are unknown. The main algorithm that I use is a inference algorithm based on the Hindley-Milner type system. This is a constraint based algorithm that builds up a set of constraints about types at different points in the program, and solves them to produce a unification mapping type-variables to types. My implementation was guided by an article about using Hindley-Milner in Haskell\cite{Hmi}.
+\\\\
+The definitions of the types I used are shown in Figure \ref{fig:types}. A \camlinline{scheme} is a special kind of type which I explain with let-bindings. Type constraints are implemented as \camlinline{scheme_type} pairs.
+\begin{figure}
+	\begin{minted}[linenos]{OCaml}
+	type tvalue = V_unit | V_int | V_bool | V_float
+	
+	type scheme_type =
+	| T_var of string (* Type variable *)
+	| T_val of tvalue
+	| T_tuple of scheme_type list
+	| T_constr of string * scheme_type list (* Constructs *)
+	| T_func of scheme_type * scheme_type (* Function type *)
+	
+	type scheme = Forall of String.Set.t * scheme_type
+	\end{minted}
+	\caption{The definition of types}
+	\label{fig:types}
+\end{figure}
+\\\\
+The main bulk of the algorithm is generating constraints for expressions and patterns. This is implemented as a depth-first traversal of the AST, generating types and constraints for the `leaves' of the tree and then using rules to generate these constraints for internal nodes in the tree. Some of these rules are shown in figure \ref{fig:typerules}, which uses type rules of the form $\Gamma \vdash e : t, C$, where $\Gamma$ is the type-context (stores the mapping of variables to types), e is the expression or pattern being typed, t is the type, and C is the list of constraints (with $@$ used to append lists). $ftv(\Gamma)$ is the set of free type variables in $\Gamma$.
+\begin{figure}
+	$$\begin{array}{cc}
+	\dfrac{x : f \in \Gamma \quad t = \text{instantiate(f)}}{\Gamma \vdash x : t, \{\}} \textsc{IdentExpr} &
+	\dfrac{a \notin ftv(\Gamma)}{\Gamma, x : a \vdash x : a, \{\}} \textsc{IdentPat}
+	\end{array}$$
+	$$\dfrac{\Gamma,\Gamma_1 \vdash p : t_1,\ C_1 \quad \Gamma, \Gamma_1 \vdash e : t_2,\ C_2}{\Gamma \vdash (\text{fun}\ p \rightarrow e) : t_1 \rightarrow t_2,\ C_1\ @\ C_2} \textsc{Fun}$$
+	$$\dfrac{\Gamma \vdash x : t_1,\ C_1 \qquad \Gamma \vdash y : t_2,\ C_2 \quad a \notin ftv(\Gamma)}{\Gamma \vdash x\ y : a,\ C_1\ @\  C_2 \ @\  [t_1 = t_2 \rightarrow a]} \textsc{Apply}$$
+	$$\dfrac{n \in \mathbb{N}}{\Gamma \vdash n : \text{int}, \{\}} \textsc{ConstantInt}$$
+	$$\Gamma, \Gamma_1 \vdash p : t_1, C_1 \quad \Gamma \vdash e_1 : t_2, C_2 \quad C_3 = C_1\ @\ C_2\ @\ [t_1 = t_2] \quad s = \text{solve}(C_3)$$
+	$$\text{For each variable added by p, we now substitute s into its type and generalize it over }$$
+	$$ \Gamma \text{ to produce } \Gamma_2, \text{ which is } \Gamma_1 \text{ with the generalizations}$$
+	$$\text{We extract outer constraints from } C_3 \text{ to produce } C_4$$
+	$$\dfrac{\Gamma, \Gamma_2 \vdash e_2 : t_3, C_5}{\Gamma \vdash \text{let}\ p = e_1\ \text{in}\ e_2 : t_3,\ C_4\ @\ C_5} \textsc{Let}$$
+	\caption{Some rules of my Hindley-Milner type system\note{Need to explain, also they are very complicated even before I introduce instantiation and generalization with let bindings. Also, inference for patterns takes an input context and produces an output context. A pattern adds a variable to a context, while a let binding would make that forall over it's free types (generalization). Best to make a multi-line let rule with an explanation of each part? And it's possible to have type variables that are not in ftv(Gamma) that are in use}}
+	\label{fig:typerules}
+\end{figure}
+
+
 
 \section{Lambda Lifting / Closure Conversion}
+%\note{Replace function definitions with mk\_closure, extracting function to it's own object. Track the free variables inside the function}
+
+Lambda Lifting and Closure Conversion is the process whereby function definitions are extracted from the AST, replacing the original definition site with a special operation that constructs a closure of the original function, passing in the required environment variables as needed.
+\begin{figure}[h]
+	\begin{minted}[linenos]{OCaml}
+(* Curried function definition *)
+let sum (x, y) (z, w) = x + y + z + w
+
+(* Curried function representation in AST *)
+let sum = (fun (x, y) -> (fun (z, w) -> x + y + z + w))
+
+(* Modified AST and extracted functions *)
+let sum = mk_closure $$f_sum ()
+$$f_sum (): fun arg_sum -> mk_closure $$f_sum-app (arg_sum)
+$$f_sum-app (arg_sum): fun arg_sum-app ->
+let (x, y) = arg_sum in
+let (z, w) = arg_sum-app in
+x + y + z + w
+	\end{minted}
+	\caption{Curried functions in closure conversion}
+	\label{fig:curried}
+\end{figure}
+\\\\
+This is achieved by walking the typed-AST. Each time a function definition is encountered, we must construct an extracted function definition, and modify the AST to include a make-closure operation. This is done in the following order, with figure \ref{fig:curried} used to illustrate:
+\begin{enumerate}
+	\item We give a unique name the function. There are three possible cases here:
+	\begin{itemize}
+		\item The function is defined in a let binding (e.g. \camlinline{sum}), in which case we use the name of the variable in the let binding.
+		\item The function is defined as the expression of another function. This occurs in curried functions which are represented in the AST as nested function definitions. In this case we take the name of the parent function, and append `-app'. (e.g. \camlinline{sum-app})
+		\item The function is defined anonymously, in which case we give it an anonymous name.
+	\end{itemize}
+	\item For curried functions, we create a new argument (single variable pattern) for each function (e.g. \camlinline{arg-sum}), and put let expressions to bind these arguments to the original patterns inside the body of the innermost function in the curried definition. This ensures that we only need to store one environment variable per curried argument inside the closures of deeper functions. For instance, \camlinline{arg-sum} is stored inside the closure for \camlinline{$$f_sum-app}, instead of needing to store both \camlinline{x} and \camlinline{y}.
+	
+	\item We recursively apply closure conversion to the expression of the function, to give us the expression to use in the extracted function definition.
+	\item We perform a depth-first search of this expression to determine the free variables, which will become `closure arguments' for the extracted function. For instance, \camlinline{arg-sum} is free inside the body of \camlinline{$$f_sum-app}, so it must become a closure argument for this extracted function.
+	\item We replace the function definition with a `special' make closure operation, which takes the name of the extracted function and the closure arguments as parameters. \camlinline{mkclosure $$f_sum-app (arg_sum)}
+	\item We create an object to represent the extracted function, which contains it's name, argument pattern, expression, and list of closure variables and their types.
+\end{enumerate}
+The modified top-level typed-AST, along with these extracted function definitions, are then used as the representation of the program until translation into the intermediate representation occurs.
+
+\section{Optimisations on Closure Converted Typed AST}
+I then perform two optimisations on this closure-converted typed-AST:
+\begin{itemize}
+	\item Direct Call Generation replaces applications of closures with direct calls of the corresponding function, if we can be sure the closure is always one of that function. This is the most effective optimisation I implement because it eliminates the overhead of closure calls, which involves wrapper functions to load the closure arguments from the closure before calling the actual function, and it can be applied to curried functions, enabling multiple arguments to be passed at once without constructing the intermediate closures.
+	\item Tail Call Optimisation. A function is tail-recursive if it is recursive (calls itself), but only calls itself as the very last operation to return a result, and never performs additional computation after calling itself. Tail-recursive functions can be modified to a loop instead of calling themselves, which avoids the function call overhead of putting an additional frame on the stack.
+\end{itemize}
+Both of these are implemented through rule-based analysis of abstract values.
+
+\subsection{Direct Call Generation}
+Direct Call Generation walks the AST, diving into functions at the location of their make closure operation, determining which expressions and variables at different point are certainly closures for a specific function, and which variables are available at each point. When a closure application is encountered, we do the following:
+\begin{enumerate}
+	\item Check if the value being applied is known to be a closure to a specific function.
+	\item Check if that function's closure variables are available. Because we do not rename closure variables inside functions, it suffices that if a variable e.g. \textinline{x#3} is available outside the closure, and is also a closure variable, then they refer to the same value.
+	\item If we have a single application, we can replace directly with a call that provides the necessary closure variables.
+	\item If we have a curried application, we must first determine the order to pass the arguments, and then we can pass all the arguments at once along with the closure variables.
+\end{enumerate}
+
+\subsection{Tail Call Optimisation}
+Before we can apply tail call optimisation to a function, we must first check if it is tail-recursive. To do this we use a rule-based analysis with three possible `types': simple, tail-recursive and recursive. A simple function returns a value without calling itself, a tail-recursive function calls itself only as the last thing it does before it returns, and a recursive function calls itself and then performs additional computation afterwards.
+\\\\
+The rules are quite simple:
+\begin{itemize}
+	\item Constants and calls to other functions have type \textinline{text} providing all the arguments are \textinline{simple}
+	\item Recursive calls to the same function have type \textinline{tailrec} providing all the arguments are \textinline{simple}.
+	\item An expression that performs computation on its subexpressions (e.g. addition) has type \textinline{simple} if all it's arguments are \textinline{simple}, otherwise it is \textinline{recursive}.
+	\item An expression that doesn't perform computation gives the worst type of it's subexpressions.
+\end{itemize}
+For instance, \camlinline{if simple then simple else tailrec} has type \textinline{tailrec} because it does not perform computation on the result of the \textinline{tailrec}, but \camlinline{if tailrec then simple else tailrec} has type \textinline{recursive} because it uses the result of the condition to determine which branch to choose.
+\\\\
+Once we have discovered a tail-recursive function, we then convert it to use a while loop as follows. Figure \ref{fig:tailrec} shows this in action:
+\begin{enumerate}
+	\item We create references for each argument, and for the result
+	\item Inside the body of the while loop, we start by loading the arguments from the references
+	\item We replace each tail call with loading the correct arguments into the references, and starting the loop body again (`continuing')
+	\item If we manage to compute the result, we store it inside the result reference
+	\item Once outside the loop, we simply dereference the result reference
+\end{enumerate}
+This gives us our iterative function body. It can also introduce `broken, unreachable' code, for instance the \camlinline{continue} statement is of type unit so it must return a unit type which is then assigned to result which is not of type unit. This code is clearly broken, but it is also unreachable as the \camlinline{continue} statement restarts the loop instead, so unreachable code analysis is required to eliminate it later. Equally broken is the creation of the result reference if our function does not return an integer, however this can be eliminated via dead-code elimination.
+
+\begin{figure}[h]
+\begin{minipage}{0.5\linewidth}
+	\begin{minted}[linenos]{OCaml}
+let rec fact n acc =
+  if n = 0 then
+    acc
+  else
+    fact (n - 1) (n * acc)
+	\end{minted}
+\end{minipage}
+\begin{minipage}{0.5\linewidth}
+\begin{minted}[linenos]{OCaml}
+let fact n_in acc_in =
+  let n_ref = ref n_in in
+  let acc_ref = ref acc_in in
+  let result_ref = ref 0 in
+  while true do
+    let n = !n_ref in
+    let acc = !acc_ref in
+    let result =
+      if n = 0 then
+        acc
+      else
+        (n_ref := n - 1;
+        acc_ref := n * acc;
+        continue)
+    in
+    result_ref := result
+  done
+  !result_ref
+\end{minted}
+\end{minipage}
+	\caption{Before and after of tail-recursion optimisation}
+	\label{fig:tailrec}
+\end{figure}
 
 \section{Intermediate Translation}
+\note{
+	What are the interesting cases?
+	\begin{itemize}
+		\item Mutual recursion: Create closures and then fill them up
+		\item Patterns: Generate code to both check them and destructure
+		\item Match Statements: Go through each block, exit the block early if match fails, until we finish a block and then can exit the whole match
+		\item Boxing of floats
+	\end{itemize}
+}
+
+\section{Optimisations on the IR}
+\note{
+	\begin{itemize}
+		\item Unreachable code elimination (needed due to tail-call optimiser's generation of broken unreachable code e.g. assign unit to float because the `break' statement / tail-call gives a unit type)
+		\item Copy propagation (if we have y=x, followed by z = y+y we can replace y with x. By far the most complex of the IR optimisations because we need to know both that the most recent definition of y is y=x, and that x has not changed since then)
+		\item Tuple load elimination (If we know a tuple is (x,y,z), then instead of loading it when matching with (a,b,c), we can just do a=x, b=y, z=c directly. Also works on constructs)
+		\item Dead code elimination (removes useless units, and also tuple creation when tuple usage eliminated by tuple load elimination)
+		\item Ref elimination (eliminates refs that are used as mutable variables only, by using mutable variables)
+	\end{itemize}
+}
 
 \section{Code Generation}
+\note{The stack code generator removes redundant variable saving/loading. Also representation of closures and tuples/constructs/refs}
 
-\section{Overview of the files}
+\section{Summary}
+\note{Summarise all that is done with a sentence per stage}
+
+\section{Overview of the Files}
 
 \clearpage
 \chapter{Evaluation}
-% This is where Assessors will be looking for signs of success and for evidence of thorough and systematic evaluation as discussed in Section 8.3. Sample output, tables of timings and photographs of workstation screens, oscilloscope traces or circuit boards may be included. A graph that does not indicate confidence intervals will generally leave a professional scientist with a negative impression.
+\note{This is where Assessors will be looking for signs of success and for evidence of thorough and systematic evaluation as discussed in Section 8.3. Sample output, tables of timings and photographs of workstation screens, oscilloscope traces or circuit boards may be included. A graph that does not indicate confidence intervals will generally leave a professional scientist with a negative impression.}
 
-% As with code, voluminous examples of sample output are usually best left to appendices or omitted altogether.
+\note{As with code, voluminous examples of sample output are usually best left to appendices or omitted altogether.}
 
-% There are some obvious questions which this chapter will address. How many of the original goals were achieved? Were they proved to have been achieved? Did the program, hardware, or theory really work?
+\note{There are some obvious questions which this chapter will address. How many of the original goals were achieved? Were they proved to have been achieved? Did the program, hardware, or theory really work?}
 
-% Assessors are well aware that large programs will very likely include some residual bugs. It should always be possible to demonstrate that a program works in simple cases and it is instructive to demonstrate how close it is to working in a really ambitious case. 
+\note{Assessors are well aware that large programs will very likely include some residual bugs. It should always be possible to demonstrate that a program works in simple cases and it is instructive to demonstrate how close it is to working in a really ambitious case.}
 
 \section{Success Criteria}
+\note{Say that it has been satisfied, and list the success criteria}
 
 \section{End To End Tester}
+\note{Could do with a -all mode to test all combinations of disabled / enabled optimisations}
 
 \section{Benchmarks / Benchmark Driven Optimisations}
+\note{
+	\begin{itemize}
+		\item Gcd: main target of optimisations. Went from 122ms to 8ms thanks to all of them.
+		\item others: they improve (e.g. especially with direct call generation), but not as much with the other optimisations
+		\item Make some performance graphs of the final result vs other execution engines, and of different optimisations enabled/disabled (can do both time and memory for that).
+	\end{itemize}
+}
 
 % TODO DONT FORGET ALL THE WORK IN MAKING THE CODE SHORTER
 
@@ -288,7 +507,15 @@ I have a fair amount of experience with JavaScript and websites: I do not antici
 
 \clearpage
 \chapter{Conclusion}
-% This chapter is likely to be very short and it may well refer back to the Introduction. It might properly explain how you would have planned the project if starting again with the benefit of hindsight. 
+\note{This chapter is likely to be very short and it may well refer back to the Introduction. It might properly explain how you would have planned the project if starting again with the benefit of hindsight. }
+
+\note{
+	\begin{itemize}
+		\item SSA based IR?
+		\item More optimisations e.g. reverse copy-propagation, mutually recursive tail call optimisation, better match statements, better code generator that can re-order non side effecting instructions, speedy append implementation
+		\item More feature support: strings, records and mutable records, modules, named/optional function arguments, using the operators as function arguments (e.g. List.reduce ~f:(+) nums to sum a list)
+	\end{itemize}
+}
 
 % TODO CONCLUDE THE DOCUMENT
 % TODO IVE SUCCESSFULLY MET SUCCESS CRITERIA, SUMMARY OF EVERYTHING
