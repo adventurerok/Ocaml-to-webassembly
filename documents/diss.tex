@@ -260,6 +260,8 @@ I attempted to deal with some of these issues prior to starting the project by c
 
 % TODO WORK DONE, ONE SECTION PER PART OF THE COMPILER
 
+
+
 \section{Front End}
 Lexing and parsing is handled by the OCaml Compiler Libs, which produces a \textinline{structure} object representing the AST of the entire program. This AST and the corresponding typed-AST, which I designed to be very similar (using the same names prefixed with a t), are used throughout the first half of the compilation process before intermediate translation occurs, and as such, I will give an overview of their components:
 \begin{itemize}
@@ -270,6 +272,10 @@ Lexing and parsing is handled by the OCaml Compiler Libs, which produces a \text
 	\item \textinline{(t)value_binding} An expression and a pattern. The result of evaluating the expression is destructured and bound to the variables in the pattern, for instance in \camlinline{let x,y = (5 + 2, 3)} the pattern is \camlinline{(x, y)} and \camlinline{(5 + 2, 3)} is the expression
 \end{itemize}
 \note{Put the typed AST and the IR in an appendix?}
+
+
+
+
 
 \section{Type Checker}
 \note{
@@ -326,6 +332,8 @@ The main bulk of the algorithm is generating constraints for expressions and pat
 
 
 
+
+
 \section{Lambda Lifting / Closure Conversion}
 %\note{Replace function definitions with mk\_closure, extracting function to it's own object. Track the free variables inside the function}
 
@@ -366,6 +374,10 @@ This is achieved by walking the typed-AST. Each time a function definition is en
 	\item We create an object to represent the extracted function, which contains it's name, argument pattern, expression, and list of closure variables and their types.
 \end{enumerate}
 The modified top-level typed-AST, along with these extracted function definitions, are then used as the representation of the program until translation into the intermediate representation occurs.
+
+
+
+
 
 \section{Optimisations on Closure Converted Typed AST}
 I then perform two optimisations on this closure-converted typed-AST:
@@ -442,36 +454,193 @@ let fact n_in acc_in =
 	\label{fig:tailrec}
 \end{figure}
 
+
+
+
+
 \section{Intermediate Translation}
-\note{
-	What are the interesting cases?
-	\begin{itemize}
-		\item Mutual recursion: Create closures and then fill them up
-		\item Patterns: Generate code to both check them and destructure
-		\item Match Statements: Go through each block, exit the block early if match fails, until we finish a block and then can exit the whole match
-		\item Boxing of floats
-	\end{itemize}
-}
+%\note{
+%	What are the interesting cases?
+%	\begin{itemize}
+%		\item Mutual recursion: Create closures and then fill them up
+%		\item Patterns: Generate code to both check them and destructure
+%		\item Match Statements: Go through each block, exit the block early if match fails, until we finish a block and then can exit the whole match
+%		\item Boxing of floats
+%	\end{itemize}
+%}
+
+The original intermediate representation of the compiler was designed to target WebAssembly as simply as possible, and as such was structured and stack-based, with instructions pushing and popping values to the stack, and even containing lists of sub-instructions to evaluate arguments. While this approach allowed me to reach my success criteria quickly, it would have been very difficult to optimise for due to the need to keep track of what data is on the stack while doing analyses.
+\\\\
+Thus I introduced a new `variable-based' unstructured intermediate representation, where each instruction can take multiple variables as arguments and write a result to one variable, and structure is represented by special begin and end instructions for each structure.
+\\\\
+The full IR is quite large, but its instructions can be broken down into one of four categories:
+\begin{itemize}
+	\item Basic operations on variables, e.g. assigning a constant to a variable, copying a variable, and unary and binary operations
+	\item Control instructions: those that mark the start and end of blocks, loops and if-else statements, and instructions for jumping out of these structures, as well as the special `fail' instruction.
+	\item Memory operations, e.g. creating and loading from tuples/constructs/boxes and closures
+	\item A closure-calling instruction, and a direct-call instruction.
+\end{itemize}
+The types used in the Intermediate Representation are shown in \ref{fig:ir}, with the full IR available in Appendix B.
+\begin{figure}[h]
+	\begin{minted}[linenos]{OCaml}
+type itype =
+(* Poly is the supertype of all types represented as i32 in WebAssembly *)
+| It_poly | It_bool | It_int | It_pointer | It_unit
+| It_float
+| It_none (* No type, used for functions with no return type *)
+	\end{minted}
+	\caption{An overview of the types used in the Intermediate Representation}
+	\label{fig:ir}
+\end{figure}
+Translation into the IR involves translating each function's expression into a list of these intermediate instructions. The top-level AST is translated into it's own sequence of instructions and packaged into a new special `init' function which must take no arguments and return no results, hence the inclusion of the \camlinline{It_none} type. Throughout the translation, we keep track of variables introduced (both temporary and named) and their types. Named variables in the top-level AST become global variables, while temporary variables introduced here become local variables of the init function.
+\\\\
+This transformation is handled in \textinline{intermediate.ml}, with two main functions:
+\begin{itemize}
+	\item \camlinline{transform_expr} Recursively transforms an expression into a list of instructions, and a variable for the result of the expression.
+	\item \camlinline{transform_pat} This takes a pattern and a variable, and generates a list of instructions that will both test the structure of the value is stored in the variable against the pattern, and destructure this value into new variables. For instance in \camlinline{let (3, a) = x} we will generate code to test the first element of x's tuple to ensure that it is 3, and assign the second element to the variable a.
+\end{itemize}
+The majority of the transformation is relatively straightforward, however a few cases required additional thought:
+
+\subsection{Closures and (Mutually) Recursive Functions}
+Recursive functions require their own closure to call themselves recursively, and the problem is made worse by mutually recursive functions that all require access to each others' closures. Mutually recursive definitions can occur inside expressions, and hence it is not always the case that these closures would be available as global values. This left two possible options:
+\begin{enumerate}
+	\item Create a new closure for the recursive function or its mutually recursive friends whenever a recursive call occurs, by using the closure variables passed in as arguments to the function.
+	\item Include recursive closures inside their own `closure variables'.
+\end{enumerate}
+I chose the second option because the first option would have been both less efficient, and more difficult to implement. In order to include closures inside their own `closure variables', there are two instructions to create closures. The first one, \textinline{Iins_newclosure}, creates a `new' empty closure for the specified function, while \textinline{Iins_fillclosure} takes an existing empty closure, and fills it up using the variables provided, one of which can be the variable storing the currently empty closure or currently empty closures of mutually recursive friends.
+
+\subsection{Match Statements}
+Match statements are handled through nested blocks. The outer block represents the entire match statement, while inner blocks represent individual cases of the match statement. In addition, a temporary variable is introduced to store the result of the entire match statement. The code for an individual case is as follows
+\begin{enumerate}
+	\item Code for the case's pattern, modified to replace fail instructions (indicating the pattern was not matched), with instructions to jump out of the case block and thus proceed with the next case.
+	\item Code for the case's expression
+	\item An instruction to copy the expression's result into the match statement's result
+	\item An instruction to jump out of the outer match statement block, and thus skip over the remaining cases
+\end{enumerate}
+In addition, a fail instruction is included after all the cases inside the match block to ensure that if no cases match, execution terminates with a failure.
+
+\subsection{Polymorphism}
+Polymorphism is implemented through the special intermediate type \camlinline{It_poly}, which indicates that a variable holds a polymorphic value. This type is used for the arguments and results of all closures, as when an arbitrary closure is called we cannot be sure whether it is a polymorphic function or not and thus must assume it is. It is also used for the contents of tuples, which can also be used polymorphically. 
+\\\\
+Types that are represented as 32-bit integers in WebAssembly, such as integers, units, booleans and pointers, are all subtypes of this polymorphic type, and hence values of these types can be directly stored in these variables and passed as arguments to functions. Floating point numbers however are not a subtype, as the assignment of a floating point value to an integer variable in WebAssembly is not allowed. Hence we have to `box' these floating-point values, meaning that we allocate a space in memory and store the floating-point value there, passing the pointer to this location instead.
+\\\\
+The result of the intermediate translation is a list of function objects, which contain the name, intermediate code, and list of variables used by that function. In addition, a list of global variables is produced.
+
+
+
+
 
 \section{Optimisations on the IR}
-\note{
-	\begin{itemize}
-		\item Unreachable code elimination (needed due to tail-call optimiser's generation of broken unreachable code e.g. assign unit to float because the `break' statement / tail-call gives a unit type)
-		\item Copy propagation (if we have y=x, followed by z = y+y we can replace y with x. By far the most complex of the IR optimisations because we need to know both that the most recent definition of y is y=x, and that x has not changed since then)
-		\item Tuple load elimination (If we know a tuple is (x,y,z), then instead of loading it when matching with (a,b,c), we can just do a=x, b=y, z=c directly. Also works on constructs)
-		\item Dead code elimination (removes useless units, and also tuple creation when tuple usage eliminated by tuple load elimination)
-		\item Ref elimination (eliminates refs that are used as mutable variables only, by using mutable variables)
-	\end{itemize}
-}
+%\note{
+%	\begin{itemize}
+%		\item Unreachable code elimination (needed due to tail-call optimiser's generation of broken unreachable code e.g. assign unit to float because the `break' statement / tail-call gives a unit type)
+%		\item Copy propagation (if we have y=x, followed by z = y+y we can replace y with x. By far the most complex of the IR optimisations because we need to know both that the most recent definition of y is y=x, and that x has not changed since then)
+%		\item Tuple load elimination (If we know a tuple is (x,y,z), then instead of loading it when matching with (a,b,c), we can just do a=x, b=y, z=c directly. Also works on constructs)
+%		\item Dead code elimination (removes useless units, and also tuple creation when tuple usage eliminated by tuple load elimination)
+%		\item Ref elimination (eliminates refs that are used as mutable variables only, by using mutable variables)
+%	\end{itemize}
+%}
+
+Before code generation, a second round of optimisations is performed. These optimisations are predominantly data-flow analyses. Data-flow analysis concerns the movement of data through program code, asking questions like `Will the value assigned here be used?' (Live Variable Analysis) and `Where could the current value of this variable have been assigned?' (Reaching Definitions). Unlike the first round of optimisations, which improved execution time at the expense of code size, these optimisations both improve execution time and decrease code size.
+\\\\
+Before data-flow analysis can be performed, function code must first be deconstructed into a basic-block graph. A basic block is a sequence of instructions that will always begin execution at the first instruction, and finish at the last, with no jumps out in-between. A conditional jump at the end of one basic block might mean that there are several possible blocks that could be executed next, and hence a graph is required to keep track of these.
+\\\\
+My approach to construct this graph is to first build a jump-table which records which lines have jumps and where they might jump to. From this we can extract all locations with incoming or outgoing jumps, and use these to split the code into these blocks. We can then use the table to determine the outgoing edges of the basic blocks, and from those record in each basic block its possible predecessor or successor basic blocks.
+
+\subsection{Data-Flow Analysis}
+My compiler then implements three forms of data-flow analysis for use in optimisations:
+\begin{itemize}
+	\item Live Variable Analysis: For each instruction $i$, the variable $x$ is syntactically live at that instruction if there exists an instruction $j$ that is reachable from $i$ without passing any assignments to $x$ and uses the value of $x$. There is another definition of liveness, semantic liveness, whereby a variable is life if it's value will affect the input/output behaviour of the program at some point in the future. As this is generally uncomputable, syntactic liveness is used as a safe approximation.
+	\item Reaching Definitions: For each instruction $i$, a set for each variable $x$ of instructions $j$ that assign to $x$ and for which there is a path from $j$ to $i$ without passing another assignment of $x$.
+	\item `Available Assignments': For each instruction $i$, a set for each variable $x$ of variables $y$ that, if assigned in an instruction that uses the value of $x$, the value of $x$ has not changed since that assignment to $y$ (but $y$ itself may have been reassigned). This analysis is similar to the more conventional Available Expressions analysis, except that instead of storing expressions for which their operands have not changed since they were computed, it stores the variables assigned from these expressions.
+\end{itemize}
+An example of these analyses is shown in figure \ref{fig:dataflow}. Line 0 is used to refer to the beginning of the function. Note that on line 8, $y$ is still in the available assignment set for $x$. This is correct, as in all cases where $x$ is assigned to $y$ (as in line 3), $x$ is not modified after this assignment.
+\begin{figure}[h]
+	\begin{minipage}{0.3\linewidth}
+	\begin{minted}[linenos, firstnumber=0]{python}
+myfunc(x):
+  y = 9
+  if cond:
+    y = x
+    y = 10
+  else:
+    x = 2
+    y = 4
+  return y
+	\end{minted}
+	\end{minipage}
+	\begin{minipage}{0.7\linewidth}
+		\begin{center}
+			\begin{tabular}{|c|c|c|c|}
+				\hline
+				Line & LVA (at end) & RDs (at start) & AAs (at start) \\
+				\hline
+				1 & $x$ & $(x, \{0\})$ & \\
+				\hline
+				3 & & $(x, \{0\}), (y, \{1\})$ & \\
+				4 & $y$ & $(x, \{0\}), (y, \{3\})$ & $(x, \{y\})$ \\
+				\hline
+				6 & & $(x, \{0\}), (y, \{1\})$ & \\
+				7 & $y$ & $(x, \{6\}), (y, \{1\})$ & \\
+				\hline
+				8 & & $(x, \{0, 6\}), (y, \{4, 7\})$ & $(x, \{y\})$ \\
+				\hline
+			\end{tabular}
+		\end{center}
+	\end{minipage}
+	\caption{An example of the three data-flow analyses}
+	\label{fig:dataflow}
+\end{figure}
+\\\\
+For each of these analyses, it is possible to define data-flow equations where we compute these sets for a line by taking either the union or intersection of the sets from all lines that are direct predecessors or successors of the line. The equations for reaching definitions analysis are as follows:
+\begin{align*}
+\text{in-defs}(i) \quad=&\quad \bigcup_{p\ \in\ \text{pred}(i)} \text{out-defs}(p) \\
+\text{out-defs}(i) \quad=&\quad (\text{in-defs}(i) \setminus \text{undef}(i)) \cup \text{def}(i)
+\end{align*}
+where $\text{undef}(i)$ and $\text{def}(i)$ depend on the instruction $i$. If $i$ does not assign a variable, they are both empty, otherwise if $i$ assigns to $x$, then $\text{undef}(i)$ is all previous assignments to $x$, while $\text{def}(i)$ is the new assignment to $x$, or $(x, \{i\})$. Similar equations can be given for the other analyses, using different def and undef functions: available assignments replaces the big-union with a big-intersection, and live-variables operates backwards using a union of the successor lines to compute the out-lva, and then computing in-lva from that.
+\\\\
+The algorithm for implementing these data-flow analysis follows from these equations: Put the set for each line to null initially, and iterate over all basic blocks applying these equations (and excluding nulls from intersections, an all null intersection gives the empty set) until there is an iteration in which nothing changes, and then return the result.
+
+\subsection{Transformations From These Analyses}
+These analyses allow me to implement a number of transformations:
+\begin{itemize}
+	\item Unreachable Code Elimination. Unreachable code is code that will never be executed, and hence it is safe to remove. A safe approximation of unreachable code is given by basic blocks that have no predecessors (and are not the first block of the function), and I eliminate the code in these blocks, taking care to retain structural instructions such as those that signify the end of an if-statement or `block'.
+	\item Dead Code Elimination. Dead code is code that may be executed, but produces a result that will never be used. Live Variable Analysis can be used, as if a variable is not live at the end of a line where it is assigned, that assignment is never used, and thus if that line contains no side-effects it can be eliminated.
+	\item Copy Propagation. Using the results of Reaching Definitions, it becomes possible to check when we see a use of a variable $y$, if the most recent definition of $y$ is $y = x$, and using Available Assignments, we can check that $x$'s value hasn't changed since that assignment. In this case, it is safe to replace a usage of $y$ with $x$. If all usages of $y$ are eliminated, the assignment $y = x$ can then be eliminated with Dead Code Elimination.
+	\item Tuple-load Elimination. Similar to copy-propagation, if we encounter the loading of a variable from a tuple $t$, e.g. loading of the 2nd element of a 3 element tuple, we can use Reaching Definitions to see if there is a unique assignment of $t$. If there is and it is of the form $t = (x_1, ..., x_n)$, we can then check using Available Assignments to make sure the $x_i$ we want has not been modified since, and if so we replace the load with $x_i$. If this eliminates all usages of $t$, Dead Code Elimination can then eliminate the construction of the tuple, which can result in a significant speedup. This optimisation is particularly useful when dealing with match statements over multiple variables, as it eliminates the creation of the tuple in that case.
+\end{itemize}
+
+\subsection{Other Transformations}
+In addition, I perform a transformation I call as `ref elimination'. If a reference is created inside a function, and then only used when it is updated or dereferenced, without being passed as an argument to another function, stored in memory or returned from the function, then the reference can be eliminated and instead a mutable variable is used, which eliminates the memory operations that go with using the reference, and results in a small but noticeable speedup.
+
+\subsection{Ordering of Transformations}
+Individually, each transformation is looped until it does not result in a change to the code. However, the order in which the transformations are performed can have a great effect on their effectiveness, for instance if Dead Code Analysis were run only before Tuple-load Elimination, we would not be able to eliminate the unused tuple assignments resulting from Tuple-Load Elimination.
+\\\\
+Therefore, I order the transformations by running each in order, but then running transformations that might benefit from an earlier transformation again after the earlier transformation. This results in some transformations being run many times, however I do not consider that a problem as the compiler is fast to execute for all samples.
 
 \section{Code Generation}
 \note{The stack code generator removes redundant variable saving/loading. Also representation of closures and tuples/constructs/refs}
 
+
+
+
+
 \section{Summary}
 \note{Summarise all that is done with a sentence per stage}
 
+
+
+
+
 \section{Overview of the Files}
 
+
+
+
+
+
+
+% CHAPTER
 \clearpage
 \chapter{Evaluation}
 \note{This is where Assessors will be looking for signs of success and for evidence of thorough and systematic evaluation as discussed in Section 8.3. Sample output, tables of timings and photographs of workstation screens, oscilloscope traces or circuit boards may be included. A graph that does not indicate confidence intervals will generally leave a professional scientist with a negative impression.}
@@ -546,9 +715,115 @@ Things in appendix A
 
 \clearpage
 
-\chapter{The Second Appendix}
+\chapter{The Intermediate Representation}
 
-Things in appendix B
+\note{TODO FIX THE COMMENTS, SOME ARE FROM OLD IR}
+
+\begin{minted}{OCaml}
+type itype =
+| It_poly | It_bool | It_int | It_pointer | It_unit
+| It_float
+| It_none
+
+type iunop =
+| Iun_neg (* Negate *)
+| Iun_eqz (* Equals zero *)
+
+type ibinop =
+| Ibin_add | Ibin_sub | Ibin_mul | Ibin_div | Ibin_rem (* Arithmetic *)
+| Ibin_and | Ibin_or (* Logic *)
+| Ibin_eq | Ibin_ne (* Equality *)
+| Ibin_lt | Ibin_le | Ibin_gt | Ibin_ge (* Comparison *)
+
+type iscope = Local | Global (* Variable scope *)
+
+type ivariable = iscope * string
+
+type iinstruction =
+(* Create a new var from a constant *)
+(* type of variable, name of variable *)
+| Iins_setvar of itype * ivariable * string
+(* Copy a variable into another *)
+(* type of variable, name of new variable, name of old variable *)
+| Iins_copyvar of itype * ivariable * ivariable
+(* Return var *)
+(* type of variable, name of variable *)
+| Iins_return of itype * ivariable
+(* Unary operation using one stack value *)
+(* type of operand, unary operation, result var, input var *)
+| Iins_unop of itype * iunop * ivariable * ivariable
+(* Binary operation using two stack values *)
+(* type of operands, binary operation *)
+| Iins_binop of itype * ibinop * ivariable * ivariable * ivariable
+(* Make a new closure for specified function and tuple type, and put it in given variable *)
+(* type of function, name of function, type of closure variables, variable to put closure in *)
+| Iins_newclosure of iftype * string * ituptype * ivariable
+(* Fill a closure in the named variable using the code to generate those values *)
+(* type of closure variables, name of variable, list of variables to copy in *)
+| Iins_fillclosure of ituptype * ivariable * ivariable list
+(* Call closure in variable using argument generated from code *)
+(* type of function, output variable, closure variable, variable for argument *)
+| Iins_callclosure of iftype * ivariable * ivariable * ivariable
+(* Directly call a function *)
+(* output variable, name of function, type of args, arg vars *)
+| Iins_calldirect of ivariable * string * ituptype * (ivariable list)
+(* Start a block *)
+(* name of block *)
+| Iins_startblock of string
+(* End a block *)
+(* name of block *)
+| Iins_endblock of string
+(* Exit from the named block *)
+(* name of block *)
+| Iins_exitblock of string
+(* Exit from the named block if variable is true *)
+(* name of block *)
+| Iins_exitblockif of string * ivariable
+(* Start an if statement *)
+(* name of block, condition var *)
+| Iins_startif of string * ivariable
+(* Else clause of an if statement *)
+(* name of block *)
+| Iins_else of string
+
+(* End an if statement *)
+(* name of block *)
+| Iins_endif of string
+(* Starts a loop, loops until an exitblock or exitblockif *)
+(* Name of escape block (to break to), name of loop block (to continue to) *)
+| Iins_startloop of string * string
+(* Ends a loop *)
+(* Name of break block, name of continue block *)
+| Iins_endloop of string * string
+(* Create a tuple from the given vars, push pointer to stack
+ * and put it in that variable *)
+(* type of tuple, name of variable, code to generate each part of tuple *)
+| Iins_pushtuple of ituptype * ivariable * ivariable list
+(* Pop tuple, push its value at index i to the stack *)
+(* type of tuple, index in tuple, output var, tuple var *)
+| Iins_loadtupleindex of ituptype * int * ivariable * ivariable
+(* Create a construct from the given vars, push pointer to stack and put it in variable *)
+(* type of construct arguments, name of variable, id of construct, arguments *)
+| Iins_pushconstruct of ituptype * ivariable * int * ivariable list
+(* Pop construct, push its value at index i to the stack *)
+(* type of construct arguments, index in arguments, output variable, tuple variable *)
+| Iins_loadconstructindex of ituptype * int * ivariable * ivariable
+(* Pop construct, push its id to the stack *)
+(* output variable, construct variable *)
+| Iins_loadconstructid of ivariable * ivariable
+(* Box a value (on stack) of a type that needs boxing, or for a ref *)
+(* unboxed type, unboxped variable, variable to store boxed result *)
+| Iins_newbox of itype * ivariable * ivariable
+(* Update a boxed value, useful for refs *)
+(* unboxed type, unboxped variable, boxed variable *)
+| Iins_updatebox of itype * ivariable * ivariable
+(* Unbox a value / dereference a ref *)
+(* unboxped type, wrapped variable, unboxped target variable *)
+| Iins_unbox of itype * ivariable * ivariable
+(* Fail *)
+(* No parameters *)
+| Iins_fail
+\end{minted}
 
 
 \clearpage
