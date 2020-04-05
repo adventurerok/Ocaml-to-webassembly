@@ -163,14 +163,14 @@ let instr_vars ?fill_closure_is_assign:(fcia = false) (iins : iinstruction) =
   | Iins_endif _ -> (None, [])
   | Iins_startloop (_, _) -> (None, [])
   | Iins_endloop (_, _) -> (None, [])
-  | Iins_pushtuple (_, res, args) -> (Some(res), args)
+  | Iins_newtuple (_, res, args) -> (Some(res), args)
   | Iins_loadtupleindex (_, _, res, arg) -> (Some(res), [arg])
-  | Iins_pushconstruct (_, res, _, args) -> (Some(res), args)
+  | Iins_newconstruct (_, res, _, args) -> (Some(res), args)
   | Iins_loadconstructindex (_, _, res, arg) -> (Some(res), [arg])
   | Iins_loadconstructid (res, arg) -> (Some(res), [arg])
-  | Iins_newbox (_, arg, res) -> (Some(res), [arg])
-  | Iins_updatebox (_, arg, box) -> (None, [arg; box])
-  | Iins_unbox (_, arg, res) -> (Some(res), [arg])
+  | Iins_newbox (_, res, arg) -> (Some(res), [arg])
+  | Iins_updatebox (_, box, arg) -> (None, [arg; box])
+  | Iins_unbox (_, res, arg) -> (Some(res), [arg])
   | Iins_fail -> (None, [])
 
 let can_side_effect (iins : iinstruction) =
@@ -193,9 +193,9 @@ let can_side_effect (iins : iinstruction) =
   | Iins_endif _ -> false
   | Iins_startloop (_, _) -> false
   | Iins_endloop (_, _) -> false
-  | Iins_pushtuple (_, _, _) -> false
+  | Iins_newtuple (_, _, _) -> false
   | Iins_loadtupleindex (_, _, _, _) -> false
-  | Iins_pushconstruct (_, _, _, _) -> false
+  | Iins_newconstruct (_, _, _, _) -> false
   | Iins_loadconstructindex (_, _, _, _) -> false
   | Iins_loadconstructid (_, _) -> false
   | Iins_newbox (_, _, _) -> false
@@ -540,7 +540,7 @@ let active_assignments fa =
             match Array.get bb.bb_code index with
             | Iins_copyvar(_, target, arg) ->
                 Some((target, [arg]))
-            | Iins_pushtuple(_, target, args) ->
+            | Iins_newtuple(_, target, args) ->
                 Some((target, args))
             | _ -> None
           in

@@ -62,7 +62,7 @@ let rec transform_expr (state: state) (expr: texpression) =
       let tuple_lincode = List.concat tuple_codelst in
       let var_name = update_vars state (Vars.add_temp_var state.vars It_pointer) in
       let ituptype = tupletoitype expr.texp_type in
-      (var_name, tuple_lincode @ [Iins_pushtuple(ituptype, var_name, tuple_vars)])
+      (var_name, tuple_lincode @ [Iins_newtuple(ituptype, var_name, tuple_vars)])
   | Texp_construct (name, ls) -> transform_construct state name ls
   | Texp_ifthenelse (i, t, e_opt) ->
       let block_name = update_vars state (Vars.add_block state.vars) in
@@ -137,7 +137,7 @@ and transform_pat ?check:(check = true)
       let ityp = stoitype pat.tpat_type in
       let named_var = add_named_var ~global:global state name ityp in
       if (boxed && (itype_needs_box ityp)) then
-        [Iins_unbox(ityp, var, named_var)]
+        [Iins_unbox(ityp, named_var, var)]
       else
       [Iins_copyvar(ityp, named_var, var)]
   | Tpat_constant(const) ->
@@ -149,7 +149,7 @@ and transform_pat ?check:(check = true)
         let escape_code = transform_pat_escape state escape test_var in
         if (boxed && (itype_needs_box ityp)) then
           let unbox_var = quick_temp_var state ityp in
-            [Iins_unbox(ityp, var, unbox_var);
+            [Iins_unbox(ityp, unbox_var, var);
             Iins_setvar(ityp, const_var, const);
             Iins_binop(ityp, Ibin_ne, test_var, unbox_var, const_var)]
           @ escape_code
@@ -323,7 +323,7 @@ and transform_op state name args =
       let ref_var = update_vars state (Vars.add_temp_var state.vars It_pointer) in
       (ref_var, arg_code
       @ box_code
-      @ [Iins_newbox(It_poly, data_var, ref_var)])
+      @ [Iins_newbox(It_poly, ref_var, data_var)])
   | "!" ->
       let ref_var = List.nth_exn arg_vars 0 in
       let data_var = update_vars state (Vars.add_temp_var state.vars It_poly) in
@@ -334,7 +334,7 @@ and transform_op state name args =
       in
       let (unbox_var, unbox_code) = transform_unbox state ref_typ data_var in
       (unbox_var, arg_code
-      @ [Iins_unbox(It_poly, ref_var, data_var)]
+      @ [Iins_unbox(It_poly, data_var, ref_var)]
       @ unbox_code)
   | ":=" ->
       let ref_typ =
@@ -347,7 +347,7 @@ and transform_op state name args =
       let unit_var = quick_temp_var state It_unit in
       (unit_var, arg_code
       @ box_code
-      @ [Iins_updatebox(It_poly, data_var, ref_var);
+      @ [Iins_updatebox(It_poly, ref_var, data_var);
          Iins_setvar(It_unit, unit_var, "()")])
   | "not" ->
       let res = quick_temp_var state It_bool in
@@ -378,7 +378,7 @@ and transform_op state name args =
     (res, (arg_code @ [Iins_binop(ityp, bop, res, List.nth_exn arg_vars 0, List.nth_exn arg_vars 1)]))
 
 (* Transforms an expression
- * If that expression is a tuple, do not add the final pushtuple instruction *)
+ * If that expression is a tuple, do not add the final newtuple instruction *)
 and transform_tupleargs ?poly_box:(poly_box=false) state expr =
   match expr.texp_desc with
   | Texp_tuple(lst) ->
@@ -458,7 +458,7 @@ and transform_box state typ unbox_var =
   if itype_needs_box ityp then
     let box_var = update_vars state (Vars.add_temp_var state.vars It_poly) in
     (box_var,
-      [Iins_newbox(ityp, unbox_var, box_var)]
+      [Iins_newbox(ityp, box_var, unbox_var)]
     )
   else (unbox_var, [])
 
@@ -467,7 +467,7 @@ and transform_unbox state typ box_var =
   if itype_needs_box ityp then
     let unbox_var = update_vars state (Vars.add_temp_var state.vars ityp) in
     (unbox_var,
-      [Iins_unbox(ityp, box_var, unbox_var)]
+      [Iins_unbox(ityp, unbox_var, box_var)]
     )
   else (box_var, [])
 
@@ -502,7 +502,7 @@ and transform_construct state name ls =
   let tuple_lincode = List.concat tuple_codelst in
   (var_name,
     tuple_lincode
-    @ [Iins_pushconstruct(ituptype, var_name, constr.index, tuple_vars)]
+    @ [Iins_newconstruct(ituptype, var_name, constr.index, tuple_vars)]
   )
 
 

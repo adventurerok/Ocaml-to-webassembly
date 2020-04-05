@@ -46,14 +46,14 @@ let load_variable_order (iins : iinstruction) =
   | Iins_endif _ -> []
   | Iins_startloop (_, _) -> []
   | Iins_endloop (_, _) -> []
-  | Iins_pushtuple (_, _, args) -> lv_stack_list args
+  | Iins_newtuple (_, _, args) -> lv_stack_list args
   | Iins_loadtupleindex (_, _, _, arg) -> [Lv_stack(arg)]
-  | Iins_pushconstruct (_, _, _, args) -> lv_stack_list args
+  | Iins_newconstruct (_, _, _, args) -> lv_stack_list args
   | Iins_loadconstructindex (_, _, _, arg) -> [Lv_stack(arg)]
   | Iins_loadconstructid (_, arg) -> [Lv_stack(arg)]
-  | Iins_newbox (_, arg, _) -> [Lv_stack(arg)]
-  | Iins_updatebox (_, arg, box) -> [Lv_stack(box); Lv_stack(arg)]
-  | Iins_unbox (_, box, _) -> [Lv_stack(box)]
+  | Iins_newbox (_, _, arg) -> [Lv_stack(arg)]
+  | Iins_updatebox (_, box, arg) -> [Lv_stack(box); Lv_stack(arg)]
+  | Iins_unbox (_, _, box) -> [Lv_stack(box)]
   | Iins_fail -> []
 
 
@@ -77,14 +77,14 @@ let variable_result (iins : iinstruction) =
   | Iins_endif _ -> None
   | Iins_startloop (_, _) -> None
   | Iins_endloop (_, _) -> None
-  | Iins_pushtuple (_, res, _) -> Some(Lv_var(res))
+  | Iins_newtuple (_, res, _) -> Some(Lv_var(res))
   | Iins_loadtupleindex (_, _, res, _) -> Some(Lv_stack(res))
-  | Iins_pushconstruct (_, res, _, _) -> Some(Lv_var(res))
+  | Iins_newconstruct (_, res, _, _) -> Some(Lv_var(res))
   | Iins_loadconstructindex (_, _, res, _) -> Some(Lv_stack(res))
   | Iins_loadconstructid (res, _) -> Some(Lv_stack(res))
-  | Iins_newbox (_, _, box) -> Some(Lv_var(box))
-  | Iins_updatebox (_, _, box) -> Some(Lv_var(box))
-  | Iins_unbox (_, _, unbox) -> Some(Lv_stack(unbox))
+  | Iins_newbox (_, box, _) -> Some(Lv_var(box))
+  | Iins_updatebox (_, box, _) -> Some(Lv_var(box))
+  | Iins_unbox (_, unbox, _) -> Some(Lv_stack(unbox))
   | Iins_fail -> None
 
 let needs_clear_stack (iins : iinstruction) =
@@ -169,14 +169,14 @@ let rec codegen_iinstruction_core (state : state) saved_vars lvo (expr : iinstru
       "br " ^ continue ^ "\n" ^
       "end " ^ continue ^ "\n" ^
       "end " ^ break
-  | Iins_pushtuple(itt, res, _) -> codegen_pushtuple state lvo itt res
+  | Iins_newtuple(itt, res, _) -> codegen_newtuple state lvo itt res
   | Iins_loadtupleindex (itt, index, _, _) -> codegen_tupleindex ~boxed:true state lvo itt index 0
-  | Iins_pushconstruct (itt, res, id, _) ->
+  | Iins_newconstruct (itt, res, id, _) ->
       codegen_construct state lvo itt res id
   | Iins_loadconstructindex (itt, index, _, _) ->
       codegen_tupleindex ~boxed:true state lvo (It_int :: itt) (index + 1) 0
   | Iins_loadconstructid(_, _) -> codegen_tupleindex ~boxed:true state lvo [It_int] 0 0
-  | Iins_newbox(ityp, _, box) -> codegen_box state lvo ityp box
+  | Iins_newbox(ityp, box, _) -> codegen_box state lvo ityp box
   | Iins_updatebox(ityp, _, _) -> codegen_updatebox state lvo ityp
   | Iins_unbox(ityp, _, _) -> codegen_unbox state lvo ityp
   | Iins_fail -> "unreachable"
@@ -273,7 +273,7 @@ and codegen_calldirect _state name lvo =
   load_args ^ "\n" ^
   "call " ^ name ^ "\n"
 
-and codegen_pushtuple state lvo itt res =
+and codegen_newtuple state lvo itt res =
   let tup_size = ituptype_size itt in
   "i32.const " ^ (Int.to_string tup_size) ^ "\n" ^
   "call " ^ malloc_id ^ "\n" ^

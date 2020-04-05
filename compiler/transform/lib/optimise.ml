@@ -166,14 +166,14 @@ let rec propagate_copies globals func =
       | Iins_endif _ -> iins
       | Iins_startloop (_, _) -> iins
       | Iins_endloop (_, _) -> iins
-      | Iins_pushtuple (itt, res, args) -> Iins_pushtuple(itt, res, map_variables line args)
+      | Iins_newtuple (itt, res, args) -> Iins_newtuple(itt, res, map_variables line args)
       | Iins_loadtupleindex (itt, id, res, tup) -> Iins_loadtupleindex(itt, id, res, map_variable line tup)
-      | Iins_pushconstruct (itt, res, id, args) -> Iins_pushconstruct(itt, res, id, map_variables line args)
+      | Iins_newconstruct (itt, res, id, args) -> Iins_newconstruct(itt, res, id, map_variables line args)
       | Iins_loadconstructindex (itt, id, res, tup) -> Iins_loadconstructindex(itt, id, res, map_variable line tup)
       | Iins_loadconstructid (res, tup) -> Iins_loadconstructid(res, map_variable line tup)
-      | Iins_newbox (it, unbox, box) -> Iins_newbox(it, map_variable line unbox, box)
-      | Iins_updatebox (it, unbox, box) -> Iins_updatebox(it, map_variable line unbox, map_variable line box)
-      | Iins_unbox (it, box, unbox) -> Iins_unbox(it, map_variable line box, unbox)
+      | Iins_newbox (it, box, unbox) -> Iins_newbox(it, box, map_variable line unbox)
+      | Iins_updatebox (it, box, unbox) -> Iins_updatebox(it, map_variable line box, map_variable line unbox)
+      | Iins_unbox (it, unbox, box) -> Iins_unbox(it, unbox, map_variable line box)
       | Iins_fail -> iins)
     )
     in let new_func = {
@@ -229,9 +229,9 @@ let rec eliminate_tuple_loads globals func =
     let construct_map = Hashtbl.create (module Int) in
     List.iteri func.pf_code ~f:(fun line iins ->
       (match iins with
-      | Iins_pushtuple (_, _, vars) ->
+      | Iins_newtuple (_, _, vars) ->
           Hashtbl.set tup_map ~key:line ~data:(Array.of_list vars)
-      | Iins_pushconstruct (_, _, id, vars) ->
+      | Iins_newconstruct (_, _, id, vars) ->
           Hashtbl.set construct_map ~key:line ~data:((id, Array.of_list vars))
       | _ -> ())
     );
@@ -336,11 +336,11 @@ let rec eliminate_redundant_refs globals func =
     List.iter fa.fa_args ~f:(Hash_set.remove target_vars);
     List.iter func.pf_code ~f:(fun iins ->
       match iins with
-      | Iins_newbox(_, unboxed, _) ->
+      | Iins_newbox(_, _, unboxed) ->
           Hash_set.remove target_vars unboxed
-      | Iins_updatebox(_, unboxed, _) ->
+      | Iins_updatebox(_, _, unboxed) ->
           Hash_set.remove target_vars unboxed
-      | Iins_unbox(_, _, unboxed) ->
+      | Iins_unbox(_, unboxed, _) ->
           Hash_set.remove target_vars unboxed
       | _ ->
           let assign_opt, used = Analysis.instr_vars iins in
@@ -350,7 +350,7 @@ let rec eliminate_redundant_refs globals func =
     let vars_ref = ref func.pf_vars in
     let new_code = List.map func.pf_code ~f:(fun iins ->
       match iins with
-      | Iins_newbox(it, unboxed, ((_, bname) as boxed)) ->
+      | Iins_newbox(it, ((_, bname) as boxed), unboxed) ->
           if Hash_set.mem target_vars boxed then
             (changed := true;
             let vars = !vars_ref in
@@ -359,13 +359,13 @@ let rec eliminate_redundant_refs globals func =
             (Iins_copyvar(it, boxed, unboxed)))
           else
             iins
-      | Iins_updatebox(it, unboxed, boxed) ->
+      | Iins_updatebox(it, boxed, unboxed) ->
           if Hash_set.mem target_vars boxed then
             (changed := true;
             (Iins_copyvar(it, boxed, unboxed)))
           else
             iins
-      | Iins_unbox(it, boxed, unboxed) ->
+      | Iins_unbox(it, unboxed, boxed) ->
           if Hash_set.mem target_vars boxed then
             (changed := true;
             (Iins_copyvar(it, unboxed, boxed)))

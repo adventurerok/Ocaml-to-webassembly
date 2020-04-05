@@ -154,22 +154,22 @@ type iinstruction =
 (* Return var *)
 (* type of variable, name of variable *)
 | Iins_return of itype * ivariable
-(* Unary operation using one stack value *)
+(* Unary operation using one argument value *)
 (* type of operand, unary operation, result var, input var *)
 | Iins_unop of itype * iunop * ivariable * ivariable
-(* Binary operation using two stack values *)
+(* Binary operation using two argument values *)
 (* type of operands, binary operation *)
 | Iins_binop of itype * ibinop * ivariable * ivariable * ivariable
-(* Make a new closure for specified function and tuple type, and put it in given variable *)
-(* type of function, name of function, type of closure variables, variable to put closure in *)
+(* Make a new closure for specified function and tuple type *)
+(* type of function, name of function, type of closure variables, result variable *)
 | Iins_newclosure of iftype * string * ituptype * ivariable
-(* Fill a closure in the named variable using the code to generate those values *)
+(* Fill a closure with a list of variables *)
 (* type of closure variables, name of variable, list of variables to copy in *)
 | Iins_fillclosure of ituptype * ivariable * ivariable list
-(* Call closure in variable using argument generated from code *)
+(* Call closure in variable, passing in an argument *)
 (* type of function, output variable, closure variable, variable for argument *)
 | Iins_callclosure of iftype * ivariable * ivariable * ivariable
-(* Directly call a function *)
+(* Directly call a function, passing multiple arguments *)
 (* output variable, name of function, type of args, arg vars *)
 | Iins_calldirect of ivariable * string * ituptype * (ivariable list)
 (* Start a block *)
@@ -199,31 +199,31 @@ type iinstruction =
 (* Ends a loop *)
 (* Name of break block, name of continue block *)
 | Iins_endloop of string * string
-(* Create a tuple from the given code, push pointer to stack and put it in that variable *)
-(* type of tuple, name of variable, code to generate each part of tuple *)
-| Iins_pushtuple of ituptype * ivariable * ivariable list
-(* Pop tuple, push its value at index i to the stack *)
+(* Create a tuple of the given variables *)
+(* type of tuple, result variable, argument variables *)
+| Iins_newtuple of ituptype * ivariable * ivariable list
+(* Load tuple's value at index i *)
 (* type of tuple, index in tuple, output var, tuple var *)
 | Iins_loadtupleindex of ituptype * int * ivariable * ivariable
-(* Create a construct from the given code, push pointer to stack and put it in variable *)
-(* type of construct arguments, name of variable, id of construct, code to generate each part of construct *)
-| Iins_pushconstruct of ituptype * ivariable * int * ivariable list
-(* Pop construct, push its value at index i to the stack *)
-(* type of construct arguments, index in arguments, output variable, tuple variable *)
+(* Create a construct of the given id and variables *)
+(* type of construct arguments, result variable, id of construct, argument variables *)
+| Iins_newconstruct of ituptype * ivariable * int * ivariable list
+(* Load construct's value at index i *)
+(* type of construct arguments, index in arguments, output variable, construct variable *)
 | Iins_loadconstructindex of ituptype * int * ivariable * ivariable
-(* Pop construct, push its id to the stack *)
+(* Load construct's ID *)
 (* output variable, construct variable *)
 | Iins_loadconstructid of ivariable * ivariable
-(* Box a value (on stack) of a type that needs boxing, or for a ref *)
-(* unboxed type, unboxped variable, variable to store boxed result *)
+(* Create a mutable memory box for a value *)
+(* unboxed type, result variable, variable to box *)
 | Iins_newbox of itype * ivariable * ivariable
-(* Update a boxed value, useful for refs *)
-(* unboxed type, unboxped variable, boxed variable *)
+(* Update a mutable memory box with a new value *)
+(* unboxed type, boxed variable, unboxed variable *)
 | Iins_updatebox of itype * ivariable * ivariable
-(* Unbox a value / dereference a ref *)
-(* unboxped type, wrapped variable, unboxped target variable *)
+(* Load a value from a mutable memory box *)
+(* unboxed type, target variable, boxed variable *)
 | Iins_unbox of itype * ivariable * ivariable
-(* Fail *)
+(* Fail, suspending execution *)
 (* No parameters *)
 | Iins_fail
 [@@deriving sexp_of]
@@ -266,13 +266,13 @@ let rec iinstruction_to_string (iins : iinstruction) =
   | Iins_endif(name) -> "endif " ^ name
   | Iins_startloop(break, cont) -> "startloop " ^ break ^ " " ^ cont
   | Iins_endloop(break, cont) -> "endloop " ^ break ^ " " ^ cont
-  | Iins_pushtuple(itt, name, vars) ->
+  | Iins_newtuple(itt, name, vars) ->
       "pushtuple " ^ (ituptype_to_string itt) ^ " " ^ (ivariable_to_string name) ^ " " ^
       vars_to_string vars
   | Iins_loadtupleindex (itt, id, res, arg) ->
       "loadtupleindex " ^ (ituptype_to_string itt) ^ " " ^ (Int.to_string id) ^
       " " ^ (ivariable_to_string res) ^ " " ^ (ivariable_to_string arg)
-  | Iins_pushconstruct(itt, name, id, vars) ->
+  | Iins_newconstruct(itt, name, id, vars) ->
       "pushconstruct " ^ (ituptype_to_string itt) ^ " " ^ (ivariable_to_string name) ^
       " " ^ (Int.to_string id) ^ " " ^
       vars_to_string vars
@@ -281,12 +281,12 @@ let rec iinstruction_to_string (iins : iinstruction) =
       " " ^ (ivariable_to_string res) ^ " " ^ (ivariable_to_string arg)
   | Iins_loadconstructid(res, arg) ->
       "loadconstructid " ^ (ivariable_to_string res) ^ (ivariable_to_string arg)
-  | Iins_newbox(typ, unbox, wrap) ->
-      "newbox " ^ (itype_to_string typ) ^ " " ^ (ivariable_to_string unbox) ^ " " ^ (ivariable_to_string wrap)
-  | Iins_updatebox(typ, unbox, wrap) ->
-      "updatebox " ^ (itype_to_string typ) ^ " " ^ (ivariable_to_string unbox) ^ " " ^ (ivariable_to_string wrap)
-  | Iins_unbox(typ, wrap, unbox) ->
-      "unbox " ^ (itype_to_string typ) ^ " " ^ (ivariable_to_string wrap) ^ " " ^ (ivariable_to_string unbox)
+  | Iins_newbox(typ, res, arg) ->
+      "newbox " ^ (itype_to_string typ) ^ " " ^ (ivariable_to_string res) ^ " " ^ (ivariable_to_string arg)
+  | Iins_updatebox(typ, box, arg) ->
+      "updatebox " ^ (itype_to_string typ) ^ " " ^ (ivariable_to_string box) ^ " " ^ (ivariable_to_string arg)
+  | Iins_unbox(typ, res, box) ->
+      "unbox " ^ (itype_to_string typ) ^ " " ^ (ivariable_to_string res) ^ " " ^ (ivariable_to_string box)
   | Iins_fail -> "fail"
 
 
@@ -336,22 +336,22 @@ let iinstruction_map_vars ~f:map_var (iins : iinstruction) =
       Iins_startloop(break, cont)
   | Iins_endloop(break, cont) ->
       Iins_endloop(break, cont)
-  | Iins_pushtuple(itt, name, var_lst) ->
-      Iins_pushtuple(itt, map_var name, List.map ~f:map_var var_lst)
+  | Iins_newtuple(itt, name, var_lst) ->
+      Iins_newtuple(itt, map_var name, List.map ~f:map_var var_lst)
   | Iins_loadtupleindex(itt, id, res, tup) ->
       Iins_loadtupleindex(itt, id, map_var res, map_var tup)
-  | Iins_pushconstruct(itt, name, id, var_lst) ->
-      Iins_pushconstruct(itt, map_var name, id, List.map ~f:map_var var_lst)
+  | Iins_newconstruct(itt, name, id, var_lst) ->
+      Iins_newconstruct(itt, map_var name, id, List.map ~f:map_var var_lst)
   | Iins_loadconstructindex(itt, id, res, con) ->
       Iins_loadconstructindex(itt, id, map_var res, map_var con)
   | Iins_loadconstructid(res, con) ->
       Iins_loadconstructid(map_var res, map_var con)
-  | Iins_newbox(t, unbox, box) ->
-      Iins_newbox(t, map_var unbox, map_var box)
-  | Iins_updatebox(t, unbox, box) ->
-      Iins_updatebox(t, map_var unbox, map_var box)
-  | Iins_unbox(t, boxed, unboxed) ->
-      Iins_unbox(t, map_var boxed, map_var unboxed)
+  | Iins_newbox(t, res, arg) ->
+      Iins_newbox(t, map_var res, map_var arg)
+  | Iins_updatebox(t, box, arg) ->
+      Iins_updatebox(t, map_var box, map_var arg)
+  | Iins_unbox(t, res, box) ->
+      Iins_unbox(t, map_var res, map_var box)
   | Iins_fail ->
       Iins_fail
 

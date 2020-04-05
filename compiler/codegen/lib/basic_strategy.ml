@@ -58,15 +58,15 @@ and codegen_iins (state : state) (expr : iinstruction) =
       "end " ^ name
   | Iins_startloop(break, continue) -> codegen_startloop state break continue
   | Iins_endloop(break, continue) -> codegen_endloop state break continue
-  | Iins_pushtuple(itt, res, args) -> codegen_pushtuple state itt res args
+  | Iins_newtuple(itt, res, args) -> codegen_newtuple state itt res args
   | Iins_loadtupleindex (itt, index, res, arg) -> codegen_tupleindex ~boxed:true itt index 0 res arg
-  | Iins_pushconstruct (itt, res, id, arg_vars) ->
+  | Iins_newconstruct (itt, res, id, arg_vars) ->
       codegen_construct state itt res id arg_vars
   | Iins_loadconstructindex (itt, index, res, arg) -> codegen_tupleindex ~boxed:true (It_int :: itt) (index + 1) 0 res arg
   | Iins_loadconstructid(res, arg) -> codegen_tupleindex ~boxed:false [It_int] 0 0 res arg
-  | Iins_newbox(ityp, unbox, box) -> codegen_box ityp unbox box
-  | Iins_updatebox(ityp, unbox, box) -> codegen_updatebox ityp unbox box
-  | Iins_unbox(ityp, box, unbox) -> codegen_unbox ityp box unbox
+  | Iins_newbox(ityp, box, unbox) -> codegen_box ityp unbox box
+  | Iins_updatebox(ityp, box, unbox) -> codegen_updatebox ityp unbox box
+  | Iins_unbox(ityp, unbox, box) -> codegen_unbox ityp box unbox
   | Iins_fail -> "unreachable"
 
 and codegen_unop ityp unop res arg =
@@ -178,7 +178,7 @@ and codegen_endloop _state break continue =
   "end " ^ continue ^ "\n" ^
   "end " ^ break
 
-and codegen_pushtuple state itt res args =
+and codegen_newtuple state itt res args =
   let tup_size = ituptype_size itt in
   "i32.const " ^ (Int.to_string tup_size) ^ "\n" ^
   "call " ^ malloc_id ^ "\n" ^
