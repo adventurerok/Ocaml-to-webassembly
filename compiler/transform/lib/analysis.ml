@@ -497,7 +497,7 @@ let vns_equal vns1 vns2 =
 
 (* For each line and variable, the set of copy instruction targets known to have copied the current version of the variable *)
 (* A reaching definitions analysis is required for the target as well to determine if the copy is still valid *)
-let active_copies fa =
+let active_assignments fa =
   (* Hashtbl of line number to Map of ivariable -> VNS *)
   let in_defs = Hashtbl.create (module Int) in
   let out_defs = Hashtbl.create (module Int) in
@@ -539,7 +539,9 @@ let active_copies fa =
           let copied_opt =
             match Array.get bb.bb_code index with
             | Iins_copyvar(_, target, arg) ->
-                Some((target, arg))
+                Some((target, [arg]))
+            | Iins_pushtuple(_, target, args) ->
+                Some((target, args))
             | _ -> None
           in
           let middle_def =
@@ -552,10 +554,12 @@ let active_copies fa =
                 start_def
           in let end_def =
             match copied_opt with
-            | Some((target, copy)) ->
-                let old_locs = Option.value ~default:(vns_empty) (Map.find middle_def copy) in
-                let new_locs = vns_add_positive old_locs target in
-                Map.set middle_def ~key:copy ~data:new_locs
+            | Some((target, args)) ->
+                List.fold args ~init:middle_def ~f:(fun cur_def copy ->
+                  let old_locs = Option.value ~default:(vns_empty) (Map.find cur_def copy) in
+                  let new_locs = vns_add_positive old_locs target in
+                  Map.set cur_def ~key:copy ~data:new_locs
+                )
             | None ->
                 middle_def
           in

@@ -88,7 +88,7 @@ let rec propagate_copies globals func =
     let fa = Analysis.analyse_function globals func in
     let rds = Analysis.reaching_definitions fa in
     let () = if Config.global.trace then Analysis.print_reaching_definitions rds in
-    let acs = Analysis.active_copies fa in
+    let acs = Analysis.active_assignments fa in
     let copy_defs = Hashtbl.create (module Int) in
     (* Safety net set of copy statements we have already used, to prevent modifying them *)
     let copies_used = Hash_set.create (module Int) in
@@ -236,6 +236,8 @@ let rec eliminate_tuple_loads globals func =
       | _ -> ())
     );
     let rds = Analysis.reaching_definitions fa in
+    (* Active assignments to check that the variable hasn't changed since being assigned to the tuple *)
+    let acs = Analysis.active_assignments fa in
     let changed = ref false in
     let new_code = List.mapi func.pf_code ~f:(fun line iins ->
       let line_defs = Hashtbl.find_exn rds line in
@@ -248,9 +250,14 @@ let rec eliminate_tuple_loads globals func =
               (match tup_vars_opt with
               | Some(tup_vars) ->
                   let source_var = Array.get tup_vars index in
-                  let var_typ = List.nth_exn itt index in
-                  changed := true;
-                  (Iins_copyvar(var_typ, dest, source_var))
+                  let active_assigns = Hashtbl.find_exn acs line in
+                  let vns = Option.value ~default:Analysis.vns_empty (Map.find active_assigns source_var) in
+                  if Analysis.vns_mem vns tup then
+                    let var_typ = List.nth_exn itt index in
+                    changed := true;
+                    (Iins_copyvar(var_typ, dest, source_var))
+                  else
+                    iins
               | None -> iins)
           | None -> iins)
       | Iins_loadconstructindex (itt, index, dest, construct) ->
