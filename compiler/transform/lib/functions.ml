@@ -153,13 +153,16 @@ let rec func_transform_expr ?next_name:(next_name=None) ?match_args:(match_args=
   {expr with texp_desc = desc}
 
 
-and func_transform_value_bindings state locals rf tvb_list =
+and func_transform_value_bindings ~global:is_global state locals rf tvb_list =
   let vars = List.concat (List.map tvb_list ~f:(fun tvb -> tvb.tvb_pat.tpat_vars)) in
   let locals' = List.fold ~init:locals ~f:(fun a (v, t) -> Map.Poly.set a ~key:v ~data:t) vars in
   let inner_locals =
-    (match rf with
-    | Asttypes.Nonrecursive -> locals
-    | Asttypes.Recursive -> locals')
+    (* If this is a global definition, they aren't locals because they are available globally *)
+    (match rf, is_global with
+    | Asttypes.Recursive, false -> locals'
+    | Asttypes.Nonrecursive, false -> locals
+    | _, true -> locals
+    )
   in
   let tvb_list' = List.map tvb_list ~f:(fun tvb ->
     let next_name =
@@ -173,7 +176,7 @@ and func_transform_value_bindings state locals rf tvb_list =
   (locals', tvb_list')
 
 and func_transform_let state locals rf tvb_list e =
-  let (locals', tvb_list') = func_transform_value_bindings state locals rf tvb_list in
+  let (locals', tvb_list') = func_transform_value_bindings ~global:false state locals rf tvb_list in
   let e' = func_transform_expr state locals' e in
   (Texp_let(rf, tvb_list', e'))
 
@@ -235,7 +238,7 @@ and func_transform_structure_item state (si: tstructure_item) =
         let e' = func_transform_expr state Map.Poly.empty e in
         (Tstr_eval(e'))
     | Tstr_value (rf, tvb_list) ->
-        let (_, tvb_list') = func_transform_value_bindings state Map.Poly.empty rf tvb_list in
+        let (_, tvb_list') = func_transform_value_bindings ~global:true state Map.Poly.empty rf tvb_list in
         (Tstr_value(rf, tvb_list'))
     | Tstr_type -> (si.tstr_desc)
   in {si with tstr_desc = desc}
