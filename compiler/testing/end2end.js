@@ -97,6 +97,7 @@ async function testFile(path) {
   try {
     await testCompileAndInstantiate(test);
     await testGlobals(test);
+    await testFunctions(test);
     await testBenchmarks(test);
   } catch(e) {
     return {
@@ -151,6 +152,40 @@ async function testGlobals(test) {
     }
   }
 
+}
+
+
+async function testFunctions(test) {
+  if(!test.instance || !test.json || !test.json.functions) return;
+
+  for(let funcTest in test.json.functions) {
+    let funcName = funcTest.substring(0, funcTest.indexOf("("));
+    let argPart = funcTest.substring(funcTest.indexOf("(") + 1, funcTest.indexOf(")"));
+
+    let args = argPart.split(",");
+
+    let waArgs = [];
+    for(let arg of args) {
+      if(arg.endsWith("f")) {
+        waArgs.push(parseFloat(arg.substring(0, arg.length - 1)));
+      } else {
+        waArgs.push(parseInt(arg));
+      }
+    }
+
+    let waFunc = test.instance.exports[funcName];
+
+    try {
+      let result = waFunc(...waArgs);
+      let expected = test.json.functions[funcTest].toString();
+
+      if(!compareValues(test.instance, expected, result)) {
+        testFailure(test, "Unexpected function result for " + funcTest + ": expected " + expected + " but got " + result);
+      }
+    } catch(e) {
+      testFailure(test, "Failed function evaluation", e);
+    }
+  }
 }
 
 function compareValues(instance, expected, actual) {

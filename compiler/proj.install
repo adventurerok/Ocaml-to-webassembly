@@ -74,9 +74,13 @@ lib: [
   "_build/install/default/lib/proj/transform/otwa_transform__Optimise.cmi" {"transform/otwa_transform__Optimise.cmi"}
   "_build/install/default/lib/proj/transform/otwa_transform__Optimise.cmt" {"transform/otwa_transform__Optimise.cmt"}
   "_build/install/default/lib/proj/transform/otwa_transform__Optimise.cmx" {"transform/otwa_transform__Optimise.cmx"}
+  "_build/install/default/lib/proj/transform/otwa_transform__Tail_calls.cmi" {"transform/otwa_transform__Tail_calls.cmi"}
+  "_build/install/default/lib/proj/transform/otwa_transform__Tail_calls.cmt" {"transform/otwa_transform__Tail_calls.cmt"}
+  "_build/install/default/lib/proj/transform/otwa_transform__Tail_calls.cmx" {"transform/otwa_transform__Tail_calls.cmx"}
   "_build/install/default/lib/proj/transform/otwa_transform__Vars.cmi" {"transform/otwa_transform__Vars.cmi"}
   "_build/install/default/lib/proj/transform/otwa_transform__Vars.cmt" {"transform/otwa_transform__Vars.cmt"}
   "_build/install/default/lib/proj/transform/otwa_transform__Vars.cmx" {"transform/otwa_transform__Vars.cmx"}
+  "_build/install/default/lib/proj/transform/tail_calls.ml" {"transform/tail_calls.ml"}
   "_build/install/default/lib/proj/transform/vars.ml" {"transform/vars.ml"}
   "_build/install/default/lib/proj/types/context.ml" {"types/context.ml"}
   "_build/install/default/lib/proj/types/otwa_types.a" {"types/otwa_types.a"}
@@ -93,9 +97,9 @@ lib: [
   "_build/install/default/lib/proj/types/otwa_types__Predefined.cmi" {"types/otwa_types__Predefined.cmi"}
   "_build/install/default/lib/proj/types/otwa_types__Predefined.cmt" {"types/otwa_types__Predefined.cmt"}
   "_build/install/default/lib/proj/types/otwa_types__Predefined.cmx" {"types/otwa_types__Predefined.cmx"}
-  "_build/install/default/lib/proj/types/otwa_types__Type_expr.cmi" {"types/otwa_types__Type_expr.cmi"}
-  "_build/install/default/lib/proj/types/otwa_types__Type_expr.cmt" {"types/otwa_types__Type_expr.cmt"}
-  "_build/install/default/lib/proj/types/otwa_types__Type_expr.cmx" {"types/otwa_types__Type_expr.cmx"}
+  "_build/install/default/lib/proj/types/otwa_types__Type_infer.cmi" {"types/otwa_types__Type_infer.cmi"}
+  "_build/install/default/lib/proj/types/otwa_types__Type_infer.cmt" {"types/otwa_types__Type_infer.cmt"}
+  "_build/install/default/lib/proj/types/otwa_types__Type_infer.cmx" {"types/otwa_types__Type_infer.cmx"}
   "_build/install/default/lib/proj/types/otwa_types__Typed_ast.cmi" {"types/otwa_types__Typed_ast.cmi"}
   "_build/install/default/lib/proj/types/otwa_types__Typed_ast.cmt" {"types/otwa_types__Typed_ast.cmt"}
   "_build/install/default/lib/proj/types/otwa_types__Typed_ast.cmx" {"types/otwa_types__Typed_ast.cmx"}
@@ -103,7 +107,7 @@ lib: [
   "_build/install/default/lib/proj/types/otwa_types__Types.cmt" {"types/otwa_types__Types.cmt"}
   "_build/install/default/lib/proj/types/otwa_types__Types.cmx" {"types/otwa_types__Types.cmx"}
   "_build/install/default/lib/proj/types/predefined.ml" {"types/predefined.ml"}
-  "_build/install/default/lib/proj/types/type_expr.ml" {"types/type_expr.ml"}
+  "_build/install/default/lib/proj/types/type_infer.ml" {"types/type_infer.ml"}
   "_build/install/default/lib/proj/types/typed_ast.ml" {"types/typed_ast.ml"}
   "_build/install/default/lib/proj/types/types.ml" {"types/types.ml"}
 ]

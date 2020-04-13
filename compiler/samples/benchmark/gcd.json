@@ -3,6 +3,9 @@
     "rv_3": 3,
     "iv_3": 3
   },
+  "functions": {
+    "gcd(15,25)": 5
+  },
   "benchmarks": {
     "rec100": {
       "func": "benchmark",
