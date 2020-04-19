@@ -18,12 +18,21 @@
 %\usemintedstyle{colorful}
 \setmintedinline{breaklines}
 
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.8}
+\usepgfplotslibrary{statistics}
+
 \newcommand{\textinline}{\mintinline{text}}
 \newcommand{\cinline}{\mintinline{C}}
 \newcommand{\camlinline}{\mintinline{OCaml}}
 \newcommand{\wainline}{\mintinline{LISP}}
 
-\newcommand\note[1]{\textcolor{blue}{#1}}
+\newcommand{\cfbox}[2]{%
+	\colorlet{currentcolor}{.}%
+	{\color{#1}%
+		\fbox{\color{currentcolor}#2}}%
+}
+\newcommand\note[1]{\noindent\cfbox{blue}{\parbox{\textwidth}{\textcolor{blue}{#1}}}}
 
 \input{epsf}                            % to allow postscript inclusions
 % On thor and CUS read top of file:
@@ -64,7 +73,7 @@
 \Huge
 {\bf Compiling OCaml to WebAssembly} \\
 \vspace*{5mm}
-Diploma in Computer Science \\
+Computer Science Tripos Part II \\
 \vspace*{5mm}
 Robinson College \\
 \vspace*{5mm}
@@ -218,7 +227,10 @@ The success criteria in the project proposal presents a clearly defined subset o
 % TODO? HOW I ENSURED CODING WASN'T TRIAL AND ERROR
 
 \section{Components of the Compiler}
-\note{Write after implementation}
+\note{Write after implementation. Description of each part, what it does and background material. E.g. mention polymorphic types and what they are / name HM algorithm, because that is beyond Part IB. Mention optimisations and OptComp course? Mention lambda lifting / closure conversion, and what these terms mean separately and what I do?}
+
+\section{WebAssembly}
+\note{TODO Move WebAssembly stuff from introduction to here, give overview of features e.g. limited stack manipulation, variables, verified}
 
 \section{Working Environment and Tools Setup}
 Since I have both a laptop and desktop, I decided the best way to work on both would be to do the work remotely via a remote desktop application on a remote server. Both my laptop and desktop were configured to download backups from the server once per hour (if they were on), so if there proved to be a problem with the server, I could redeploy easily by uploading the backups to a new server if required.
@@ -273,7 +285,7 @@ I attempted to deal with some of these issues prior to starting the project by c
 
 % TODO WORK DONE, ONE SECTION PER PART OF THE COMPILER
 
-
+\note{I have a large number of pending comments on this chapter from Tobias, so I expect it's going to have significant rewrites. I've been focusing on the Evaluation and Conclusion recently.}
 
 \section{Front End}
 Lexing and parsing is handled by the OCaml Compiler Libs, which produces a \textinline{structure} object representing the AST of the entire program. This AST and the corresponding typed-AST, which I designed to be very similar (using the same names prefixed with a t), are used throughout the first half of the compilation process before intermediate translation occurs. Figure \ref{fig:ast} gives the grammar of the OCaml AST in Extended Backus-Naur form \cite{Ebnf}, with an overview of it's components following. The typed-AST holds additional type information and prefixes its elements with `t'.
@@ -324,7 +336,7 @@ name = (* A string *)
 
 \note{Easy to shorten?}
 \note{Put the AST in an appendix? Get rid of the explanation?}
-
+\note{Syntax of AST must be removed, and replaced with overview of OCaml syntax and how it maps to AST. Could also put OCaml syntax in preparation.}
 
 
 
@@ -529,7 +541,8 @@ let fact n_in acc_in =
         acc_ref := n * acc;
         continue)
     in
-    result_ref := result
+    result_ref := result;
+    break
   done
   !result_ref
 \end{minted}
@@ -637,13 +650,15 @@ My compiler then implements three forms of data-flow analysis for use in optimis
 	\item Live Variable Analysis: For each instruction $i$, the variable $x$ is syntactically live at that instruction if there exists an instruction $j$ that is reachable from $i$ without passing any assignments to $x$ and uses the value of $x$. There is another definition of liveness, semantic liveness, whereby a variable is life if it's value will affect the input/output behaviour of the program at some point in the future. As this is generally uncomputable, syntactic liveness is used as a safe approximation.
 	\item Reaching Definitions: For each instruction $i$, a set for each variable $x$ of instructions $j$ that assign to $x$ and for which there is a path from $j$ to $i$ without passing another assignment of $x$.
 	\item `Available Assignments': For each instruction $i$, a set for each variable $x$ of variables $y$ that, if assigned in an instruction that uses the value of $x$, the value of $x$ has not changed since that assignment to $y$ (but $y$ itself may have been reassigned). This analysis is similar to the more conventional Available Expressions analysis, except that instead of storing expressions for which their operands have not changed since they were computed, it stores the variables assigned from these expressions.
-	\note{Someone must have done this before? Otherwise is there a better name for this? Also while yes it is similar to Available Expressions, it does use weird positive/negative sets and big-union instead of a single-set and big-intersection. \begin{itemize}
+	\note{Someone must have done this before? YES IT IS CALLED ALIAS ANALYSIS EXCEPT WE DO IT WITH NUMBERS NOT POINTERS Also while yes it is similar to Available Expressions, it does use weird positive/negative sets and big-union instead of a single-set and big-intersection. The wikipedia page for alias analysis definitely says there are three possibilities (definitely equal is in positive, unsure is in neither, and `definitely different' is in negative). \begin{itemize}
 			\item Add y to x's sets: add to positive, remove from negative
 			\item x is assigned, so all variables that might use it are now invalid: move everything from positive set into negative set
 			\item Union: union the negative sets, new positive set is union of positive sets minus union of negative sets
 			\item No proof that it works? Will the examiners hate me for this? The argument below convinces me that it works, but is not a proof.\\\\What are the cases: 1) when we have multiple basic blocks leading to the current one, 2) Assignment to x reachable from y = x. 3) Assignment to x not reachable from y = x (e.g. example below) 4) Multiple y=x where one also has an assignment to x afterwards
 			\\\\
 			What would a case look like where it didn't work? x's positive set includes y, but the value of x could have changed after the assignment y = x. The assignment to x clearly has to come after the assignment y = x, and thus y = x can clearly reach this assignment, so either y is in x's positive set and it gets negated, or y is already in x's negative set. There is no way that y can't be in either set, which is the only case that would cause an issue.
+			\\\\
+			ALIAS ANALYSIS IS SAFE TO USE.
 	\end{itemize}}
 \end{itemize}
 An example of these analyses is shown in figure \ref{fig:dataflow}. Line 0 is used to refer to the beginning of the function. Note that on line 8, $y$ is still in the available assignment set for $x$. This is correct, as in all cases where $x$ is assigned to $y$ (as in line 3), $x$ is not modified after this assignment.
@@ -691,7 +706,7 @@ For each of these analyses, it is possible to define data-flow equations where w
 \end{align*}
 where $\text{undef}(i)$ and $\text{def}(i)$ depend on the instruction $i$. If $i$ does not assign a variable, they are both empty, otherwise if $i$ assigns to $x$, then $\text{undef}(i)$ is all previous assignments to $x$, while $\text{def}(i)$ is the new assignment to $x$, or $(x, \{i\})$. Similar equations can be given for the other analyses, using different def and undef functions: available assignments uses two sets a `positive set' and `negative set' for each variable (\note{Explain this more}), and live-variables operates backwards using a union of the successor lines to compute the out-lva, and then computing in-lva from that.
 \\\\
-The algorithm for implementing these data-flow analysis follows from these equations: Put the set for each line to empty initially, and iterate over all basic blocks applying these equations (all of our analyses use big-union, so there is no issue with intersection) until there is an iteration in which nothing changes, and then return the result. \note{Explain this better as well. Perhaps give pseudocode or steps}
+The algorithm for implementing these data-flow analysis follows from these equations: Put the set for each line to empty initially, and iterate over all basic blocks applying these equations (all of our analyses use big-union, so there is no issue with intersection) until there is an iteration in which nothing changes, and then return the result. \note{Explain this better as well. Perhaps give pseudocode or steps. OR EXPLAIN IT LESS/MORE SIMPLY ONLY, and give an overview of what flowing means e.g. combine multiple inputs (for all the ways we flow in) into single output }
 
 \subsection{Transformations From These Analyses}
 These analyses allow me to implement a number of transformations:
@@ -802,7 +817,7 @@ After we have generated code for an instruction, the resulting code is packaged 
 This algorithm has several additional edge cases, for instance some control instructions require the stack to be emptied.
 \\\\
 At the end of this, we modify all resulting GBs to save their variables instead of writing to the stack (we assume the values will be needed in another basic block), and concatenate their code together to produce the final code of the function.
-
+\note{Needs to be explained better. What's the problem and what is being solved. Mention the huge line count and obvious fixes from non-SCG code.}
 
 
 
@@ -861,13 +876,60 @@ The \textinline{documents} directory contains documents such as this dissertatio
 
 \note{Assessors are well aware that large programs will very likely include some residual bugs. It should always be possible to demonstrate that a program works in simple cases and it is instructive to demonstrate how close it is to working in a really ambitious case.}
 
-\section{Success Criteria}
-\note{Say that it has been satisfied, and list the success criteria}
+In my evaluation I explain the testing procedures I used to ensure that the compiler can correctly compile the OCaml subset, and compare the performance of my compiler with and without optimisations enabled to other compilers. In my proposal I stated that I would use Unit tests, with the possibility of an automated end to end tester depending on how complex it would be to create. Thanks to NodeJS, I found that implementing an end to end tester would be much simpler, and hence the end to end tester is the main system I used to both test my project and, with added benchmarking capabilities, evaluate it.
 
 \section{End To End Tester}
-\note{Could do with a -all mode to test all combinations of disabled / enabled optimisations}
+\note{Could do with a -all mode to test all combinations of disabled / enabled optimisations. Or really just write a script to do that, will the examiners really be sitting there thinking `but did he test with every possible optimisation enable/disabled settings there could be'}
 
-\section{Benchmarks / Benchmark Driven Optimisations}
+The end to end tester is the main method I have used to test the compiler. It can compile and execute a collection of 26 sample OCaml programs, testing their outputs against known correct values and running benchmarks against four benchmark samples --- comparing the performance of the WebAssembly against 4 other methods of executing the OCaml programs.
+\\\\
+It is a really useful tool because when new samples throw up problems with the compiler, they remain in the samples repository after the problem is fixed, thus acting as regression tests and preventing the same problem from occurring again undetected. As the end to end tester is quite fast to execute, it can be evoked after every code change to ensure that nothing has been broken, and it reduces the need for unit tests: as most bugs are detected by new code samples, there is no need to introduce a unit tests for the broken component because the end to end tester, having detected the bug, can attest to the bug not being there if the sample then compiles and tests correctly later.
+\\\\
+The End To End tester operates in several phases, each of which can detect problems. Figure \ref{fig:sample} shows a sample and its corresponding JSON file:
+\begin{enumerate}
+	\item Compiling the OCaml program to WebAssembly Text Format using the compiler. If this compilation fails, an error is reported.
+	\item Compiling WebAssembly Text Format to WebAssembly Binary Format using \textinline{wat2wasm}. This tool also verifies the WebAssembly programs, reporting issues such as a float value being stored into an integer variable.
+	\item Loading and instantiating the WebAssembly program in Node.js. This runs the init function, which could fail for instance if an \wainline{unreachable} instruction is executed.
+	\item Testing of global variable values against expected values. Most OCaml samples are accompanied by a JSON file which specifies these.
+	\item Execution of test functions: the JSON file can also specify functions with arguments and an expected result to execute, for instance \textinline{"gcd(15,25)": 5}.
+	\item Execution of benchmarks: The JSON specifies a list of functions of type \camlinline{unit -> unit}, together with the number of iterations to perform on each function. These are then executed inside the WebAssembly environment and by compiling and executing for four other environments: the OCaml REPL interpreter, OCaml bytecode, optimised OCaml native code, and Js\_of\_OCaml.
+\end{enumerate}
+\begin{figure}[h]
+	\begin{minipage}[t]{0.5\linewidth}
+		\begin{minted}[linenos]{OCaml}
+let sum x y = x + y
+
+let ten = sum 8 2
+
+let add4 = sum 4
+
+let five = add4 1
+
+let eight = add4 4
+		\end{minted}
+	\end{minipage}
+	\begin{minipage}[t]{0.5\linewidth}
+		\begin{minted}[linenos]{JSON}
+{
+  "globals": {
+    "ten": 10,
+    "five": 5,
+    "eight": 8
+  },
+  "functions": {
+    "sum(50,25)": 75
+  }
+}
+		\end{minted}
+	\end{minipage}
+	\caption{\textinline{closure_basic.ml} sample and the corresponding JSON file}
+	\label{fig:sample}
+\end{figure}
+In addition, command line arguments can be passed to the end to end tester to disable certain optimisations, which can be used both to test that the compiler still works with optimisations disabled, and to benchmark these optimisations.
+\\\\
+The samples cover all features that my compiler supports. Some samples are small, for testing that a particular feature works as intended such as the \textinline{tailrec.ml} sample which contains two tail-recursive functions: one with integer arguments and result, and the other with floating point arguments and result. Other samples are large and intend to show that lots of features can work together, for instance \textinline{core-subset.ml} intends to ensure that all features in the `core subset' that I defined as being the features I needed to support to meet the success criteria work.
+
+\section{Benchmarking}
 \note{
 	\begin{itemize}
 		\item Gcd: main target of optimisations. Went from 122ms to 8ms thanks to all of them.
@@ -875,6 +937,203 @@ The \textinline{documents} directory contains documents such as this dissertatio
 		\item Make some performance graphs of the final result vs other execution engines, and of different optimisations enabled/disabled (can do both time and memory for that).
 	\end{itemize}
 }
+
+My compiler was benchmarked against four other execution environments. The OCaml compiler toolchain provides three methods of executing OCaml: the read-evaluate-print-loop (REPL), executing compiled bytecode (byte) and compiled native code (Nat). Js\_of\_OCaml \cite{Js_of_ocaml} is a tool for converting OCaml bytecode into executable JavaScript, which was included in the benchmark to give an indication of how my compiled WebAssembly performs on the web compared to other methods of executing OCaml on the web.
+\\\\
+I selected four samples to be used as a benchmark:
+\begin{itemize}
+	\item GCD is a recursive implementation of greatest-common-divisor making use of a match statement
+	\item Fibonacci is an implementation of the Fibonacci sequence using lazy-lists to repeatedly compute the 50th element
+	\item Primes is an inefficient implementation of a lazy list of prime numbers featuring mutually recursive functions, repeatedly generating the 100th prime.
+	\item Quicksort is a recursive implementation of Quicksort using lists.
+\end{itemize}
+I also chose different configurations of my compiler:
+\begin{itemize}
+	\item `Otwa' (OCaml to Web Assembly) has all optimisations enabled
+	\item NRE (No Ref Elimination) disables only reference elimination, since references only appear in tail-recursive functions after tail-recursion optimisation is performed
+	\item NTC (No Tail Calls) additionally disables tail call optimisation.
+	\item NIRO (No IR Optimisations) additionally disables the IR data-flow optimisations
+	\item NDC (No direct calls) additionally disables direct call optimisation
+	\item NSC (No stack codegen) additionally disables the stack code generator, using a linear algorithm instead.
+\end{itemize}
+Time benchmarks were performed for WebAssembly by using JavaScript to time in-between calls and returns from the WebAssembly function being benchmarked. For the other platforms, OCaml standard library code was injected into the benchmark code to time the benchmark function and output to standard output, however my compiler does not support compiling standard library functions, hence the JavaScript approach. The results of time benchmarks are shown in figures \ref{fig:timebenchgcdprime} and \ref{fig:timebenchfibquick}.
+\\\\
+Additionally, WebAssembly memory use was benchmarked, by comparing the \wainline{$mem_idx} global variable, indicating the address of the next free memory, before and after benchmarks were executed. Finally, by using the \textinline{wc} command line counts of the sample directory were also obtained. Memory and line-count results are shown in figure \ref{fig:memlenbenchmark}.
+
+\begin{figure}[h]
+	\begin{tikzpicture}
+	\begin{axis}
+	[
+	width=\linewidth,
+	height=0.6\linewidth,
+	title=GCD Sample Benchmark Results,
+	xlabel=Environment,
+	ylabel=Time (ms),
+	boxplot/draw direction=y,
+	xtick={1,2,3,4,5,6,7,8,9,10},
+	xticklabels={REPL, Byte, JS, Nat, Otwa, NRE, NTC, NIRO, NDC, NSC},
+	minor y tick num=4,
+	ymin=0,
+	cycle list={{blue}, {red}, {teal}, {black}},
+	]
+	\addplot+[ boxplot prepared={lower whisker=46.916799999999995, lower quartile=46.9739690495893, median=47.54592600000001, upper quartile=48.11788295041072, upper whisker=50.520999999999994  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=39.3934, lower quartile=39.629678719549936, median=40.625997999999996, upper quartile=41.622317280450055, upper whisker=43.497  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=2.79998779297, lower quartile=2.79998779297, median=2.9419999122631992, upper quartile=3.3774727283827337, upper whisker=5.299997329710001  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=2.0927, lower quartile=2.0927, median=2.6599920000000004, upper quartile=3.5743190467048436, upper whisker=5.004700000000001  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=1.8, lower quartile=1.8, median=2.4459999999999997, upper quartile=3.2319287499512948, upper whisker=3.8  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=6.4, lower quartile=6.453060024019196, median=6.528, upper quartile=6.602939975980803, upper whisker=6.7  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=14.1, lower quartile=14.1, median=14.164000000000009, upper quartile=14.240837490847637, upper whisker=14.4  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=26.2, lower quartile=26.2, median=26.657999999999987, upper quartile=28.4975749509059, upper whisker=39.5  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=87, lower quartile=87, median=88.03, upper quartile=91.97703686326844, upper whisker=115.5  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=85.5, lower quartile=85.5, median=86.38, upper quartile=90.03316301306162, upper whisker=111.5  }, ] coordinates {};
+	\end{axis}
+	\end{tikzpicture}
+	\begin{tikzpicture}
+	\begin{axis}
+	[
+	width=\linewidth,
+	height=0.6\linewidth,
+	title=Primes Sample Benchmark Results,
+	xlabel=Environment,
+	ylabel=Time (ms),
+	boxplot/draw direction=y,
+	xtick={1,2,3,4,5,6,7,8,9,10},
+	xticklabels={REPL, Byte, JS, Nat, Otwa, NRE, NTC, NIRO, NDC, NSC},
+	minor y tick num=4,
+	ymin=0,
+	cycle list={{blue}, {red}, {teal}, {black}},
+	]
+	\addplot+[ boxplot prepared={lower whisker=440.0005, lower quartile=443.729268814417, median=453.1682800000001, upper quartile=462.60729118558316, upper whisker=475.711  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=453.51750000000004, lower quartile=460.86905941993587, median=475.08469, upper quartile=489.3003205800642, upper whisker=518.2655000000001  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=565.9999847400001, lower quartile=578.9949765768573, median=604.2200040816, upper quartile=629.4450315863427, upper whisker=663.4999513649999  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=136.5105, lower quartile=136.6669762870124, median=144.18178999999998, upper quartile=151.69660371298755, upper whisker=167.15650000000002  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=407, lower quartile=407, median=419.89, upper quartile=437.9297588675684, upper whisker=531  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=482.5, lower quartile=482.5, median=487.88, upper quartile=514.2042397800961, upper whisker=672  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=354, lower quartile=354, median=358.91, upper quartile=378.8871594577406, upper whisker=497  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=354, lower quartile=354, median=358.49, upper quartile=378.5843997173342, upper whisker=498.5  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=529, lower quartile=529, median=537, upper quartile=561.4989795705865, upper whisker=703  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=533, lower quartile=533, median=540.28, upper quartile=563.855444852644, upper whisker=702  }, ] coordinates {};
+	\end{axis}
+	\end{tikzpicture}
+	\caption{Time Benchmark Results for GCD and Primes}
+	\label{fig:timebenchgcdprime}
+\end{figure}
+\begin{figure}[h]
+	\begin{tikzpicture}
+	\begin{axis}
+	[
+	width=\linewidth,
+	height=0.6\linewidth,
+	title=Fibonacci Sample Benchmark Results,
+	xlabel=Environment,
+	ylabel=Time (ms),
+	boxplot/draw direction=y,
+	xtick={1,2,3,4,5,6,7,8,9,10},
+	xticklabels={REPL, Byte, JS, Nat, Otwa, NRE, NTC, NIRO, NDC, NSC},
+	minor y tick num=4,
+	ymin=0,
+	cycle list={{blue}, {red}, {teal}, {black}},
+	]
+	\addplot+[ boxplot prepared={lower whisker=15.467199999999997, lower quartile=15.608607416911102, median=16.368972, upper quartile=17.129336583088897, upper whisker=20.128800000000002  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=14.551600000000002, lower quartile=14.551600000000002, median=15.991112000000001, upper quartile=17.765839039365794, upper whisker=22.833000000000002  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=24.399995803800003, lower quartile=25.483233126240698, median=27.460002899176, upper quartile=29.436772672111303, upper whisker=34.4000339508  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=2.3004000000000002, lower quartile=2.6957899532811833, median=3.608784, upper quartile=4.521778046718817, upper whisker=4.6146  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=11.8, lower quartile=12.43774826419513, median=13.86, upper quartile=15.282251735804868, upper whisker=18.8  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=11, lower quartile=11, median=11.403999999999998, upper quartile=12.252989988162408, upper whisker=17  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=10.6, lower quartile=10.6, median=11.036000000000003, upper quartile=11.915718136677851, upper whisker=17  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=10.8, lower quartile=10.8, median=11.204000000000002, upper quartile=12.10065154881925, upper whisker=17.2  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=29, lower quartile=29, median=29.89, upper quartile=31.53708834007165, upper whisker=40.5  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=30, lower quartile=30, median=30.92, upper quartile=32.22904545375626, upper whisker=37  }, ] coordinates {};
+	\end{axis}
+	\end{tikzpicture}
+	\begin{tikzpicture}
+	\begin{axis}
+	[
+	width=\linewidth,
+	height=0.6\linewidth,
+	title=Quicksort Sample Benchmark Results,
+	xlabel=Environment,
+	ylabel=Time (ms),
+	boxplot/draw direction=y,
+	xtick={1,2,3,4,5,6,7,8,9,10},
+	xticklabels={REPL, Byte, JS, Nat, Otwa, NRE, NTC, NIRO, NDC, NSC},
+	minor y tick num=4,
+	ymin=0,
+	cycle list={{blue}, {red}, {teal}, {black}},
+	]
+	\addplot+[ boxplot prepared={lower whisker=56.8678, lower quartile=56.91425603242595, median=57.98698800000001, upper quartile=59.05971996757407, upper whisker=61.493599999999994  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=55.09159999999999, lower quartile=55.52400983224097, median=58.515055999999994, upper quartile=61.50610216775902, upper whisker=66.2124  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=47.399997711199994, lower quartile=47.85241953213496, median=50.64800262451201, upper quartile=53.44358571688906, upper whisker=58.399963379  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=19.3928, lower quartile=19.423863834523758, median=23.019788000000002, upper quartile=26.615712165476246, upper whisker=33.4728  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=28.2, lower quartile=28.289955717442474, median=31.31600000000001, upper quartile=34.342044282557545, upper whisker=39  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=25.6, lower quartile=25.6, median=26.55199999999999, upper quartile=28.56418687004973, upper whisker=40.4  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=26, lower quartile=26, median=26.667999999999996, upper quartile=28.60153975909475, upper whisker=40  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=26, lower quartile=26, median=26.992000000000008, upper quartile=28.83415525947174, upper whisker=39.6  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=97, lower quartile=97, median=99.54, upper quartile=105.46523417258754, upper whisker=140  }, ] coordinates {};
+	\addplot+[ boxplot prepared={lower whisker=99, lower quartile=99, median=102.04, upper quartile=108.64896361012822, upper whisker=147  }, ] coordinates {};
+	\end{axis}
+	\end{tikzpicture}
+	\caption{Time Benchmark Results for GCD and Primes}
+	\label{fig:timebenchfibquick}
+\end{figure}
+\begin{figure}[h]
+	\begin{tikzpicture}
+	\begin{axis}
+	[
+	width=\linewidth,
+	height=0.6\linewidth,
+	title=Relative Memory Usage (WebAssembly Memory Area),
+	xlabel=Environment,
+	ylabel=Relative Memory Usage \%,
+	xtick={1,2,3,4,5},
+	xticklabels={Otwa, NRE, NTC, NIRO, NDC=NSC},
+	nodes near coords,
+	every node near coord/.append style={font=\tiny},
+	ybar,
+	bar width = 0.5cm,
+	legend columns=4
+	]
+%	\addplot coordinates {(1, 0) (2,0.012) (3, 0) (4, 2.49) (5, 4.97)};
+%	\addplot coordinates {(1,314) (2,432) (3,314) (4,314) (5,356)};
+%	\addplot coordinates {(1,11.9) (2,12.0) (3,11.9) (4,11.9) (5,19.9)};
+%	\addplot coordinates {(1,26.9) (2,29.0) (3,26.9) (4,26.9) (5,82.3)};
+
+	\addplot coordinates {(1,0) (2,0.24) (3,0) (4,50) (5,100)};
+	\addplot coordinates {(1,89) (2,122) (3,89) (4,89) (5,100)};
+	\addplot coordinates {(1,60) (2,61) (3,60) (4,60) (5,100)};
+	\addplot coordinates {(1,33) (2,35) (3,33) (4,33) (5,100)};
+	\legend{GCD, Primes, Fibonacci, QuickSort}
+	
+	\end{axis}
+	\end{tikzpicture}
+	\begin{tikzpicture}
+	\begin{axis}
+	[
+	width=\linewidth,
+	height=0.6\linewidth,
+	title=Total Length of Sample WebAssembly,
+	xlabel=Environment,
+	ylabel=Lines of WAST,
+	xtick={1,2,3,4,5,6},
+	xticklabels={Otwa, NRE, NTC, NIRO, NDC, NSC},
+	nodes near coords,
+	every node near coord/.append style={font=\small},
+	ymin=0,
+	ybar,
+	bar width = 0.8cm,
+	]
+	%	\addplot coordinates {(1, 0) (2,0.012) (3, 0) (4, 2.49) (5, 4.97)};
+	%	\addplot coordinates {(1,314) (2,432) (3,314) (4,314) (5,356)};
+	%	\addplot coordinates {(1,11.9) (2,12.0) (3,11.9) (4,11.9) (5,19.9)};
+	%	\addplot coordinates {(1,26.9) (2,29.0) (3,26.9) (4,26.9) (5,82.3)};
+	
+	\addplot coordinates {(1,7218) (2,7599) (3,7090) (4,7668) (5,8382) (6, 11591)};
+	
+	\end{axis}
+	\end{tikzpicture}
+	\caption{Memory and Code Length Benchmark Results}
+	\label{fig:memlenbenchmark}
+\end{figure}
 
 % TODO DONT FORGET ALL THE WORK IN MAKING THE CODE SHORTER
 
