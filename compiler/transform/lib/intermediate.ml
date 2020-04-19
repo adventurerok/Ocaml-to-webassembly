@@ -168,8 +168,11 @@ and transform_pat ?check:(check = true)
       code
   | Tpat_construct (name, plist) ->
       let construct = Option.value_exn (Context.find_constr state.context name) in
+      let variant_type = Option.value_exn (Context.find_type state.context construct.type_name) in
+      let single_constructor = (List.length variant_type.constructors) = 1 in
       let check_code =
-        if check then
+        (* No need to check if we have only one constructor *)
+        if check && (not single_constructor) then
           let id_var = quick_temp_var state It_int in
           let const_var = quick_temp_var state It_int in
           let test_var = quick_temp_var state It_bool in

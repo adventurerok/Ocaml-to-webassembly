@@ -1,0 +1,502 @@
+===
+   Full benchmarks
+===
+
+OTWA E2E tester params: samples/benchmark/ -benchmult 10 -benchstat 50 -only gcd
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/gcd.ml
+rec100,byte,time,4.0078000000000005,4.029072529944042,4.881599999999999,5.734127470055956,6.647200000000001,0.8525274700559572
+rec100,interp,time,4.786599999999998,4.786599999999998,5.3190599999999995,5.997447810031999,6.7644,0.6783878100319997
+rec100,js,time,0.399994850159,0.411437302109354,0.52599859237682,0.6405598826442861,0.90000629425,0.11456129026746605
+rec100,opt,time,0.20439999999999997,0.20439999999999997,0.2621779999999999,0.32602738931579556,0.48999999999999994,0.06384938931579566
+rec100,otwa,time,0.2,0.24693376137081963,0.3300000000000001,0.4130662386291806,0.5,0.08306623862918051
+rec100,otwa,memory,0,0,0,0,0,0
+rec1000,byte,time,39.3934,39.629678719549936,40.625997999999996,41.622317280450055,43.497,0.9963192804500626
+rec1000,interp,time,46.916799999999995,46.9739690495893,47.54592600000001,48.11788295041072,50.520999999999994,0.5719569504107093
+rec1000,js,time,2.79998779297,2.79998779297,2.9419999122631992,3.3774727283827337,5.299997329710001,0.43547281611953426
+rec1000,opt,time,2.0927,2.0927,2.6599920000000004,3.5743190467048436,5.004700000000001,0.9143270467048434
+rec1000,otwa,time,1.8,1.8,2.4459999999999997,3.2319287499512948,3.8,0.7859287499512949
+rec1000,otwa,memory,0,0,0,0,0,0
+looprec,byte,time,39.155899999999995,39.218374419130335,39.69884,40.17930558086966,41.4846,0.48046558086966407
+looprec,interp,time,46.9088,47.08732258585541,47.481381999999996,47.87544141414458,48.6014,0.3940594141445823
+looprec,js,time,2.3000001907300005,2.3000001907300005,2.5159988403318008,2.899852511979211,4.2000055313099995,0.3838536716474102
+looprec,opt,time,2.0877,2.0877,2.3306899999999997,2.9299088275580134,5.2284,0.5992188275580138
+looprec,otwa,time,1.7,1.7,1.9399999999999997,2.4103190406521935,3.5,0.47031904065219393
+looprec,otwa,memory,0,0,0,0,0,0
+imp1000,byte,time,34.8271,34.87566276478428,35.243204,35.61074523521572,36.4993,0.36754123521571946
+imp1000,interp,time,52.0382,52.0382,53.772753999999985,58.26210988387522,78.2203,4.489355883875237
+imp1000,js,time,4.499983787540001,4.499983787540001,4.976000308989402,5.5861039641714605,7.00001716614,0.6101036551820583
+imp1000,opt,time,1.7716999999999998,1.7716999999999998,1.8878419999999994,2.173590399883537,3.5559,0.28574839988353773
+imp1000,otwa,time,3.5,3.5,3.703999999999998,4.159613871606228,5.5,0.4556138716062302
+imp1000,otwa,memory,0,0,0,0,0,0
+OTWA E2E tester params: samples/benchmark/ -benchmult 2 -benchstat 50 -only primes
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/primes.ml
+slow_benchmark,byte,time,453.51750000000004,460.86905941993587,475.08469,489.3003205800642,518.2655000000001,14.215630580064154
+slow_benchmark,interp,time,440.0005,443.729268814417,453.1682800000001,462.60729118558316,475.711,9.439011185583086
+slow_benchmark,js,time,565.9999847400001,578.9949765768573,604.2200040816,629.4450315863427,663.4999513649999,25.22502750474263
+slow_benchmark,opt,time,136.5105,136.6669762870124,144.18178999999998,151.69660371298755,167.15650000000002,7.514813712987577
+slow_benchmark,otwa,time,412,412,427.59,447.68544475745716,540.5,20.095444757457212
+slow_benchmark,otwa,memory,314434440,NaN,314434440,NaN,314434440,NaN
+OTWA E2E tester params: samples/benchmark/ -benchmult 5 -benchstat 50 -only fibonacci
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/fibonacci.ml
+loop10000,byte,time,14.551600000000002,14.551600000000002,15.991112000000001,17.765839039365794,22.833000000000002,1.7747270393657943
+loop10000,interp,time,15.467199999999997,15.608607416911102,16.368972,17.129336583088897,20.128800000000002,0.7603645830888975
+loop10000,js,time,24.399995803800003,25.483233126240698,27.460002899176,29.436772672111303,34.4000339508,1.9767697729353009
+loop10000,opt,time,2.3004000000000002,2.6957899532811833,3.608784,4.521778046718817,4.6146,0.9129940467188165
+loop10000,otwa,time,11.8,12.43774826419513,13.86,15.282251735804868,18.8,1.4222517358048683
+loop10000,otwa,memory,11920000,11920000,11920000,11920000,11920000,0
+OTWA E2E tester params: samples/benchmark/ -benchmult 5 -benchstat 50 -only quicksort
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/quicksort.ml
+sort1000,byte,time,55.09159999999999,55.52400983224097,58.515055999999994,61.50610216775902,66.2124,2.9910461677590265
+sort1000,interp,time,56.8678,56.91425603242595,57.98698800000001,59.05971996757407,61.493599999999994,1.0727319675740605
+sort1000,js,time,47.399997711199994,47.85241953213496,50.64800262451201,53.44358571688906,58.399963379,2.795583092377047
+sort1000,opt,time,19.3928,19.423863834523758,23.019788000000002,26.615712165476246,33.4728,3.595924165476243
+sort1000,otwa,time,28.2,28.289955717442474,31.31600000000001,34.342044282557545,39,3.0260442825575367
+sort1000,otwa,memory,26948400,26948400,26948400,26948400,26948400,0
+
+===
+   OTWA no-ref-elim
+===
+
+OTWA E2E tester params: samples/benchmark/ -benchmult 10 -benchstat 50 -otwaonly -only gcd -no_ref_elimination
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/gcd.ml
+rec100,otwa,time,0.6,0.6,0.6580000000000001,0.7182992537267207,0.9,0.060299253726720514
+rec100,otwa,memory,1200,1200,1200,1200,1200,0
+rec1000,otwa,time,6.4,6.453060024019196,6.528,6.602939975980803,6.7,0.07493997598080343
+rec1000,otwa,memory,12000,12000,12000,12000,12000,0
+looprec,otwa,time,6.1,6.156602267034523,6.235999999999998,6.315397732965473,6.4,0.07939773296547535
+looprec,otwa,memory,12000,12000,12000,12000,12000,0
+imp1000,otwa,time,8.1,8.1,8.172000000000002,8.25694704232613,8.4,0.0849470423261283
+imp1000,otwa,memory,8000,8000,8000,8000,8000,0
+OTWA E2E tester params: samples/benchmark/ -benchmult 2 -benchstat 50 -otwaonly -only primes -no_ref_elimination
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/primes.ml
+slow_benchmark,otwa,time,481,481,489.2,518.2081023164219,691,29.008102316421894
+slow_benchmark,otwa,memory,431553832,431553832,431553832,431553832,431553832,13.856406460551018
+OTWA E2E tester params: samples/benchmark/ -benchmult 5 -benchstat 50 -otwaonly -only fibonacci -no_ref_elimination
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/fibonacci.ml
+loop10000,otwa,time,11,11,11.403999999999998,12.252989988162408,17,0.8489899881624099
+loop10000,otwa,memory,12040000,12040000,12040000,12040000,12040000,0
+OTWA E2E tester params: samples/benchmark/ -benchmult 5 -benchstat 50 -otwaonly -only quicksort -no_ref_elimination
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/quicksort.ml
+sort1000,otwa,time,25.6,25.6,26.55199999999999,28.56418687004973,40.4,2.012186870049743
+sort1000,otwa,memory,28951200,28951200,28951200,28951200,28951200,0
+
+===
+   OTWA no-tail_calls
+===
+
+OTWA E2E tester params: samples/benchmark/ -benchmult 10 -benchstat 50 -otwaonly -only gcd -no_tail_calls -no_ref_elimination
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/gcd.ml
+rec100,otwa,time,1.3,1.3531198194133307,1.4239999999999997,1.4948801805866687,1.8,0.07088018058666899
+rec100,otwa,memory,0,0,0,0,0,0
+rec1000,otwa,time,14.1,14.1,14.164000000000009,14.240837490847637,14.4,0.07683749084762877
+rec1000,otwa,memory,0,0,0,0,0,0
+looprec,otwa,time,13.6,13.618034094211454,13.793999999999999,13.969965905788543,14.8,0.17596590578854507
+looprec,otwa,memory,0,0,0,0,0,0
+imp1000,otwa,time,8,8.040730303083333,8.128000000000004,8.215269696916675,8.4,0.08726969691667137
+imp1000,otwa,memory,8000,8000,8000,8000,8000,0
+OTWA E2E tester params: samples/benchmark/ -benchmult 2 -benchstat 50 -otwaonly -only primes -no_tail_calls -no_ref_elimination
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/primes.ml
+slow_benchmark,otwa,time,355,355,361.53,383.00799106061845,511,21.477991060618507
+slow_benchmark,otwa,memory,314434440,NaN,314434440,NaN,314434440,NaN
+OTWA E2E tester params: samples/benchmark/ -benchmult 5 -benchstat 50 -otwaonly -only fibonacci -no_tail_calls -no_ref_elimination
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/fibonacci.ml
+loop10000,otwa,time,10.6,10.6,11.036000000000003,11.915718136677851,17,0.879718136677848
+loop10000,otwa,memory,11920000,11920000,11920000,11920000,11920000,0
+OTWA E2E tester params: samples/benchmark/ -benchmult 5 -benchstat 50 -otwaonly -only quicksort -no_tail_calls -no_ref_elimination
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/quicksort.ml
+sort1000,otwa,time,26,26,26.667999999999996,28.60153975909475,40,1.9335397590947525
+sort1000,otwa,memory,26948400,26948400,26948400,26948400,26948400,0
+
+
+===
+   otwa no ref/tail/dead code
+===
+
+OTWA E2E tester params: samples/benchmark/ -benchmult 10 -benchstat 50 -otwaonly -only gcd -no_ref_elimination -no_tail_calls -no_dead_code
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/gcd.ml
+rec100,otwa,time,2.5,2.5,2.5779999999999994,2.7080615239031163,3.4,0.13006152390311687
+rec100,otwa,memory,2485600,2485600,2485600,2485600,2485600,0
+rec1000,otwa,time,25.2,25.2,25.712000000000007,27.64183315340987,39.1,1.9298331534098627
+rec1000,otwa,memory,24856000,24856000,24856000,24856000,24856000,0
+looprec,otwa,time,25.1,25.1,25.378000000000007,25.74802162098936,26.8,0.37002162098935143
+looprec,otwa,memory,24856000,24856000,24856000,24856000,24856000,0
+imp1000,otwa,time,7.7,7.7,7.768,7.8385407683541874,8.1,0.07054076835418795
+imp1000,otwa,memory,8000,8000,8000,8000,8000,0
+OTWA E2E tester params: samples/benchmark/ -benchmult 2 -benchstat 50 -otwaonly -only primes -no_ref_elimination -no_tail_calls -no_dead_code
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/primes.ml
+slow_benchmark,otwa,time,359.5,359.5,366.73,388.37028881507825,517,21.64028881507825
+slow_benchmark,otwa,memory,314434440,NaN,314434440,NaN,314434440,NaN
+OTWA E2E tester params: samples/benchmark/ -benchmult 5 -benchstat 50 -otwaonly -only fibonacci -no_ref_elimination -no_tail_calls -no_dead_code
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/fibonacci.ml
+loop10000,otwa,time,10.6,10.6,11.131999999999998,11.979216619289346,16.8,0.8472166192893478
+loop10000,otwa,memory,11920000,11920000,11920000,11920000,11920000,0
+OTWA E2E tester params: samples/benchmark/ -benchmult 5 -benchstat 50 -otwaonly -only quicksort -no_ref_elimination -no_tail_calls -no_dead_code
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/quicksort.ml
+sort1000,otwa,time,26.2,26.2,27.080000000000005,28.934723699099038,39.8,1.8547236990990328
+sort1000,otwa,memory,26948400,26948400,26948400,26948400,26948400,0
+
+===
+   otwa no ref/tail/dead/tuple loads
+===
+
+OTWA E2E tester params: samples/benchmark/ -benchmult 10 -benchstat 50 -otwaonly -only gcd -no_ref_elimination -no_tail_calls -no_dead_code -no_tuple_loads
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/gcd.ml
+rec100,otwa,time,2.6,2.6,2.651999999999999,2.781984614474198,3.5,0.12998461447419937
+rec100,otwa,memory,2485600,2485600,2485600,2485600,2485600,0
+rec1000,otwa,time,26.2,26.2,26.657999999999987,28.4975749509059,39.5,1.839574950905913
+rec1000,otwa,memory,24856000,24856000,24856000,24856000,24856000,0
+looprec,otwa,time,26.1,26.164222451318576,26.272,26.37977754868142,26.8,0.10777754868142182
+looprec,otwa,memory,24856000,24856000,24856000,24856000,24856000,0
+imp1000,otwa,time,7.7,7.7,7.784,7.882711701434049,8.2,0.09871170143404914
+imp1000,otwa,memory,8000,8000,8000,8000,8000,0
+OTWA E2E tester params: samples/benchmark/ -benchmult 2 -benchstat 50 -otwaonly -only primes -no_ref_elimination -no_tail_calls -no_dead_code -no_tuple_loads
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/primes.ml
+slow_benchmark,otwa,time,354.5,354.5,359.92,381.3565015802483,509,21.436501580248255
+slow_benchmark,otwa,memory,314434440,NaN,314434440,NaN,314434440,NaN
+OTWA E2E tester params: samples/benchmark/ -benchmult 5 -benchstat 50 -otwaonly -only fibonacci -no_ref_elimination -no_tail_calls -no_dead_code -no_tuple_loads
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/fibonacci.ml
+loop10000,otwa,time,10.8,10.8,11.204000000000002,12.10065154881925,17.2,0.8966515488192485
+loop10000,otwa,memory,11920000,11920000,11920000,11920000,11920000,0
+OTWA E2E tester params: samples/benchmark/ -benchmult 5 -benchstat 50 -otwaonly -only quicksort -no_ref_elimination -no_tail_calls -no_dead_code -no_tuple_loads
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/quicksort.ml
+sort1000,otwa,time,26,26,26.992000000000008,28.83415525947174,39.6,1.8421552594717303
+sort1000,otwa,memory,26948400,26948400,26948400,26948400,26948400,0
+
+===
+   otwa no ref/tail/dead/tuple/alias/direct
+===
+
+OTWA E2E tester params: samples/benchmark/ -benchmult 4 -benchstat 50 -otwaonly -only gcd -no_ref_elimination -no_tail_calls -no_dead_code -no_tuple_loads -no_alias_elimination -no_direct_calls
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/gcd.ml
+rec100,otwa,time,8.5,8.5,8.815,9.244563732174875,11.75,0.4295637321748751
+rec100,otwa,memory,4971200,4971200,4971200,4971200,4971200,0
+rec1000,otwa,time,87,87,88.03,91.97703686326844,115.5,3.9470368632684347
+rec1000,otwa,memory,49712000,49712000,49712000,49712000,49712000,0
+looprec,otwa,time,86.75,86.87638064896339,87.265,87.65361935103661,89.25,0.38861935103661255
+looprec,otwa,memory,49712000,49712000,49712000,49712000,49712000,0
+imp1000,otwa,time,8,8,8.175,8.370256241897652,9.25,0.19525624189765034
+imp1000,otwa,memory,16000,16000,16000,16000,16000,0
+OTWA E2E tester params: samples/benchmark/ -benchmult 1 -benchstat 50 -otwaonly -only primes -no_ref_elimination -no_tail_calls -no_dead_code -no_tuple_loads -no_alias_elimination -no_direct_calls
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/primes.ml
+slow_benchmark,otwa,time,538,538,546.36,571.978555775062,724,25.61855577506192
+slow_benchmark,otwa,memory,354533088,354533088,354533088,354533088,354533088,0
+OTWA E2E tester params: samples/benchmark/ -benchmult 2 -benchstat 50 -otwaonly -only fibonacci -no_ref_elimination -no_tail_calls -no_dead_code -no_tuple_loads -no_alias_elimination -no_direct_calls
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/fibonacci.ml
+loop10000,otwa,time,29,29,29.89,31.53708834007165,40.5,1.6470883400716523
+loop10000,otwa,memory,19920000,19920000,19920000,19920000,19920000,0
+OTWA E2E tester params: samples/benchmark/ -benchmult 2 -benchstat 50 -otwaonly -only quicksort -no_ref_elimination -no_tail_calls -no_dead_code -no_tuple_loads -no_alias_elimination -no_direct_calls
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/quicksort.ml
+sort1000,otwa,time,97,97,99.54,105.46523417258754,140,5.925234172587541
+sort1000,otwa,memory,82335200,82335200,82335200,82335200,82335200,0
+
+===
+   otwa no alias elimination
+===
+
+OTWA E2E tester params: samples/benchmark/ -benchmult 10 -benchstat 50 -otwaonly -only gcd -no_tail_calls -no_ref_elimination -no_alias_elimination
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/gcd.ml
+rec100,otwa,time,1.3,1.353966675920795,1.4139999999999997,1.4740333240792045,1.7,0.060033324079204795
+rec100,otwa,memory,0,0,0,0,0,0
+rec1000,otwa,time,13.8,13.90076752418428,14.087999999999996,14.275232475815711,14.5,0.18723247581571573
+rec1000,otwa,memory,0,0,0,0,0,0
+looprec,otwa,time,13.5,13.525545019465147,13.706000000000008,13.88645498053487,14.5,0.1804549805348616
+looprec,otwa,memory,0,0,0,0,0,0
+imp1000,otwa,time,7.7,7.7064244923465015,7.824000000000002,7.941575507653502,8.3,0.11757550765350026
+imp1000,otwa,memory,8000,8000,8000,8000,8000,0
+OTWA E2E tester params: samples/benchmark/ -benchmult 2 -benchstat 50 -otwaonly -only primes -no_tail_calls -no_ref_elimination -no_alias_elimination
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/primes.ml
+slow_benchmark,otwa,time,351.5,351.5,357.32,378.87243837713027,507.5,21.552438377130258
+slow_benchmark,otwa,memory,314434440,NaN,314434440,NaN,314434440,NaN
+OTWA E2E tester params: samples/benchmark/ -benchmult 5 -benchstat 50 -otwaonly -only fibonacci -no_tail_calls -no_ref_elimination -no_alias_elimination
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/fibonacci.ml
+loop10000,otwa,time,10.8,10.8,11.264,12.129738990689473,17,0.8657389906894746
+loop10000,otwa,memory,11920000,11920000,11920000,11920000,11920000,0
+OTWA E2E tester params: samples/benchmark/ -benchmult 5 -benchstat 50 -otwaonly -only quicksort -no_tail_calls -no_ref_elimination -no_alias_elimination
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/quicksort.ml
+sort1000,otwa,time,25.8,25.8,26.55599999999999,28.333319329777407,38.8,1.7773193297774177
+sort1000,otwa,memory,26948400,26948400,26948400,26948400,26948400,0
+
+===
+   otwa no ref/tail/dead/tuple/alias/direct/scg
+===
+
+OTWA E2E tester params: samples/benchmark/ -benchmult 2 -benchstat 50 -otwaonly -only gcd -no_ref_elimination -no_tail_calls -no_dead_code -no_tuple_loads -no_alias_elimination -no_direct_calls -no_stack_codegen
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/gcd.ml
+rec100,otwa,time,8.5,8.5,8.63,9.039999999999978,11,0.40999999999997716
+rec100,otwa,memory,4971200,4971200,4971200,4971200,4971200,0
+rec1000,otwa,time,85.5,85.5,86.38,90.03316301306162,111.5,3.653163013061622
+rec1000,otwa,memory,49712000,49712000,49712000,49712000,49712000,0
+looprec,otwa,time,85.5,85.5,85.92,86.5473754856546,88.5,0.6273754856545904
+looprec,otwa,memory,49712000,49712000,49712000,49712000,49712000,0
+imp1000,otwa,time,8,8,8.22,8.468193472919786,8.5,0.24819347291978558
+imp1000,otwa,memory,16000,16000,16000,16000,16000,0
+OTWA E2E tester params: samples/benchmark/ -benchmult 1 -benchstat 50 -otwaonly -only primes -no_ref_elimination -no_tail_calls -no_dead_code -no_tuple_loads -no_alias_elimination -no_direct_calls -no_stack_codegen
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/primes.ml
+slow_benchmark,otwa,time,539,539,546.6,571.40241923684,719,24.80241923684007
+slow_benchmark,otwa,memory,354533088,354533088,354533088,354533088,354533088,0
+OTWA E2E tester params: samples/benchmark/ -benchmult 1 -benchstat 50 -otwaonly -only fibonacci -no_ref_elimination -no_tail_calls -no_dead_code -no_tuple_loads -no_alias_elimination -no_direct_calls -no_stack_codegen
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/fibonacci.ml
+loop10000,otwa,time,30,30,30.92,32.22904545375626,37,1.3090454537562584
+loop10000,otwa,memory,19920000,19920000,19920000,19920000,19920000,0
+OTWA E2E tester params: samples/benchmark/ -benchmult 1 -benchstat 50 -otwaonly -only quicksort -no_ref_elimination -no_tail_calls -no_dead_code -no_tuple_loads -no_alias_elimination -no_direct_calls -no_stack_codegen
+Benchmark stats mode enabled
+Awaiting test results...
+
+Results in...
+
+Success! All 1 tests passed!
+
+
+Benchmarks for samples/benchmark/quicksort.ml
+sort1000,otwa,time,99,99,102.04,108.64896361012822,147,6.608963610128208
+sort1000,otwa,memory,82335200,82335200,82335200,82335200,82335200,0
+All benchmarks have finished!!!!
+Yay, we are done!!!!

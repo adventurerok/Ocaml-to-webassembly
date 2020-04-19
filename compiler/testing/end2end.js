@@ -98,10 +98,15 @@ async function testFile(path) {
     await testCompileAndInstantiate(test);
     await testGlobals(test);
     await testFunctions(test);
-    await testBenchmarks(test);
+    await testBenchmarks(test, benchOptions);
   } catch(e) {
+    let detail = e.detail;
+    if(e.message === "unreachable") {
+      e.detail = e;
+    }
+
     return {
-      path: e.path,
+      path: path,
       result: false,
       message: e.message,
       detail: e.detail
@@ -211,6 +216,17 @@ let promises;
 let allPromise;
 
 
+let onlyAllow = undefined;
+
+let benchOptions = {
+  benchStats: false,
+  benchMult: 1,
+  benchStatCount: 3,
+  otwaOnly: false,
+};
+
+console.log("OTWA E2E tester params: " + process.argv.slice(2).join(" "));
+
 for(let argIndex = 2; argIndex < process.argv.length; ++argIndex) {
   let arg = process.argv[argIndex];
 
@@ -222,6 +238,30 @@ for(let argIndex = 2; argIndex < process.argv.length; ++argIndex) {
       case "-e2edebug":
         debug = true;
         break;
+      case "-benchstat":
+        benchOptions.benchStats = true;
+        console.log("Benchmark stats mode enabled");
+
+        benchOptions.benchStatCount = parseInt(process.argv[argIndex + 1]);
+        ++argIndex;
+
+        break;
+      case "-only":
+        onlyAllow = process.argv[argIndex + 1];
+        ++argIndex;
+        break;
+
+      case "-benchmult":
+
+        benchOptions.benchMult = parseInt(process.argv[argIndex + 1]);
+        ++argIndex;
+
+        break;
+
+      case "-otwaonly":
+        benchOptions.otwaOnly = true;
+        break;
+
       default:
         // otwa compiler argument
         if(otwaArgs.length > 0) {
@@ -239,6 +279,15 @@ for(let argIndex = 2; argIndex < process.argv.length; ++argIndex) {
 
 const run = async () => {
   const samplesFiles = fs.readdirSync(samplesDir).filter((name) => {
+    if(onlyAllow) {
+      let dotIndex = name.indexOf(".");
+      if (dotIndex < 0) return false;
+
+      if(name.substring(0, dotIndex) != onlyAllow) {
+        return false;
+      }
+    }
+
     return name.endsWith(".ml") && !name.endsWith(".bench.ml");
   });
 

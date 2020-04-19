@@ -3,5 +3,8 @@
     "ten": 10,
     "five": 5,
     "eight": 8
+  },
+  "functions": {
+    "sum(50,25)": 75
   }
 }
