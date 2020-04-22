@@ -1,0 +1,108 @@
+\chapter{The Intermediate Representation}
+
+\begin{minted}{OCaml}
+type itype =
+| It_poly | It_bool | It_int | It_pointer | It_unit
+| It_float
+| It_none
+
+type iftype = itype * itype (* Function type *)
+type ituptype = itype list (* Tuple type *)
+
+type iunop =
+| Iun_neg (* Negate *)
+| Iun_eqz (* Equals zero *)
+
+type ibinop =
+| Ibin_add | Ibin_sub | Ibin_mul | Ibin_div | Ibin_rem (* Arithmetic *)
+| Ibin_and | Ibin_or (* Logic *)
+| Ibin_eq | Ibin_ne (* Equality *)
+| Ibin_lt | Ibin_le | Ibin_gt | Ibin_ge (* Comparison *)
+
+type iscope = Isco_local | Isco_global (* Variable scope *)
+
+type ivariable = iscope * string
+
+type iinstruction =
+(* Create a new var from a constant *)
+(* type of var, name of var *)
+| Iins_setvar of itype * ivariable * string
+(* Copy a var into another *)
+(* type of var, name of new var, name of old var *)
+| Iins_copyvar of itype * ivariable * ivariable
+(* Return var *)
+(* type of var, name of var *)
+| Iins_return of itype * ivariable
+(* Unary operation using one argument value *)
+(* type of operand, unary operation, result var, input var *)
+| Iins_unop of itype * iunop * ivariable * ivariable
+(* Binary operation using two argument values *)
+(* type of operands, binary operation *)
+| Iins_binop of itype * ibinop * ivariable * ivariable * ivariable
+(* Make a new closure for specified function and tuple type *)
+(* type of function, name of function, type of closure vars, result var *)
+| Iins_newclosure of iftype * string * ituptype * ivariable
+(* Fill a closure with a list of vars *)
+(* type of closure vars, name of var, list of vars to copy in *)
+| Iins_fillclosure of ituptype * ivariable * ivariable list
+(* Call closure in var, passing in an argument *)
+(* type of function, output var, closure var, var for argument *)
+| Iins_callclosure of iftype * ivariable * ivariable * ivariable
+(* Directly call a function, passing multiple arguments *)
+(* output var, name of function, type of args, arg vars *)
+| Iins_calldirect of ivariable * string * ituptype * (ivariable list)
+(* Start a block *)
+(* name of block *)
+| Iins_startblock of string
+(* End a block *)
+(* name of block *)
+| Iins_endblock of string
+(* Exit from the named block *)
+(* name of block *)
+| Iins_exitblock of string
+(* Exit from the named block if var is true *)
+(* name of block *)
+| Iins_exitblockif of string * ivariable
+(* Start an if statement *)
+(* name of block, condition var *)
+| Iins_startif of string * ivariable
+(* Else clause of an if statement *)
+(* name of block *)
+| Iins_else of string
+(* End an if statement *)
+(* name of block *)
+| Iins_endif of string
+(* Starts a loop, loops until an exitblock or exitblockif *)
+(* Name of escape block (to break to), name of loop block (to continue to) *)
+| Iins_startloop of string * string
+(* Ends a loop *)
+(* Name of break block, name of continue block *)
+| Iins_endloop of string * string
+(* Create a tuple of the given vars *)
+(* type of tuple, result var, argument vars *)
+| Iins_newtuple of ituptype * ivariable * ivariable list
+(* Load tuple's value at index i *)
+(* type of tuple, index in tuple, output var, tuple var *)
+| Iins_loadtupleindex of ituptype * int * ivariable * ivariable
+(* Create a construct of the given id and vars *)
+(* type of construct arguments, result var, id of construct, argument vars *)
+| Iins_newconstruct of ituptype * ivariable * int * ivariable list
+(* Load construct's value at index i *)
+(* type of construct arguments, index in arguments, output var, construct var *)
+| Iins_loadconstructindex of ituptype * int * ivariable * ivariable
+(* Load construct's ID *)
+(* output var, construct var *)
+| Iins_loadconstructid of ivariable * ivariable
+(* Create a mutable memory box for a value *)
+(* unboxed type, result var, var to box *)
+| Iins_newbox of itype * ivariable * ivariable
+(* Update a mutable memory box with a new value *)
+(* unboxed type, boxed var, unboxed var *)
+| Iins_updatebox of itype * ivariable * ivariable
+(* Load a value from a mutable memory box *)
+(* unboxed type, target var, boxed var *)
+| Iins_unbox of itype * ivariable * ivariable
+(* Fail, suspending execution *)
+(* No parameters *)
+| Iins_fail
+\end{minted}

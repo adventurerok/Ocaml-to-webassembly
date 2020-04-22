@@ -1,0 +1,67 @@
+\chapter{Preparation}
+\note{Principally, this chapter should describe the work which was undertaken before code was written, hardware built or theories worked on. It should show how the project proposal was further refined and clarified, so that the Implementation stage could go smoothly rather than by trial and error.}
+
+\note{Throughout this chapter and indeed the whole dissertation, it is essential to demonstrate that a proper professional approach was employed.}
+
+\note{The nature of this chapter will vary greatly from one dissertation to another but, underlining the professional approach, this chapter will very likely include a section headed “Requirements Analysis” and incorporate other references to software engineering techniques.}
+
+\note{The chapter will cite any new programming languages and systems which had to be learnt and will mention complicated theories or algorithms which required understanding.}
+
+\note{It is essential to declare the Starting Point (see Section 7). This states any existing codebase or materials that your project builds on. The text here can commonly be identical to the text in your proposal, but it may enlarge on it or report variations. For instance, the true starting point may have turned out to be different from that declared in the proposal and such discrepancies must be explained. }
+
+\section{Requirements}
+
+The success criteria in the project proposal presents a clearly defined subset of OCaml to implement. This subset was designed to be large enough so that useful OCaml programs could be written in it, while small enough to be feasible to implement by Christmas.
+
+% TODO STARTING POINT
+
+% TODO MATERIAL DONE BEFORE CODE WAS WRITTEN
+
+% TODO? HOW I ENSURED CODING WASN'T TRIAL AND ERROR
+
+\section{Components of the Compiler}
+\note{Write after implementation. Description of each part, what it does and background material. E.g. mention polymorphic types and what they are / name HM algorithm, because that is beyond Part IB. Mention optimisations and OptComp course? Mention lambda lifting / closure conversion, and what these terms mean separately and what I do?}
+
+\section{WebAssembly}
+\note{TODO Move WebAssembly stuff from introduction to here, give overview of features e.g. limited stack manipulation, variables, verified}
+
+\section{Working Environment and Tools Setup}
+Since I have both a laptop and desktop, I decided the best way to work on both would be to do the work remotely via a remote desktop application on a remote server. Both my laptop and desktop were configured to download backups from the server once per hour (if they were on), so if there proved to be a problem with the server, I could redeploy easily by uploading the backups to a new server if required.
+\\\\
+In addition, I used Git in order to keep a record of my work, to allow me to access previous versions of files, and to backup to GitHub
+
+\subsection{Dune}
+I chose to use the Dune\cite{Dune} build system for OCaml as it is the most widely-used build system for OCaml, and supports multi-module projects and dependencies installed via OPAM, the OCaml Package Manager.
+\\\\
+Dune build files are specified in each directory in a file called \textinline{dune}, with the top-level directory specifying the build file for the entire project, and subdirectories containing the build files for each module. These build files are specified in a LISP-like `s-expression' syntax, for instance here is the top-level build file of the project:
+\\\\
+\begin{minipage}{\linewidth}
+
+\begin{minted}{LISP}
+(executable
+    (name toplevel)
+    (libraries proj.types proj.transform proj.codegen proj.base
+               core_kernel compiler-libs.common)
+    (preprocess (pps ppx_jane)))
+\end{minted}
+\end{minipage}
+\\\\
+The name field includes the `public names' of libraries to be included. Library modules have their own build files that specify `library' instead of `executable', and an additional `public\_name' field.
+\\\\
+The executable can be build by invoking \textinline{dune build toplevel.exe} in the top-level directory, which will output the binary to \textinline{_build/default/toplevel.exe}.
+
+\note{Easy to shorten?}
+
+\section{Libraries / Tools Used}
+\subsection{OCaml Compiler Libs}
+I used the official OCaml compiler \cite{OCaml} libraries to perform lexing and parsing, which provide the same frontend as used by the official OCaml compiler. As the frontend of the official OCaml compiler is liable to change between releases, I stuck to version 4.08, which was the most recent version when I started the project but has now been succeeded by 4.09.
+
+\subsection{WebAssembly Binary Toolkit}
+The WebAssembly Binary Toolkit \cite{Wabt} (WABT)  is a separate tool which can compile WebAssembly Text Form (.wast files) outputted by my compiler to the WebAssembly Binary Format (.wasm files) that can be loaded by NodeJS and browsers.
+\\\\
+\note{TODO Explain how to use compiler, then invoke WABT, and then explain JS code to load the WASM? The E2E tester does this so could also be explained in Evaluation chapter?}
+
+\section{Starting Point}
+I had very little OCaml experience prior to this project, and experience of writing compilers. In addition, I had no experience of using WebAssembly, but I have plenty of experience writing JavaScript.
+\\\\
+I attempted to deal with some of these issues prior to starting the project by coming up with some OCaml samples for the compiler to compile in the future, and by setting up an OCaml workspace where I successfully figured out how to import the OCaml Compiler libraries, and learned to navigate the AST they use by writing a simple example that adds one to integer constants. I also read through the WebAssembly documentation to get a sense of which features would be a challenge to compile to WebAssembly.

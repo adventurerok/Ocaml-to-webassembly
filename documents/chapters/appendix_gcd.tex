@@ -1,0 +1,152 @@
+\chapter{IR and WebAssembly Output of GCD}
+\note{Tobias' proposal that I have an example program and show it at each step of the compilation. Could be a good idea but the code is massive, so this would easily extend to about 10+ pages. Also might require renaming some of the temporaries to make the code easier to read}
+\note{Probably a bit much coming to think of it, so maybe just GCD sample, (untyped-AST?), IR and WebAssembly only to save from having to apply to the chairman of examiners for a longer appendix. I would rename temp variables to make the code easier to understand}
+
+\section{OCaml}
+The recursive GCD function as it is defined in the GCD sample.
+
+\begin{minted}{OCaml}
+let rec gcd a b =
+  match (a, b) with
+  | (0, y) -> y
+  | (x, 0) -> x
+  | _ ->
+      if a > b then
+        gcd (a - b) b
+      else
+        gcd (b - a) a
+\end{minted}
+
+\section{In IR Post-Optimisations}
+
+The inner `gcd-app' function produced by compiling the above to the IR and then performing optimisations. Variable and block names have been changed to make the code easier to read.
+
+\makeatletter
+\expandafter\def\csname PYGdefault@tok@err\endcsname{\def\PYGdefault@bc##1{##1}}
+\makeatother
+\begin{minted}{Perl}
+Function $$f_gcd-app:
+-args:
+$b_in (int)
+-closure vars:
+$a_in (int)
+-local vars:
+$a (int)
+$b (int)
+$a_copy (int)
+$result (int)
+$constant_zero_1 (int)
+$a_ne_zero (bool)
+$constant_zero_2 (int)
+$b_ne_zero (bool)
+$a_greater_than_b (bool)
+$a_minus_b (int)
+$b_minus_a (int)
+-code:
+copyvar int local.$a local.$a_in
+copyvar int local.$b local.$b_in
+startloop $break_loop $continue_loop
+  copyvar int local.$a_copy local.$a
+  startblock $match_block
+    startblock $match_case_0_y
+      setvar int local.$constant_zero_1 0
+      binop int ne local.$a_ne_zero local.$a local.$constant_zero_1
+      exitblockif $match_case_0_y local.$a_ne_zero
+      copyvar int local.$result local.$b
+      exitblock $match_block
+    endblock $match_case_0_y
+    startblock $match_case_x_0
+      setvar int local.$constant_zero_2 0
+      binop int ne local.$b_ne_zero local.$b local.$constant_zero_2
+      exitblockif $match_case_x_0 local.$b_ne_zero
+      copyvar int local.$result local.$a
+      exitblock $match_block
+    endblock $match_case_x_0
+    startblock $match_case_default
+      binop int gt local.$a_greater_than_b local.$a local.$b
+      startif $if_a_greater_than_b local.$a_greater_than_b
+        binop int sub local.$a_minus_b local.$a local.$b
+        copyvar int local.$a local.$a_minus_b
+        exitblock $continue_loop
+      else $if_a_greater_than_b
+        binop int sub local.$b_minus_a local.$b local.$a
+        copyvar int local.$a local.$b_minus_a
+        copyvar int local.$b local.$a_copy
+        exitblock $continue_loop
+      endif $if_a_greater_than_b
+    endblock $match_case_default
+    fail
+  endblock $match_block
+  exitblock $break_loop
+endloop $break_loop $continue_loop
+return int local.$result
+\end{minted}
+
+\section{WebAssembly}
+The above IR code translated into WebAssembly.
+
+\begin{minted}{LISP}
+(func $$f_gcd-app (export "gcd")
+  (param $a_in i32)
+  (param $b_in i32)
+  (result i32)
+  (local $a i32)
+  (local $b i32)
+  (local $a_copy i32)
+  (local $result i32)
+    local.get $a_in
+    local.set $a
+    local.get $b_in
+    local.set $b
+    block $break_loop
+      loop $continue_loop
+        local.get $a
+        local.set $a_copy
+        block $match_block
+          block $match_case_0_y
+            local.get $a
+            i32.const 0
+            i32.ne
+            br_if $match_case_0_y
+            local.get $b
+            local.set $result
+            br $match_block
+          end $match_case_0_y
+          block $match_case_x_0
+            local.get $b
+            i32.const 0
+            i32.ne
+            br_if $match_case_x_0
+            local.get $a
+            local.set $result
+            br $match_block
+          end $match_case_x_0
+          block $match_case_default
+            local.get $a
+            local.get $b
+            i32.gt_s
+            if $if_a_greater_than_b
+              local.get $a
+              local.get $b
+              i32.sub
+              local.set $a
+              br $continue_loop
+            else $if_a_greater_than_b
+              local.get $b
+              local.get $a
+              i32.sub
+              local.set $a
+              local.get $a_copy
+              local.set $b
+              br $continue_loop
+            end $if_a_greater_than_b
+            br $match_block
+          end $match_case_default
+        unreachable
+        end $match_block
+        br $break_loop
+      end $continue_loop
+    end $break_loop
+    local.get $result
+)
+\end{minted}

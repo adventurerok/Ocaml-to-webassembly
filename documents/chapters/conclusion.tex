@@ -1,0 +1,29 @@
+\chapter{Conclusion}
+\note{This chapter is likely to be very short and it may well refer back to the Introduction. It might properly explain how you would have planned the project if starting again with the benefit of hindsight. }
+
+\note{
+	\begin{itemize}
+		\item SSA based IR?
+		\item More optimisations e.g. reverse copy-propagation, mutually recursive tail call optimisation, better match statements, better code generator that can re-order non side effecting instructions, speedy append implementation
+		\item More feature support: strings, records and mutable records, modules, named/optional function arguments, using the operators as function arguments (e.g. List.reduce ~f:(+) nums to sum a list)
+	\end{itemize}
+}
+
+
+
+% TODO CONCLUDE THE DOCUMENT
+% TODO IVE SUCCESSFULLY MET SUCCESS CRITERIA, SUMMARY OF EVERYTHING
+% TODO WHAT LESSONS DID I LEARN
+% TODO WHAT WORK COULD YOU DO IN THE FUTURE
+\section{Outcome of the Project}
+The project met and exceeded the success criteria: a subset of OCaml larger than the minimum sample specified in the proposal can be successfully compiled to WebAssembly, and several optimisations were implemented leading to a reduction in execution time varying from 22\% on the primes benchmark to 97\% on the GCD benchmark, consistently outperforming Js\_of\_OCaml as an option for running OCaml on the web.
+
+\section{Lessons Learned}
+Potentially the biggest lesson I learned was about the design of the intermediate representation (IR). Initially I implemented a stack-based, structured IR to make code generation simpler, but I later learned about the difficulties of optimising such an IR, hence switching to an unstructured, variable based IR, which set the project back by about a week at the end of January.
+
+\section{Future Work}
+There is a vast scope for potential future work on the project. One option would be to expand the subset of OCaml supported, by adding obviously useful features such as strings and records, or by supporting more nuanced features such as `guards' in match statement cases that allow a boolean condition to be checked before the case is taken. Work could be undertaken to support modules, which would open up the possibility of compiling multi-file programs and potentially to support using subsets of the standard library.
+\\\\
+Expanding the subset of features supported would also likely introduce interesting new avenues for optimisation --- for instance replacing a large string concatenation expression with something similar to Java's String Builders to avoid the $O(n^2)$ cost of the repeated concatenations. Of course even with the current subset, there are numerous further optimisations that could be implemented. Investigating which factors lead to a tail-call optimised function being faster could allow conditional operation of the tail-call optimiser to prevent functions such as those in the Prime benchmark from being converted.
+\\\\
+WebAssembly has a number of extensions in development --- for instance garbage collection. With the use of development versions of these extensions I could add support for garbage collection or exceptions, although this would make testing more challenging because my WebAssembly execution environment would need to support these extensions.
