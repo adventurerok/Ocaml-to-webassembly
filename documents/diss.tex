@@ -120,7 +120,7 @@ extent for a comparable purpose.
 		College:            & \bf Robinson College                     \\
 		Project Title:      & \bf Compiling OCaml to WebAssembly \\
 		Examination:        & \bf Part II Computer Science, May 2020        \\
-		Word Count:         & \bf FILL IN LATER  \\
+		Word Count:         & \bf FILL IN LATER, CURRENTLY 13K  \\
 		Project Originator: & Timothy M. Jones                \\
 		Supervisor:         & Tobias Kohn            \\ 
 	\end{tabular}
@@ -144,6 +144,7 @@ extent for a comparable purpose.
 
 \note{At most 100 words describing any special difficulties that you faced.
 (In most cases the special difficulties entry will say “None”.) }
+None.
 
 \tableofcontents
 
@@ -929,7 +930,7 @@ In addition, command line arguments can be passed to the end to end tester to di
 \\\\
 The samples cover all features that my compiler supports. Some samples are small, for testing that a particular feature works as intended such as the \textinline{tailrec.ml} sample which contains two tail-recursive functions: one with integer arguments and result, and the other with floating point arguments and result. Other samples are large and intend to show that lots of features can work together, for instance \textinline{core-subset.ml} intends to ensure that all features in the `core subset' that I defined as being the features I needed to support to meet the success criteria work.
 
-\section{Benchmarking}
+\section{Benchmark Methodology}
 \note{
 	\begin{itemize}
 		\item Gcd: main target of optimisations. Went from 122ms to 8ms thanks to all of them.
@@ -938,7 +939,9 @@ The samples cover all features that my compiler supports. Some samples are small
 	\end{itemize}
 }
 
-My compiler was benchmarked against four other execution environments. The OCaml compiler toolchain provides three methods of executing OCaml: the read-evaluate-print-loop (REPL), executing compiled bytecode (byte) and compiled native code (Nat). Js\_of\_OCaml \cite{Js_of_ocaml} is a tool for converting OCaml bytecode into executable JavaScript, which was included in the benchmark to give an indication of how my compiled WebAssembly performs on the web compared to other methods of executing OCaml on the web.
+Benchmarking allows the performance of my compiler to be compared with other methods of compiling and executing OCaml programs, and with various optimisations enabled and disabled. Most commonly, the execution time of samples is compared, with smaller values being beneficial as if code is executed faster, we can do more in a given period of time, and users spend less time waiting for computations. Memory usage is also important to benchmark, and reducing memory usage allows programs to run with larger input sizes on systems with constrained memory. Lastly, the size of programs can also be compared; smaller programs take less time to download, useful for WebAssembly applications which are always downloaded prior to execution (although some browsers may cache them).
+\\\\
+I benchmarked my compiler against four other execution environments. The OCaml compiler toolchain provides three methods of executing OCaml: the read-evaluate-print-loop (REPL), executing compiled bytecode (byte) and compiled native code (Nat). Js\_of\_OCaml \cite{Js_of_ocaml} is a tool for converting OCaml bytecode into executable JavaScript, which was included in the benchmark to give an indication of how my compiled WebAssembly performs on the web compared to other methods of executing OCaml on the web.
 \\\\
 I selected four samples to be used as a benchmark:
 \begin{itemize}
@@ -1082,7 +1085,7 @@ Additionally, WebAssembly memory use was benchmarked, by comparing the \wainline
 	[
 	width=\linewidth,
 	height=0.6\linewidth,
-	title=Relative Memory Usage (WebAssembly Memory Area),
+	title=Relative Memory Usage (WebAssembly `Heap' Memory Area),
 	xlabel=Environment,
 	ylabel=Relative Memory Usage \%,
 	xtick={1,2,3,4,5},
@@ -1135,6 +1138,25 @@ Additionally, WebAssembly memory use was benchmarked, by comparing the \wainline
 	\label{fig:memlenbenchmark}
 \end{figure}
 
+\section{Benchmark Results}
+The results are promising: my compiler's WebAssembly is executed faster than the OCaml bytecode and Js\_of\_OCaml for all four benchmarks, and is hence a viable method for executing OCaml code on the web. There are however significant drawbacks: my code does not have to expend time performing garbage collection, and the lack of garbage collection means it is unlikely to be a good choice for executing high-memory-usage OCaml programs. Additionally, OCaml developers in practice use a standard library and split their code across multiple files, both features unsupported by my compiler and hence making it a more difficult to use tool for compiling OCaml for the web.
+\\\\
+Overall, the optimisations lead to significant speed-ups on all samples, with GCD's average execution time going from 86.4ms to 2.4ms, a reduction of 97\%. Primes' average execution time was reduced from 540.3ms to 419.9ms (22\% improvement), however with tail-call optimisation disabled this improves to 358.9ms (34\% improvement). There are many interesting observations to be made from the results for various optimisations:
+
+\subsubsection{Stack Code Generation}
+This optimisation clearly shows a significant line-of-code reduction of 3209 lines across all samples, although without a notable improvement in execution time. This is likely due to additional optimisations and compilation that WebAssembly goes under before it is executed: it must be compiled to register-based machine code, in practice removing the difference between accessing values on the stack and values stored in WebAssembly variables, both of which will likely become register accesses. In the case of GCD, we see execution time is slightly worsened with this optimisation, potentially a by-product of the stack code generator's ability to store a value on the stack for a long time until it is needed instead of storing it in a variable.
+
+\subsubsection{Direct Calls}
+Enabling this leads to a drastic improvement in execution time in all cases. GCD for instance executes in 26.5ms as opposed to 88ms. Memory usage also sees a great improvement due to the reduced need to construct closures as partial applications are replaced with full applications where possible. Finally, we also see a slight improvement in line-count, due to some memory operations for constructing closures being eliminated.
+
+\subsubsection{IR Optimisations}
+These only really effect the GCD sample, where dead-code elimination combined with tuple-load elimination leads to tuple-creation for the match statement being eliminated, thus reducing execution time and completely eliminating GCD's heap memory usage. In the other samples, optimisations alias-elimination can remove some variables and thus we see a reduction in the lines-of-code, but no improvement in execution time likely due to the WebAssembly environment's own optimisations when the WebAssembly is compiled to machine code.
+
+\subsubsection{Tail Call Optimisation and Ref Elimination}
+Enabling this optimisation cuts in half GCD's execution time compared to with just the previously discussed optimisations. However, for the other samples the result is either no improvement or an increase in execution time! A possible explanation for this is that GCD calls a tail-recursive function once that then loops many times, while other samples make many calls to tail-recursive functions that may loop only a few times, thus incurring the overhead of the loop and the `references' (eliminated with ref-elimination) without the gain if the loop is only used a few times. Primes for instance has mutually recursive functions that are tail-call optimised, but make frequent calls to each other.
+\\\\
+The increase in memory is due to the references, and is hence eliminated by ref-elimination. Lines-of-code also increases due to the additional loop code added to functions.
+
 % TODO DONT FORGET ALL THE WORK IN MAKING THE CODE SHORTER
 
 % TODO HOW IT WAS EVALUATED
@@ -1155,12 +1177,24 @@ Additionally, WebAssembly memory use was benchmarked, by comparing the \wainline
 	\end{itemize}
 }
 
+
+
 % TODO CONCLUDE THE DOCUMENT
 % TODO IVE SUCCESSFULLY MET SUCCESS CRITERIA, SUMMARY OF EVERYTHING
 % TODO WHAT LESSONS DID I LEARN
 % TODO WHAT WORK COULD YOU DO IN THE FUTURE
+\section{Outcome of the Project}
+The project met and exceeded the success criteria: a subset of OCaml larger than the minimum sample specified in the proposal can be successfully compiled to WebAssembly, and several optimisations were implemented leading to a reduction in execution time varying from 22\% on the primes benchmark to 97\% on the GCD benchmark, consistently outperforming Js\_of\_OCaml as an option for running OCaml on the web.
 
+\section{Lessons Learned}
+Potentially the biggest lesson I learned was about the design of the intermediate representation (IR). Initially I implemented a stack-based, structured IR to make code generation simpler, but I later learned about the difficulties of optimising such an IR, hence switching to an unstructured, variable based IR, which set the project back by about a week at the end of January.
 
+\section{Future Work}
+There is a vast scope for potential future work on the project. One option would be to expand the subset of OCaml supported, by adding obviously useful features such as strings and records, or by supporting more nuanced features such as `guards' in match statement cases that allow a boolean condition to be checked before the case is taken. Work could be undertaken to support modules, which would open up the possibility of compiling multi-file programs and potentially to support using subsets of the standard library.
+\\\\
+Expanding the subset of features supported would also likely introduce interesting new avenues for optimisation --- for instance replacing a large string concatenation expression with something similar to Java's String Builders to avoid the $O(n^2)$ cost of the repeated concatenations. Of course even with the current subset, there are numerous further optimisations that could be implemented. Investigating which factors lead to a tail-call optimised function being faster could allow conditional operation of the tail-call optimiser to prevent functions such as those in the Prime benchmark from being converted.
+\\\\
+WebAssembly has a number of extensions in development --- for instance garbage collection. With the use of development versions of these extensions I could add support for garbage collection or exceptions, although this would make testing more challenging because my WebAssembly execution environment would need to support these extensions.
 
 
 \clearpage
@@ -1177,14 +1211,22 @@ Additionally, WebAssembly memory use was benchmarked, by comparing the \wainline
 \appendix
 % Assessors like to see some sample code or example circuit diagrams, and appendices are the sensible places to include such items. Accordingly, software and hardware projects should incorporate appropriate appendices. Note that the 12,000 word limit does not include material in the appendices, but only in extremely unusual circumstances may appendices exceed 10-15 pages - if you feel that such unusual circumstances might apply to you you should ask your Director of Studies and Supervisor to apply to the Chairman of Examiners. It is quite in order to have no appendices. Appendices should appear between the bibliography and the project proposal. 
 
-\chapter{The First Appendix}
+\chapter{The Proposed Code Sample Appendix}
 
-Things in appendix A / the Typed AST?
+Things in appendix A / Code Samples? Examiners like to see some code samples, so maybe some of the following?
+\begin{itemize}
+	\item Mutually recursive value-binding type-checking routine (complex but commented nicely)
+	\item Mutual recursion translation to IR
+	\item Pattern matching IR implementation
+	\item Reaching definitions implementation
+	\item stack codegen is probably too complicated for examiners to understand the code easily? I wrote it and I have a hard time reading it
+\end{itemize}
 
 
 \clearpage
 
 \chapter{The Intermediate Representation}
+
 \begin{minted}{OCaml}
 type itype =
 | It_poly | It_bool | It_int | It_pointer | It_unit
@@ -1293,26 +1335,13 @@ type iinstruction =
 \end{minted}
 
 \clearpage
-\chapter{Walkthrough Compilation of GCD}
+\chapter{IR and WebAssembly Output of GCD}
 \note{Tobias' proposal that I have an example program and show it at each step of the compilation. Could be a good idea but the code is massive, so this would easily extend to about 10+ pages. Also might require renaming some of the temporaries to make the code easier to read}
-\\\\
-\note{Would go something like this:
-\begin{itemize}
-	\item Type-checker (the missing types would be quite obvious so this could be skipped?)
-	\item Closure conversion: gcd and gcd-app are now extracted functions
-	\item Direct Call generation: gcd-app now directly calls itself instead of applying gcd and then applying the resulting closure
-	\item Tail Recursion Optimisation: gcd-app is now a while loop
-	\item Intermediate Representation: here is what gcd-app looks like in the IR
-	\item Unreachable Code: Look the broken code is gone
-	\item Copy Propagation: Fewer copies!
-	\item Tuple-Load: The match statement doesn't load from the tuple
-	\item Dead-Code: Now the tuple is gone so we use less memory
-	\item Ref Elimination: No more memory usage
-	\item Code-gen: Here's the WASM code
-\end{itemize}
-}
+\note{Probably a bit much coming to think of it, so maybe just GCD sample, (untyped-AST?), IR and WebAssembly only to save from having to apply to the chairman of examiners for a longer appendix. I would rename temp variables to make the code easier to understand}
 
-GCD Function:
+\section{OCaml}
+The recursive GCD function as it is defined in the GCD sample.
+
 \begin{minted}{OCaml}
 let rec gcd a b =
   match (a, b) with
@@ -1325,134 +1354,137 @@ let rec gcd a b =
         gcd (b - a) a
 \end{minted}
 
-After IR Optimisations:
-\begin{minted}{text}
+\section{In IR Post-Optimisations}
+
+The inner `gcd-app' function produced by compiling the above to the IR and then performing optimisations. Variable and block names have been changed to make the code easier to read.
+
+\makeatletter
+\expandafter\def\csname PYGdefault@tok@err\endcsname{\def\PYGdefault@bc##1{##1}}
+\makeatother
+\begin{minted}{Perl}
 Function $$f_gcd-app:
--type: int -> int
--vars:
-$temp_25 -> $temp_25 (int)
-$temp_21 -> $temp_21 (int)
-$temp_17 -> $temp_17 (int)
-$temp_16 -> $temp_16 (bool)
-$temp_15 -> $temp_15 (bool)
-$temp_14 -> $temp_14 (int)
-$temp_10 -> $temp_10 (bool)
-$temp_9 -> $temp_9 (int)
-$temp_7 -> $temp_7 (int)
-$temp_4 -> $temp_4 (poly)
-$temp_1 -> $temp_1 (poly)
-$temp_0 -> $temp_0 (poly)
-$arg -> $arg (int)
-arg_gcd_in -> $arg_gcd_in (int)
+-args:
+$b_in (int)
+-closure vars:
+$a_in (int)
+-local vars:
+$a (int)
+$b (int)
+$a_copy (int)
+$result (int)
+$constant_zero_1 (int)
+$a_ne_zero (bool)
+$constant_zero_2 (int)
+$b_ne_zero (bool)
+$a_greater_than_b (bool)
+$a_minus_b (int)
+$b_minus_a (int)
 -code:
-copyvar poly local.$temp_0 local.$arg_gcd_in
-copyvar poly local.$temp_1 local.$arg
-startloop $block_0 $block_1
-copyvar poly local.$temp_4 local.$temp_0
-startblock $block_2
-startblock $block_3
-setvar int local.$temp_9 0
-binop int ne local.$temp_10 local.$temp_0 local.$temp_9
-exitblockif $block_3 local.$temp_10
-copyvar int local.$temp_7 local.$temp_1
-exitblock $block_2
-endblock $block_3
-startblock $block_4
-setvar int local.$temp_14 0
-binop int ne local.$temp_15 local.$temp_1 local.$temp_14
-exitblockif $block_4 local.$temp_15
-copyvar int local.$temp_7 local.$temp_0
-exitblock $block_2
-endblock $block_4
-startblock $block_5
-binop int gt local.$temp_16 local.$temp_0 local.$temp_1
-startif $block_6 local.$temp_16
-binop int sub local.$temp_17 local.$temp_0 local.$temp_1
-copyvar poly local.$temp_0 local.$temp_17
-exitblock $block_1
-else $block_6
-binop int sub local.$temp_21 local.$temp_1 local.$temp_0
-copyvar poly local.$temp_0 local.$temp_21
-copyvar poly local.$temp_1 local.$temp_4
-exitblock $block_1
-endif $block_6
-copyvar int local.$temp_7 local.$temp_25
-exitblock $block_2
-endblock $block_5
-fail
-endblock $block_2
-exitblock $block_0
-endloop $block_0 $block_1
-return int local.$temp_7
+copyvar int local.$a local.$a_in
+copyvar int local.$b local.$b_in
+startloop $break_loop $continue_loop
+  copyvar int local.$a_copy local.$a
+  startblock $match_block
+    startblock $match_case_0_y
+      setvar int local.$constant_zero_1 0
+      binop int ne local.$a_ne_zero local.$a local.$constant_zero_1
+      exitblockif $match_case_0_y local.$a_ne_zero
+      copyvar int local.$result local.$b
+      exitblock $match_block
+    endblock $match_case_0_y
+    startblock $match_case_x_0
+      setvar int local.$constant_zero_2 0
+      binop int ne local.$b_ne_zero local.$b local.$constant_zero_2
+      exitblockif $match_case_x_0 local.$b_ne_zero
+      copyvar int local.$result local.$a
+      exitblock $match_block
+    endblock $match_case_x_0
+    startblock $match_case_default
+      binop int gt local.$a_greater_than_b local.$a local.$b
+      startif $if_a_greater_than_b local.$a_greater_than_b
+        binop int sub local.$a_minus_b local.$a local.$b
+        copyvar int local.$a local.$a_minus_b
+        exitblock $continue_loop
+      else $if_a_greater_than_b
+        binop int sub local.$b_minus_a local.$b local.$a
+        copyvar int local.$a local.$b_minus_a
+        copyvar int local.$b local.$a_copy
+        exitblock $continue_loop
+      endif $if_a_greater_than_b
+    endblock $match_case_default
+    fail
+  endblock $match_block
+  exitblock $break_loop
+endloop $break_loop $continue_loop
+return int local.$result
 \end{minted}
 
-WebAssembly
+\section{WebAssembly}
+The above IR code translated into WebAssembly.
+
 \begin{minted}{LISP}
 (func $$f_gcd-app (export "gcd")
-	(param $arg_gcd_in i32)
-	(param $arg i32)
-	(result i32)
-	(local $temp_0 i32)
-	(local $temp_1 i32)
-	(local $temp_4 i32)
-	(local $temp_7 i32)
-	(local $temp_25 i32)
-	local.get $arg_gcd_in
-	local.set $temp_0
-	local.get $arg
-	local.set $temp_1
-	block $block_0
-	loop $block_1
-	local.get $temp_0
-	local.set $temp_4
-	block $block_2
-	block $block_3
-	local.get $temp_0
-	i32.const 0
-	i32.ne
-	br_if $block_3
-	local.get $temp_1
-	local.set $temp_7
-	br $block_2
-	end $block_3
-	block $block_4
-	local.get $temp_1
-	i32.const 0
-	i32.ne
-	br_if $block_4
-	local.get $temp_0
-	local.set $temp_7
-	br $block_2
-	end $block_4
-	block $block_5
-	local.get $temp_0
-	local.get $temp_1
-	i32.gt_s
-	if $block_6
-	local.get $temp_0
-	local.get $temp_1
-	i32.sub
-	local.set $temp_0
-	br $block_1
-	else $block_6
-	local.get $temp_1
-	local.get $temp_0
-	i32.sub
-	local.set $temp_0
-	local.get $temp_4
-	local.set $temp_1
-	br $block_1
-	end $block_6
-	local.get $temp_25
-	local.set $temp_7
-	br $block_2
-	end $block_5
-	unreachable
-	end $block_2
-	br $block_0
-	end $block_1
-	end $block_0
-	local.get $temp_7
+  (param $a_in i32)
+  (param $b_in i32)
+  (result i32)
+  (local $a i32)
+  (local $b i32)
+  (local $a_copy i32)
+  (local $result i32)
+    local.get $a_in
+    local.set $a
+    local.get $b_in
+    local.set $b
+    block $break_loop
+      loop $continue_loop
+        local.get $a
+        local.set $a_copy
+        block $match_block
+          block $match_case_0_y
+            local.get $a
+            i32.const 0
+            i32.ne
+            br_if $match_case_0_y
+            local.get $b
+            local.set $result
+            br $match_block
+          end $match_case_0_y
+          block $match_case_x_0
+            local.get $b
+            i32.const 0
+            i32.ne
+            br_if $match_case_x_0
+            local.get $a
+            local.set $result
+            br $match_block
+          end $match_case_x_0
+          block $match_case_default
+            local.get $a
+            local.get $b
+            i32.gt_s
+            if $if_a_greater_than_b
+              local.get $a
+              local.get $b
+              i32.sub
+              local.set $a
+              br $continue_loop
+            else $if_a_greater_than_b
+              local.get $b
+              local.get $a
+              i32.sub
+              local.set $a
+              local.get $a_copy
+              local.set $b
+              br $continue_loop
+            end $if_a_greater_than_b
+            br $match_block
+          end $match_case_default
+        unreachable
+        end $match_block
+        br $break_loop
+      end $continue_loop
+    end $break_loop
+    local.get $result
 )
 \end{minted}
 
