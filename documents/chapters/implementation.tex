@@ -9,59 +9,14 @@
 
 % TODO WORK DONE, ONE SECTION PER PART OF THE COMPILER
 
-\note{I have a large number of pending comments on this chapter from Tobias, so I expect it's going to have significant rewrites. I've been focusing on the Evaluation and Conclusion recently.}
-
 \section{Front End}
-Lexing and parsing is handled by the OCaml Compiler Libs, which produces a \textinline{structure} object representing the AST of the entire program. This AST and the corresponding typed-AST, which I designed to be very similar (using the same names prefixed with a t), are used throughout the first half of the compilation process before intermediate translation occurs. Figure \ref{fig:ast} gives the grammar of the OCaml AST in Extended Backus-Naur form \cite{Ebnf}, with an overview of it's components following. The typed-AST holds additional type information and prefixes its elements with `t'.
-\begin{figure}[h!]
-    \begin{minted}{EBNF}
-    structure = { structure_item } ;
-    structure_item = "expression" expression
-    | "let" rec_flag { value_binding }
-    | "type" rec_flag { type_decl } ;
-    
-    type_decl = name { type_param } { constructor_decl } ;
-    constructor_decl = name { type } ;
-    type = "int" | "float" | "bool" | "unit" | type_param | type "->" typ
-    | "(" { type } ")" | name "(" { type } ")" ;
-    type_param = "`" name ;
-    
-    expression = "constant" constant | "identifier" identifier
-    | "fun" pattern expression
-    | "app" expression { expression }
-    | "let" rec_flag { value_binding } expression
-    | "tuple" { expression } | "construct" name { expression }
-    | "if" expression expression [ expression ]
-    | "match" expression { case }
-    | "constraint" expression type ;
-    
-    pattern = "any" | "identifier" identifier | "constant" constant
-    | "tuple" { pattern } | "construct" name { pattern }
-    | "constraint" pattern type ;
-    
-    case = pattern expression ;
-    value_binding = pattern expression ;
-    
-    identifier = predefined | name ;
-    predefined = "+" | "-" (* All predefined operators *) ;
-    constant = (* A string representing a constant, e.g. "34", "()", "false" *) ;
-    name = (* A string *)
-    \end{minted}
-    \caption{An grammar for the OCaml Abstract Syntax Tree}
-    \label{fig:ast}
-\end{figure}
-\begin{itemize}
-    \item \textinline{(t)structure} A list of \textinline{(t)structure_item} representing the top-level items in a file.
-    \item \textinline{(t)structure_item} A single top-level item in a file. Can either be an \textinline{(t)expression} (e.g. for imperative code), a let binding consisting of a list of \textinline{(t)value_binding}, or a type definition consisting of a list of \textinline{type_decls}
-    \item \textinline{(t)expression} A unit of code that will produce a value. There are various types including identifiers, constants, match statements, function definitions and applications.
-    \item \textinline{(t)pattern} A structure of a value, that can be used both to test if a value conforms to this structure (e.g. in a match statement), and to destructure a value into separate variables (e.g. in a let binding). Can be an identifer, constant, tuple of several patterns, or a construct (effectively a named tuple).
-    \item \textinline{(t)value_binding} An expression and a pattern. The result of evaluating the expression is destructured and bound to the variables in the pattern, for instance in \camlinline{let x,y = (5 + 2, 3)} the pattern is \camlinline{(x, y)} and \camlinline{(5 + 2, 3)} is the expression
-\end{itemize}
-
-\note{Easy to shorten?}
-\note{Put the AST in an appendix? Get rid of the explanation?}
-\note{Syntax of AST must be removed, and replaced with overview of OCaml syntax and how it maps to AST. Could also put OCaml syntax in preparation.}
-
+Lexing and parsing is handled by the OCaml Compiler Libs, which produces an Abstract Syntax Tree representing the entire program. This AST and its derivative typed-AST are used extensively throughout the first half of the compilation process, so I provide an overview of the most important elements here.
+\\\\
+The two most important elements are `expressions' and `patterns'. Informally, an expression is some code that produces a value, while a pattern describes the structure of a value. A good example is a let-binding consists of an assignment of an expression to a pattern. Consider the let-binding \camlinline{let x,y = (5 + 2, 3)}. \camlinline{(5 + 2, 3)} is an expression, since it evaluates to a tuple value. \camlinline{x,y} is a pattern, since it describes the structure of the tuple --- a two element tuple where we call the first element \camlinline{x} and second element \camlinline{y}.
+\\\\
+Patterns have a dual functionality in OCaml --- they can be used both for testing that a value conforms to a structure, as in match statements, and for extracting `sub-values' out of a value of a particular structure, known as destructuring. The above pattern for instance destructures the tuple to extract its two elements as \camlinline{x} and \camlinline{y}. We could have equally used the pattern \camlinline{7,3} instead to check the result of the expression was as expected --- a matching pattern used in a let binding in OCaml will halt the program if it does not match.
+\\\\
+The whole OCaml program is represented as a top-level `structure' consisting of a list of `structure-items'. Structure-items are global let-bindings, defining variables accessible from that point onwards. Functions defined in structure items are top-level functions that will eventually be exposed as `exports' in the WebAssembly module. Other function definitions are nested functions, and are not exported.
 
 
 

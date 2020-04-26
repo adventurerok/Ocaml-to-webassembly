@@ -1,17 +1,14 @@
 \chapter{Preparation}
-\note{Principally, this chapter should describe the work which was undertaken before code was written, hardware built or theories worked on. It should show how the project proposal was further refined and clarified, so that the Implementation stage could go smoothly rather than by trial and error.}
+%\note{The chapter will cite any new programming languages and systems which had to be learnt and will mention complicated theories or algorithms which required understanding.}
 
-\note{Throughout this chapter and indeed the whole dissertation, it is essential to demonstrate that a proper professional approach was employed.}
-
-\note{The nature of this chapter will vary greatly from one dissertation to another but, underlining the professional approach, this chapter will very likely include a section headed “Requirements Analysis” and incorporate other references to software engineering techniques.}
-
-\note{The chapter will cite any new programming languages and systems which had to be learnt and will mention complicated theories or algorithms which required understanding.}
-
-\note{It is essential to declare the Starting Point (see Section 7). This states any existing codebase or materials that your project builds on. The text here can commonly be identical to the text in your proposal, but it may enlarge on it or report variations. For instance, the true starting point may have turned out to be different from that declared in the proposal and such discrepancies must be explained. }
+%\note{It is essential to declare the Starting Point (see Section 7). This states any existing codebase or materials that your project builds on. The text here can commonly be identical to the text in your proposal, but it may enlarge on it or report variations. For instance, the true starting point may have turned out to be different from that declared in the proposal and such discrepancies must be explained. }
 
 \section{Requirements}
-
-The success criteria in the project proposal presents a clearly defined subset of OCaml to implement. This subset was designed to be large enough so that useful OCaml programs could be written in it, while small enough to be feasible to implement by Christmas.
+The success criteria in the project proposal presented a clearly defined subset of OCaml to implement. This subset was designed to be large enough so that useful OCaml programs could be written in it, while small enough that it was feasible to implement by Christmas.
+\\\\
+In addition, a set of code samples was needed to test the compiler. I decided to build up this set of samples over the course of the implementation, as I could better consider where the edge cases might lie after I had developed an implementation to test.
+\\\\
+The proposal also suggested that I construct some kind of browser framework to test these samples, but I later decided that a NodeJS environment would be a more practical and easier automated solution to testing.
 
 % TODO STARTING POINT
 
@@ -19,40 +16,55 @@ The success criteria in the project proposal presents a clearly defined subset o
 
 % TODO? HOW I ENSURED CODING WASN'T TRIAL AND ERROR
 
-\section{Components of the Compiler}
-\note{Write after implementation. Description of each part, what it does and background material. E.g. mention polymorphic types and what they are / name HM algorithm, because that is beyond Part IB. Mention optimisations and OptComp course? Mention lambda lifting / closure conversion, and what these terms mean separately and what I do?}
-
 \section{WebAssembly}
-\note{TODO Move WebAssembly stuff from introduction to here, give overview of features e.g. limited stack manipulation, variables, verified}
-
-\section{Working Environment and Tools Setup}
-Since I have both a laptop and desktop, I decided the best way to work on both would be to do the work remotely via a remote desktop application on a remote server. Both my laptop and desktop were configured to download backups from the server once per hour (if they were on), so if there proved to be a problem with the server, I could redeploy easily by uploading the backups to a new server if required.
+%\note{TODO Move WebAssembly stuff from introduction to here, give overview of features e.g. limited stack manipulation, variables, verified}
+The current MVP (minimum viable product) version of WebAssembly is designed for compiled languages like C and C++ that do not use garbage collection and can make do without exceptions. There are extensions currently being developed to add support for these features, but progress on these is slow as they often depend on other extensions, for instance the garbage collection extension depends on extensions for reference types and typed function references, which seek to expand the WebAssembly type system so for instance a garbage collector would understand the shape of data in memory\cite{Wgce}.
 \\\\
-In addition, I used Git in order to keep a record of my work, to allow me to access previous versions of files, and to backup to GitHub
+There are a few interesting features of WebAssembly which are worth drawing attention to:
+\begin{itemize}
+    \item WebAssembly instructions operate on a stack, however stack manipulation is limited. For instance, there are no instructions to duplicate the top of the stack or swap the top two elements. Instead, functions may specify local variables, and there are instructions to load/save these to/from the stack.
+    \item WebAssembly modules are verified before they are executed. This verification traces what will be on the stack, ensuring for instance that there are enough values on the stack to execute each instruction. The types of these values are also verified, ensuring that a function of type \wainline{i32} does not return a value of \wainline{f32} or even no value if the stack was empty.
+    \item Limited branching is available. It is only possible to branch to the end of `blocks' and the beginning of `loops'.
+    \item The JavaScript interface can only pass \wainline{i32} and \wainline{f32/f64} values to/from WebAssembly functions. There is no way to pass in 64-bit integers as they are unsupported in JavaScript, hence I used 32-bit integers only. To keep things simple I also restricted my implementation to 32-bit floating point values since they can both fit in the same amount of memory.
+\end{itemize}
 
-\subsection{Dune}
-I chose to use the Dune\cite{Dune} build system for OCaml as it is the most widely-used build system for OCaml, and supports multi-module projects and dependencies installed via OPAM, the OCaml Package Manager.
-\\\\
-Dune build files are specified in each directory in a file called \textinline{dune}, with the top-level directory specifying the build file for the entire project, and subdirectories containing the build files for each module. These build files are specified in a LISP-like `s-expression' syntax, for instance here is the top-level build file of the project:
-\\\\
-\begin{minipage}{\linewidth}
+%\note{TODO Alan suggests moving to Preparation, and giving an overview of WA's linguistic features. I already have a bit of an overview in the code generation section, but these are the main ones:
+%    \begin{itemize}
+%        \item Stack based, structured (but compiler doesn't use this structure much / goes for unstructured options)
+%        \item Local variables get/set/tee
+%        \item No swap or dup instructions
+%        \item Verified i32/f32 types, must know signature of function for all function calls, blocks have a result type
+%        \item Can branch only out of a block early, or to the start of a loop
+%        \item JS interface can only pass i32 and f32 values - no strings / structs or anything
+%\end{itemize}}
 
-\begin{minted}{LISP}
-(executable
-    (name toplevel)
-    (libraries proj.types proj.transform proj.codegen proj.base
-               core_kernel compiler-libs.common)
-    (preprocess (pps ppx_jane)))
-\end{minted}
-\end{minipage}
-\\\\
-The name field includes the `public names' of libraries to be included. Library modules have their own build files that specify `library' instead of `executable', and an additional `public\_name' field.
-\\\\
-The executable can be build by invoking \textinline{dune build toplevel.exe} in the top-level directory, which will output the binary to \textinline{_build/default/toplevel.exe}.
+\section{Components of the Compiler}
+This section provides a very brief overview of each component of the compiler. Full descriptions of what each component does are provided in the implementation.
 
-\note{Easy to shorten?}
+\subsection{Front End}
+The Front End performs lexing and parsing using the OCaml compiler's lexer and parser. Lexing converts a file into a stream of tokens, and parsing converts this stream of tokens into an Abstract Syntax Tree (AST) --- representing the structure of the OCaml code.
 
-\section{Libraries / Tools Used}
+\subsection{Type Inference}
+The type-inference stage converts the AST into a typed-AST, providing each node in the AST with a type. This is achieved using a Hindley-Milner based type-inference algorithm, producing a set of type-constraints and solving them to produce the final types of each node.
+
+\subsection{Lambda Lifting / Closure Conversion}
+Lambda Lifting is the process of converting nested functions to top-level functions: additional parameters are added to represent variables in-scope at the nested-function definition. Closure conversion then replaces the original definition sites of these functions with the creation of `closure' objects: a closure contains the needed environment variables to execute the function --- they provide a way of passing around function references that can be executed without the required variables in the function going out of scope.
+\\\\
+My compiler performs both of these, producing a list of functions alongside a modified top-level AST.
+
+\subsection{Direct Call Generation and Tail Call Optimisation}
+Direct Call Generation is an optimisation that `undoes' some of the closure conversion, inserting direct calls where possible to avoid the overhead of closures. Tail Call Optimisation converts tail-recursive functions to use loops, making tail-recursion safe to use with no risk of stack-overflow. This section was implemented as an extension.
+
+\subsection{Intermediate Translation}
+Intermediate Translation serves to transform the AST into an `Intermediate Representation' (IR) --- a language designed to act as an intermediate between the source language and target language. My IR is an instruction set that eliminates features such as patterns and expressions and replaces them with a sequence of basic instructions, using variables to pass values between instructions.
+
+\subsection{IR Optimisations}
+I implemented a group of data-flow optimisations as an extension. These serve to improve the IR code in terms of time efficiency, memory usage or number of instructions.
+
+\subsection{Code Generation}
+Code Generation is the process of generating target language code from the final IR. My compiler produces a WebAssembly Text Format file. The code generator must take into account the differences between the IR and the target language --- instructions in my IR operate on variables, while WebAssembly instructions operate on the stack with special instructions for loading and saving variables. To meet the success criteria, I implemented a naive solution that made excessive use of these special load/save variable instructions. I later implemented an improved code generator that makes better use of the WebAssembly stack as an extension.
+
+\section{Libraries Used}
 \subsection{OCaml Compiler Libs}
 I used the official OCaml compiler \cite{OCaml} libraries to perform lexing and parsing, which provide the same frontend as used by the official OCaml compiler. As the frontend of the official OCaml compiler is liable to change between releases, I stuck to version 4.08, which was the most recent version when I started the project but has now been succeeded by 4.09.
 
@@ -60,6 +72,21 @@ I used the official OCaml compiler \cite{OCaml} libraries to perform lexing and 
 The WebAssembly Binary Toolkit \cite{Wabt} (WABT)  is a separate tool which can compile WebAssembly Text Form (.wast files) outputted by my compiler to the WebAssembly Binary Format (.wasm files) that can be loaded by NodeJS and browsers.
 \\\\
 \note{TODO Explain how to use compiler, then invoke WABT, and then explain JS code to load the WASM? The E2E tester does this so could also be explained in Evaluation chapter?}
+
+
+\section{Working Environment and Tools Setup}
+Since I have both a laptop and desktop, I decided the best way to work on both would be to do the work remotely via a remote desktop application on a remote server. Both my laptop and desktop were configured to download backups from the server once per hour (if they were on), so if there proved to be a problem with the server, I could redeploy easily by uploading the backups to a new server if required.
+\\\\
+In addition, I used Git in order to keep a record of my work, to allow me to access previous versions of files, and to backup to GitHub
+
+\subsection{Dune}
+I chose to use the Dune \cite{Dune} build system for OCaml as it is the most widely-used build system for OCaml, and supports multi-module projects and dependencies installed via OPAM, the OCaml Package Manager.
+
+\subsection{Using The Compiler}
+To use the compiler, the OCaml Package Manager opam \cite{Opam} must be installed. The file \textinline{tested-packages.txt} provides a list of all OPAM packages I had installed when testing the compiler. With those packages installed, the script \textinline{build.sh} can be used to build the compiler. This outputs the native executable to \textinline{_build/default/toplevel.exe}.
+\\\\
+Invoking this executable with the path to an OCaml file ending in \textinline{.ml} will output the corresponding WebAssembly Text Format file to the same path ending in \textinline{.wast}, which can then be compiled using the WebAssembly Binary Toolkit with the command \textinline{wat2wasm}. The outputted WebAssembly Binary Format file will end in \textinline{.wasm}, which can then be loaded and executed in a JavaScript environment. Further details on running WebAssembly modules is available at \cite{Load_wasm}.
+
 
 \section{Starting Point}
 I had very little OCaml experience prior to this project, and experience of writing compilers. In addition, I had no experience of using WebAssembly, but I have plenty of experience writing JavaScript.
