@@ -80,7 +80,7 @@ Lexing and parsing is handled by the OCaml Compiler Libs, which produces a \text
 %		\end{itemize}
 %	\end{itemize}
 %}
-The type-checker is responsible for translating the untyped AST into a typed-AST, and in doing so ensuring that the program is well typed, inferring types that are unknown. The main algorithm that I use is a inference algorithm based on the Hindley-Milner type system. This is a constraint based algorithm that builds up a set of constraints about types at different points in the program, and solves them to produce a unification mapping type-variables to types. My implementation was guided by an article about using Hindley-Milner in Haskell\cite{Hmi}.
+The type-checker is responsible for translating the untyped AST into a typed-AST, and in doing so ensuring that the program is well typed, inferring types that are unknown. The main algorithm that I use is a inference algorithm based on the Hindley-Milner type system. This is a constraint based algorithm that builds up a set of constraints about types at different points in the program, and solves them to produce a unification mapping type-variables to types. My implementation was guided by an article about using Hindley-Milner in Haskell \cite{Hmi}.
 \begin{figure}[h]
     $$\begin{array}{clr}
     \dfrac{x : \sigma \in \Gamma \quad \tau =\ \text{instantiate}(\Gamma, \sigma)}{\Gamma \vdash x : \tau} && \textsc{Var} \\\\
@@ -91,7 +91,7 @@ The type-checker is responsible for translating the untyped AST into a typed-AST
     \text{instantiate}(\Gamma, \forall \hat{\alpha} . \tau) = [\hat{\beta} / \hat{\alpha}]\tau \quad \text{where}\ \hat{\beta} \cup \text{free}(\Gamma) = \emptyset
     
 \end{array}$$
-\caption{The basic rules of a HM type system, taken from the Wikipedia page\cite{Hmts}}
+\caption{The basic rules of a HM type system, taken from the Wikipedia page \cite{Hmts}.}
 \label{fig:hm}
 \end{figure}
 \\\\
@@ -180,7 +180,7 @@ x + y + z + w
 \\\\
 This is achieved by walking the typed-AST. Each time a function definition is encountered, we must construct an extracted function definition, and modify the AST to include a make-closure operation. This is done in the following order, with figure \ref{fig:curried} used to illustrate:
 \begin{enumerate}
-\item We give a unique name the function. There are three possible cases here:
+\item We give a unique name to the function. There are three possible cases here:
 \begin{itemize}
 \item The function is defined in a let binding (e.g. \camlinline{sum}), in which case we use the name of the variable in the let binding.
 \item The function is defined as the expression of another function. This occurs in curried functions which are represented in the AST as nested function definitions. In this case we take the name of the parent function, and append `-app'. (e.g. \camlinline{sum-app})
@@ -200,31 +200,26 @@ The modified top-level typed-AST, along with these extracted function definition
 
 
 \section{Optimisations on Closure Converted Typed AST}
-I then perform two optimisations on this closure-converted typed-AST:
-\begin{itemize}
-\item Direct Call Generation replaces applications of closures with direct calls of the corresponding function, if we can be sure the closure is always one of that function. This is the most effective optimisation I implement because it eliminates the overhead of closure calls, which involves wrapper functions to load the closure arguments from the closure before calling the actual function, and it can be applied to curried functions, enabling multiple arguments to be passed at once without constructing the intermediate closures.
-\item Tail Call Optimisation. A function is tail-recursive if it is recursive (calls itself), but only calls itself as the very last operation to return a result, and never performs additional computation after calling itself. Tail-recursive functions can be modified to a loop instead of calling themselves, which avoids the function call overhead of putting an additional frame on the stack.
-\end{itemize}
-Both of these are implemented through rule-based analysis of abstract values.
+I perform two optimisations on at this stage in the compilation pipeline --- Direct Call Generation followed by Tail Call Optimisation.
 
 \subsection{Direct Call Generation}
-Direct Call Generation walks the AST, diving into functions at the location of their make closure operation, determining which expressions and variables at different point are certainly closures for a specific function, and which variables are available at each point. When a closure application is encountered, we do the following:
-\begin{enumerate}
-\item Check if the value being applied is known to be a closure to a specific function.
-\item Check if that function's closure variables are available. Because we do not rename closure variables inside functions, it suffices that if a variable e.g. \textinline{x#3} is available outside the closure, and is also a closure variable, then they refer to the same value.
-\item If we have a single application, we can replace directly with a call that provides the necessary closure variables.
-\item If we have a curried application, we must first determine the order to pass the arguments, and then we can pass all the arguments at once along with the closure variables.
-\end{enumerate}
+After closure-conversion, every function call has been replaced with a closure call, and calling a curried function requires calling the function's closure with the first argument and then invoking the resulting closure with the next argument as we go along. This results in huge overheads --- as we will see later, calling a closure in WebAssembly must first call a wrapper function before calling the actual function. Direct Call Generation alleviates these overheads by replacing closure calls with direct function calls wherever possible and replacing curried function closure invocation chains with a single call.
+\\\\
+Direct Call Generation is implemented as a walk of the AST. We keep track of which variables represent closures for different functions, so that when a closure application is found, we can check if we are certain if we know which closure is being invoked. For instance, in \camlinline{let fact x = ... in fact 7} we can be certain that \camlinline{fact} refers to the function we defined earlier and thus that application can be replaced with a direct call. In the case \camlinline{let apply f x = f x} however we cannot know which function \camlinline{f} refers to, and hence the closure call remains.
+\\\\
+To replace a closure application where the closure has closure variables, we must be certain that all closure variables are available at the application so they can be passed as arguments to the direct function call. Thus I keep track of the available variables as I walk the AST. The unique IDs for variables provided by the typed AST are preserved inside and outside of closures, and hence all that is required is to check that the set of variables needed for a closure is a subset of the available variables. For inserting direct calls to curried functions, this requires introducing \camlinline{let ...} statements for all but the final argument, for instance for a function \camlinline{let sum3 x y z = ... in ((sum3 4) 5) 6} (brackets inserted to make repeated closure applications explicit), we would replace these repeated closure applications with \camlinline{let x = 4 in let y = 5 in direct_sum3(x,y,6)}.
 
 \subsection{Tail Call Optimisation}
-Before we can apply tail call optimisation to a function, we must first check if it is tail-recursive. To do this we use a rule-based analysis with three possible `types': simple, tail-recursive and recursive. A simple function returns a value without calling itself, a tail-recursive function calls itself only as the last thing it does before it returns, and a recursive function calls itself and then performs additional computation afterwards.
+Recursive functions are prone to stack overflow if they recurse too many times, because we run out of stack space to store the stack frame for each function call. Tail recursive functions however do not need intermediate stack frames --- once the recursion has reached the base case, the result is returned immediately in each recursive call down to the original call to the recursive function. It is possible to convert these tail-recursive functions to use iteration rather than recursion, which is useful for WebAssembly because WebAssembly execution environments do not yet implement tail call optimisation natively.
 \\\\
-The rules are quite simple:
+Before we can apply tail call optimisation to a function, we must first check if it is tail-recursive. To do this we use a rule-based analysis with three possible `types' of expression: simple, tail-recursive and recursive. OCaml functions have a single expression as their body, and hence this analysis can be used to determine whether a function is tail-recursive. A simple function returns a value without calling itself, a tail-recursive function calls itself only as the last thing it does before it returns, and a recursive function calls itself and then performs additional computation afterwards.
+\\\\
+The rules for the analysis are as follows:
 \begin{itemize}
-\item Constants and calls to other functions have type \textinline{text} providing all the arguments are \textinline{simple}
+\item Constants and calls to other functions have type \textinline{simple} providing all the arguments are \textinline{simple}
 \item Recursive calls to the same function have type \textinline{tailrec} providing all the arguments are \textinline{simple}.
-\item An expression that performs computation on its subexpressions (e.g. addition) has type \textinline{simple} if all it's arguments are \textinline{simple}, otherwise it is \textinline{recursive}.
-\item An expression that doesn't perform computation gives the worst type of it's subexpressions.
+\item An expression that performs computation on its sub-expressions (e.g. addition) has type \textinline{simple} if all it's arguments are \textinline{simple}, otherwise it is \textinline{recursive}.
+\item An expression that doesn't perform computation gives the `worst' type of it's sub-expressions: a single \textinline{recursive} sub-expression makes the entire expression \textinline{recursive}, and likewise if there are no \textinline{recursive} sub-expressions but at least one \textinline{tailrec} sub-expression, the expression is \textinline{tailrec}.
 \end{itemize}
 For instance, \camlinline{if simple then simple else tailrec} has type \textinline{tailrec} because it does not perform computation on the result of the \textinline{tailrec}, but \camlinline{if tailrec then simple else tailrec} has type \textinline{recursive} because it uses the result of the condition to determine which branch to choose.
 \\\\
@@ -236,42 +231,44 @@ Once we have discovered a tail-recursive function, we then convert it to use a w
 \item If we manage to compute the result, we store it inside the result reference
 \item Once outside the loop, we simply dereference the result reference
 \end{enumerate}
-This gives us our iterative function body. It can also introduce `broken, unreachable' code, for instance the \camlinline{continue} statement is of type unit so it must return a unit type which is then assigned to result which is not of type unit. This code is clearly broken, but it is also unreachable as the \camlinline{continue} statement restarts the loop instead, so unreachable code analysis is required to eliminate it later. Equally broken is the creation of the result reference if our function does not return an integer, however this can be eliminated via dead-code elimination.
+This gives us our iterative function body.
+\\\\
+This also introduces `broken, unreachable' code: the \camlinline{continue} expression is of type unit so it must return a unit type; this is then assigned to \camlinline{result} which is (usually) not of type unit --- an unreachable assignment because \camlinline{continue} restarts the loop instead of yielding a result. This is a problem for WebAssembly because my implementation has units as type \wainline{i32} and a function that returns a float would expect a value of type \wainline{f32}, so if this assignment made it to code generation the WebAssembly code would not pass validation. It is not possible to have \camlinline{continue} return an element of the required type because the function may be polymorphic so this type may be unknown. However, this code is quite easily detected as unreachable and eliminated later on, so it does not provide to be a problem.
 
 \begin{figure}[h]
-\begin{minipage}{0.5\linewidth}
+\begin{minipage}[t]{0.5\linewidth}
 \begin{minted}[linenos]{OCaml}
 let rec fact n acc =
-if n = 0 then
-acc
+  if n = 0 then
+  acc
 else
-fact (n - 1) (n * acc)
+  fact (n - 1) (n * acc)
 \end{minted}
 \end{minipage}
-\begin{minipage}{0.5\linewidth}
+\begin{minipage}[t]{0.5\linewidth}
 \begin{minted}[linenos]{OCaml}
 let fact n_in acc_in =
-let n_ref = ref n_in in
-let acc_ref = ref acc_in in
-let result_ref = ref 0 in
-while true do
-let n = !n_ref in
-let acc = !acc_ref in
-let result =
-if n = 0 then
-acc
-else
-(n_ref := n - 1;
-acc_ref := n * acc;
-continue)
-in
-result_ref := result;
-break
-done
-!result_ref
+  let n_ref = ref n_in in
+  let acc_ref = ref acc_in in
+  let result_ref = ref 0 in
+  while true do
+    let n = !n_ref in
+    let acc = !acc_ref in
+    let result =
+      if n = 0 then
+        acc
+      else
+        (n_ref := n - 1;
+        acc_ref := n * acc;
+        continue)
+      in
+      result_ref := result;
+    break
+  done
+  !result_ref
 \end{minted}
 \end{minipage}
-\caption{Before and after of tail-recursion optimisation}
+\caption{OCaml illustration showing what the tail-recursion optimisation achieves. In reality, special nodes are added to the AST to represent the loop, continue and break statements: continue and break statements are not a feature of OCaml}
 \label{fig:tailrec}
 \end{figure}
 
@@ -290,9 +287,11 @@ done
 %	\end{itemize}
 %}
 
-The original intermediate representation of the compiler was designed to target WebAssembly as simply as possible, and as such was structured and stack-based, with instructions pushing and popping values to the stack, and even containing lists of sub-instructions to evaluate arguments. While this approach allowed me to reach my success criteria quickly, it would have been very difficult to optimise for due to the need to keep track of what data is on the stack while doing analyses.
+An Intermediate Representation (IR) simplifies the compiler by introducing an intermediate step between the source language and the target language. It retains a few higher level features, and eliminates others.
 \\\\
-Thus I introduced a new `variable-based' unstructured intermediate representation, where each instruction can take multiple variables as arguments and write a result to one variable, and structure is represented by special begin and end instructions for each structure.
+My original IR was designed to target WebAssembly as simply as possible, and as such was structured and stack-based, with instructions pushing and popping values to the stack, and even containing lists of sub-instructions to evaluate arguments. While this approach allowed me to reach my success criteria quickly, it would have been very difficult to optimise for due to the need to keep track of what data is on the stack while doing analyses and the difficulty of splitting structured instructions into basic blocks.
+\\\\
+Thus the final IR is `variable-based' and unstructured: each instruction can take multiple variables as arguments and write a result to one variable, and structures are represented by special begin and end instructions.
 \\\\
 The full IR is quite large, but its instructions can be broken down into one of four categories:
 \begin{itemize}
@@ -301,7 +300,7 @@ The full IR is quite large, but its instructions can be broken down into one of 
 \item Memory operations, e.g. creating and loading from tuples/constructs/boxes and closures
 \item A closure-calling instruction, and a direct-call instruction.
 \end{itemize}
-The types used in the Intermediate Representation are shown in \ref{fig:ir}, with the full IR available in Appendix B.
+The full IR is available to view in Appendix B, with an extract in figure \ref{fig:ir} showing the type system used.
 \begin{figure}[h]
 \begin{minted}[linenos]{OCaml}
 type itype =
@@ -310,25 +309,36 @@ type itype =
 | It_float
 | It_none (* No type, used for functions with no return type *)
 \end{minted}
-\caption{An overview of the types used in the Intermediate Representation}
+\caption{The basic types used in the Intermediate Representation}
 \label{fig:ir}
 \end{figure}
-Translation into the IR involves translating each function's expression into a list of these intermediate instructions. The top-level AST is translated into it's own sequence of instructions and packaged into a new special `init' function which must take no arguments and return no results, hence the inclusion of the \camlinline{It_none} type. Throughout the translation, we keep track of variables introduced (both temporary and named) and their types. Named variables in the top-level AST become global variables, while temporary variables introduced here become local variables of the init function.
 \\\\
-This transformation is handled in \textinline{intermediate.ml}, with two main functions:
+Translation into the IR involves translating each function's expression into a list of these intermediate instructions. The top-level AST is translated into it's own sequence of instructions and packaged into a new special `init' function which must take no arguments and return no results, hence the inclusion of the \camlinline{It_none} type which is used to indicate the absence of a value. Throughout the translation, we keep track of variables introduced (both temporary and named) and their types. Named variables in the top-level AST become global variables, while temporary variables introduced here become local variables of the init function.
+\\\\
+The two main things that are transformed are expressions and patterns:
 \begin{itemize}
-\item \camlinline{transform_expr} Recursively transforms an expression into a list of instructions, and a variable for the result of the expression.
-\item \camlinline{transform_pat} This takes a pattern and a variable, and generates a list of instructions that will both test the structure of the value is stored in the variable against the pattern, and destructure this value into new variables. For instance in \camlinline{let (3, a) = x} we will generate code to test the first element of x's tuple to ensure that it is 3, and assign the second element to the variable a.
+    \item Expressions are transformed into a pair $(C;\ v)$ consisting of a list of IR instructions $C$, along with a variable $v$ denoting the result of the expression. This transformation is done recursively. Denoting the transformation as $e \rightarrow (C; \ v)$, the transformation for addition might be expressed as the following:
+    $$\dfrac{e_1 \rightarrow (C_1;\ v_1) \qquad e_2 \rightarrow (C_2;\ v_2)}{e_1 + e_2 \rightarrow (C_1,C_2,v := v_1 + v_2;\ v)}$$
+
+    \item Patterns are transformed with a variable into a list of instructions. These instructions both test the value in the variable to see if it conforms to the pattern, and destructure the variable into additional variables. For instance, if we allow $(P; v) \rightarrow (C)$ to denote this transformation, we can have rules similar to the following:
+    \begin{itemize}
+        \item Variable patterns assign the inputted variable to the variable in the pattern: $$(x, v) \rightarrow (x := v)$$
+        \item Constant patterns test if the inputted variable is equal to the constant in the pattern: $$(n, v) \rightarrow (t_1 := (v \neq n), \texttt{if}\ t_1, \texttt{fail}, \texttt{endif})$$
+        \item Tuple patterns deconstruct the tuple into temporary variables and then recursively apply this procedure using the sub-patterns and these temporary variables:
+        $$\dfrac{(p_1, v_1) \rightarrow (C_1) \qquad (p_2, v_2) \rightarrow (C_2)}{((p_1, p_2), v) \rightarrow (v_1 := \texttt{loadtuple}(v,1), C_1, v_2 := \texttt{loadtuple}(v,2), C_2)}$$
+    \end{itemize}
 \end{itemize}
 The majority of the transformation is relatively straightforward, however a few cases required additional thought:
 
 \subsection{Closures and (Mutually) Recursive Functions}
 Recursive functions require their own closure to call themselves recursively, and the problem is made worse by mutually recursive functions that all require access to each others' closures. Mutually recursive definitions can occur inside expressions, and hence it is not always the case that these closures would be available as global values. This left two possible options:
 \begin{enumerate}
-\item Create a new closure for the recursive function or its mutually recursive friends whenever a recursive call occurs, by using the closure variables passed in as arguments to the function.
+\item Create a new closure for the recursive function or its mutually recursive `friends' whenever a recursive call occurs, by using the closure variables passed in as arguments to the function.
 \item Include recursive closures inside their own `closure variables'.
 \end{enumerate}
-I chose the second option because the first option would have been both less efficient, and more difficult to implement. In order to include closures inside their own `closure variables', there are two instructions to create closures. The first one, \textinline{Iins_newclosure}, creates a `new' empty closure for the specified function, while \textinline{Iins_fillclosure} takes an existing empty closure, and fills it up using the variables provided, one of which can be the variable storing the currently empty closure or currently empty closures of mutually recursive friends.
+I chose the second option because the first option would have been both less efficient, and more difficult to implement.
+\\\\
+In order to include closures inside their own `closure variables', there are two instructions to create closures. The first one, \textinline{Iins_newclosure}, creates an `empty' closure for the specified function, while \textinline{Iins_fillclosure} takes an existing empty closure, and fills it up using the variables provided, which could include variables assigned to empty closures that are not yet filled.
 
 \subsection{Match Statements}
 Match statements are handled through nested blocks. The outer block represents the entire match statement, while inner blocks represent individual cases of the match statement. In addition, a temporary variable is introduced to store the result of the entire match statement. The code for an individual case is as follows
@@ -362,49 +372,45 @@ The result of the intermediate translation is a list of function objects, which 
 %	\end{itemize}
 %}
 
-Before code generation, a second round of optimisations is performed. These optimisations are predominantly data-flow analyses. Data-flow analysis concerns the movement of data through program code, asking questions like `Will the value assigned here be used?' (Live Variable Analysis) and `Where could the current value of this variable have been assigned?' (Reaching Definitions). Unlike the first round of optimisations, which improved execution time at the expense of code size, these optimisations both improve execution time and decrease code size.
+The translated IR code often contains inefficiencies that arise from the direct translation of the semantics of OCaml. One example is that a match statement matching multiple variables must create a tuple on the heap to store these variables, and then load from the tuple when checking the cases (this example occurs in the GCD example, shown in the Appendix on page \pageref{chapter:gcd}). This tuple creation could be avoided and the cases could check directly against the variables instead. Another example is that references used solely as mutable variables inside a function (for instance references created for tail-call optimisation) must load and store to a location on the heap, when a mutable variable would be more efficient.
 \\\\
-Before data-flow analysis can be performed, function code must first be deconstructed into a basic-block graph. A basic block is a sequence of instructions that will always begin execution at the first instruction, and finish at the last, with no jumps out in-between. A conditional jump at the end of one basic block might mean that there are several possible blocks that could be executed next, and hence a graph is required to keep track of these.
+For this reason, I perform a round of optimisations after the translation to IR to try and alleviate some of these inefficiencies. These are predominantly data-flow analyses. Data-flow analyses concern the movement of data through program code, asking questions like `Will the value assigned here be used?' (Live Variable Analysis) and `Where could the current value of this variable have been assigned?' (Reaching Definitions). For instance, if we encounter a case statement which is loading from a tuple, reaching definitions can be used to find where the tuple variable is defined: if the only definition possible is from the match itself where the tuple is constructed from other variables, then we know we can replace the load with the use of the correct variable from the tuple's definition, as long as that variable has not since changed.
 \\\\
-My approach to construct this graph is to first build a jump-table which records which lines have jumps and where they might jump to. From this we can extract all locations with incoming or outgoing jumps, and use these to split the code into these blocks. We can then use the table to determine the outgoing edges of the basic blocks, and from those record in each basic block its possible predecessor or successor basic blocks.
+Unlike the first round of optimisations, which improved execution time at the expense of code size, these optimisations both improve execution time and decrease code size.
 
 \subsection{Data-Flow Analysis}
-My compiler then implements three forms of data-flow analysis for use in optimisations:
+In order to perform data-flow analysis, we need a way of tracing the `flow' throw the function code: all the possible evaluation orders of the function. This is achieved through deconstruction of the function into basic-blocks. Each basic-block is a sequence of instructions that are always executed in that order (with no intervening jumps), and a graph of these can represent the entire function. If a block ends with an if-statement for instance, it would have two possible successor blocks, one for if the condition is true, and another for if the condition is false.
+\\\\
+My approach to construct this graph is to first build a jump-table which records which lines have jumps and where they might jump to. From this we can extract all locations with incoming or outgoing jumps, and use these to split the code into these blocks. We can then use the table to determine the outgoing edges of the basic blocks, and from those record in each basic block its possible predecessor or successor basic blocks.
+\\\\
+My compiler then implements three forms of data-flow analysis for use in optimisations. As each line contains exactly one instruction, I talk in terms of instructions rather than lines:
 \begin{itemize}
-\item Live Variable Analysis: For each instruction $i$, the variable $x$ is syntactically live at that instruction if there exists an instruction $j$ that is reachable from $i$ without passing any assignments to $x$ and uses the value of $x$. There is another definition of liveness, semantic liveness, whereby a variable is life if it's value will affect the input/output behaviour of the program at some point in the future. As this is generally uncomputable, syntactic liveness is used as a safe approximation.
-\item Reaching Definitions: For each instruction $i$, a set for each variable $x$ of instructions $j$ that assign to $x$ and for which there is a path from $j$ to $i$ without passing another assignment of $x$.
-\item `Available Assignments': For each instruction $i$, a set for each variable $x$ of variables $y$ that, if assigned in an instruction that uses the value of $x$, the value of $x$ has not changed since that assignment to $y$ (but $y$ itself may have been reassigned). This analysis is similar to the more conventional Available Expressions analysis, except that instead of storing expressions for which their operands have not changed since they were computed, it stores the variables assigned from these expressions.
-\note{Someone must have done this before? YES IT IS CALLED ALIAS ANALYSIS EXCEPT WE DO IT WITH NUMBERS NOT POINTERS Also while yes it is similar to Available Expressions, it does use weird positive/negative sets and big-union instead of a single-set and big-intersection. The wikipedia page for alias analysis definitely says there are three possibilities (definitely equal is in positive, unsure is in neither, and `definitely different' is in negative). \begin{itemize}
-    \item Add y to x's sets: add to positive, remove from negative
-    \item x is assigned, so all variables that might use it are now invalid: move everything from positive set into negative set
-    \item Union: union the negative sets, new positive set is union of positive sets minus union of negative sets
-    \item No proof that it works? Will the examiners hate me for this? The argument below convinces me that it works, but is not a proof.\\\\What are the cases: 1) when we have multiple basic blocks leading to the current one, 2) Assignment to x reachable from y = x. 3) Assignment to x not reachable from y = x (e.g. example below) 4) Multiple y=x where one also has an assignment to x afterwards
-    \\\\
-    What would a case look like where it didn't work? x's positive set includes y, but the value of x could have changed after the assignment y = x. The assignment to x clearly has to come after the assignment y = x, and thus y = x can clearly reach this assignment, so either y is in x's positive set and it gets negated, or y is already in x's negative set. There is no way that y can't be in either set, which is the only case that would cause an issue.
-    \\\\
-    ALIAS ANALYSIS IS SAFE TO USE.
-\end{itemize}}
+\item Live Variable Analysis (LVA) / `Could this variable be used in the future?': For each instruction $i$, the variable $x$ is syntactically live at that instruction if there exists an instruction $j$ that is reachable from $i$ without passing any assignments to $x$ and uses the value of $x$. There is another definition of liveness, semantic liveness, whereby a variable is life if it's value will affect the input/output behaviour of the program at some point in the future. As this is generally uncomputable, syntactic liveness is used as a safe approximation.
+\item Reaching Definitions (RD) / `Where might this variable have been defined?': For each instruction $i$, Reaching Definitions gives a set for each variable $x$ of instructions $j$ that assign to $x$ and for which there is a path from $j$ to $i$ without passing another assignment of $x$.
+\item A modified form of Alias Analysis (MAA): instead of `Are x and y still the same?' I ask `Is the value of x still the same as when it was used to define y?'. Note that my question is not concerned about whether the value of y has changed, which is a question that can be answered by Reaching Definitions.
+\\\\Formally, for each instruction $i$, a set for each variable $x$ of variables $y$ that, if assigned in an instruction that uses the value of $x$, the value of $x$ has not changed since that assignment to $y$ (but $y$ itself may have been reassigned).
 \end{itemize}
+
 An example of these analyses is shown in figure \ref{fig:dataflow}. Line 0 is used to refer to the beginning of the function. Note that on line 8, $y$ is still in the available assignment set for $x$. This is correct, as in all cases where $x$ is assigned to $y$ (as in line 3), $x$ is not modified after this assignment.
 \begin{figure}[h]
-\begin{minipage}{0.3\linewidth}
+\begin{minipage}{0.25\linewidth}
 \begin{minted}[linenos, firstnumber=0]{python}
 myfunc(x):
-y = 9
-if cond:
-y = x
-y = 10
-else:
-x = 2
-y = 4
-return y
+  y = 9
+  if cond:
+    y = x
+    y = 10
+  else:
+    x = 2
+    y = 4
+  return y
 \end{minted}
 \end{minipage}
-\begin{minipage}{0.7\linewidth}
+\begin{minipage}{0.75\linewidth}
 \begin{center}
     \begin{tabular}{|c|c|c|c|}
         \hline
-        Line & LVA (at end) & RDs (at start) & AAs (at start) \\
+        Line & LVA (at end) & RDs (at start) & MAAs (at start) \\
         \hline
         1 & $x$ & $(x, \{0\})$ & \\
         \hline
@@ -419,40 +425,44 @@ return y
     \end{tabular}
 \end{center}
 \end{minipage}
-\caption{An example of the three data-flow analyses}
+\caption{An example of the three data-flow analyses. `At start' means the values of the analysis at a line before the line's instruction is executed, and `at end' likewise means after the instruction is executed.}
 \label{fig:dataflow}
 \end{figure}
 \\\\
-For each of these analyses, it is possible to define data-flow equations where we compute these sets for a line by taking either the union or intersection of the sets from all lines that are direct predecessors or successors of the line. The equations for reaching definitions analysis are as follows:
-\begin{align*}
-\text{in-defs}(i) \quad=&\quad \bigcup_{p\ \in\ \text{pred}(i)} \text{out-defs}(p) \\
-\text{out-defs}(i) \quad=&\quad (\text{in-defs}(i) \setminus \text{undef}(i)) \cup \text{def}(i)
-\end{align*}
-where $\text{undef}(i)$ and $\text{def}(i)$ depend on the instruction $i$. If $i$ does not assign a variable, they are both empty, otherwise if $i$ assigns to $x$, then $\text{undef}(i)$ is all previous assignments to $x$, while $\text{def}(i)$ is the new assignment to $x$, or $(x, \{i\})$. Similar equations can be given for the other analyses, using different def and undef functions: available assignments uses two sets a `positive set' and `negative set' for each variable (\note{Explain this more}), and live-variables operates backwards using a union of the successor lines to compute the out-lva, and then computing in-lva from that.
-\\\\
-The algorithm for implementing these data-flow analysis follows from these equations: Put the set for each line to empty initially, and iterate over all basic blocks applying these equations (all of our analyses use big-union, so there is no issue with intersection) until there is an iteration in which nothing changes, and then return the result. \note{Explain this better as well. Perhaps give pseudocode or steps. OR EXPLAIN IT LESS/MORE SIMPLY ONLY, and give an overview of what flowing means e.g. combine multiple inputs (for all the ways we flow in) into single output }
+These data-flow analyses are implemented by looping over basic-blocks, building up a map for the start and end of each line of the required data-flow data (for instance LVA stores sets of variables that are live at that point). We account for lines that have multiple flows into them by performing either a union or an intersection of the data of predecessor lines. The algorithm is iterated until a complete loop over the basic-blocks produces no changes to the map, and then the map is returned.
+\note{Put one of these analyses in the Appendix, e.g. MAA with an explanation of the weird stuff it does with positive and negative sets}
 
-\subsection{Transformations From These Analyses}
+\subsection{Transformations Using Data-Flow Analyses}
 These analyses allow me to implement a number of transformations:
 \begin{itemize}
-\item Unreachable Code Elimination. Unreachable code is code that will never be executed, and hence it is safe to remove. A safe approximation of unreachable code is given by basic blocks that have no predecessors (and are not the first block of the function), and I eliminate the code in these blocks, taking care to retain structural instructions such as those that signify the end of an if-statement or `block'.
-\item Dead Code Elimination. Dead code is code that may be executed, but produces a result that will never be used. Live Variable Analysis can be used, as if a variable is not live at the end of a line where it is assigned, that assignment is never used, and thus if that line contains no side-effects it can be eliminated.
-\item Copy Propagation. Using the results of Reaching Definitions, it becomes possible to check when we see a use of a variable $y$, if the most recent definition of $y$ is $y = x$, and using Available Assignments, we can check that $x$'s value hasn't changed since that assignment. In this case, it is safe to replace a usage of $y$ with $x$. If all usages of $y$ are eliminated, the assignment $y = x$ can then be eliminated with Dead Code Elimination.
-\item Tuple-load Elimination. Similar to copy-propagation, if we encounter the loading of a variable from a tuple $t$, e.g. loading of the 2nd element of a 3 element tuple, we can use Reaching Definitions to see if there is a unique assignment of $t$. If there is and it is of the form $t = (x_1, ..., x_n)$, we can then check using Available Assignments to make sure the $x_i$ we want has not been modified since, and if so we replace the load with $x_i$. If this eliminates all usages of $t$, Dead Code Elimination can then eliminate the construction of the tuple, which can result in a significant speedup. This optimisation is particularly useful when dealing with match statements over multiple variables, as it eliminates the creation of the tuple in that case.
+\item Unreachable Code Elimination. Unreachable code is code that will never be executed, and hence it is safe to remove. Unreachable code shows up after `continue' statements that I introduce in tail-call optimisation, because semantically they are expressions and must yield a value, so the translation has them yielding unit values, generating unreachable instructions after the jump.
+\\\\
+A safe approximation of unreachable code is given by basic blocks that have no predecessors (and are not the first block of the function), which can be safely removed.
+
+\item Tuple-load Elimination. This optimisation deals with the tuple/match statement example given at the start of the chapter in a general way. If we encounter loading of a value from a tuple $t$, Reaching Definitions can be used to find if this tuple must have been constructed earlier in the function. If so, the modified Alias Analysis can ensure the variables from this construction haven't changed, and the load can be replaced directly with the correct variable from the construction.
+
+\item Dead Code Elimination. Dead code is code that may be executed, but produces a result that will never be used. Suppose for our match statement example that Tuple-Load Elimination has been performed. We no longer load from the tuple, but yet the tuple construction is still these. However it has now become dead code because the tuple is never used.
+\\\\
+Live Variable Analysis can be used to solve this, as if a variable is not live at the end of a line where it is assigned, that assignment is never used, and thus if that line contains no side-effects (e.g. a function call can have side-effects) it can be eliminated.
+
+\item Copy Propagation. Frequently code from the IR transformation copies variables several times. By combining Reaching Definitions and the modified Alias Analysis, we can replace uses of the copy of the variable with the original variable. Dead Code Elimination can then be employed to clean up the now-unused copy instructions.
+
 \end{itemize}
 
 \subsection{Other Transformations}
-In addition, I perform a transformation I call as `ref elimination'. If a reference is created inside a function, and then only used when it is updated or dereferenced, without being passed as an argument to another function, stored in memory or returned from the function, then the reference can be eliminated and instead a mutable variable is used, which eliminates the memory operations that go with using the reference, and results in a small but noticeable speedup.
+To deal with the reference problem mentioned at the start of the chapter, I perform a transformation I call as `ref elimination'. If a reference is created inside a function, and then only used when it is updated or dereferenced, without being passed as an argument to another function, stored in memory or returned from the function, then the reference can be eliminated and instead a mutable variable is used, which eliminates the memory operations that go with using the reference.
 
-\subsection{Ordering of Transformations}
-Individually, each transformation is looped until it does not result in a change to the code. However, the order in which the transformations are performed can have a great effect on their effectiveness, for instance if Dead Code Analysis were run only before Tuple-load Elimination, we would not be able to eliminate the unused tuple assignments resulting from Tuple-Load Elimination.
-\\\\
-Therefore, I order the transformations by running each in order, but then running transformations that might benefit from an earlier transformation again after the earlier transformation. This results in some transformations being run many times, however I do not consider that a problem as the compiler is fast to execute for all samples.
 
+%% SECTION
+%% CODE GENERATION
 \section{Code Generation}
 % \note{The stack code generator removes redundant variable saving/loading. Also representation of closures and tuples/constructs/refs}
 
-The code generator is responsible for generating a WebAssembly Text Format (.wast) file of the program based on its global variables and function definitions in the IR. A skeleton file is used which contains a runtime common to all programs, which is then filled in with the specific details of this program. A stack-based algorithm is used to transform the variable-based IR into stack-based WebAssembly code, which results in much smaller code than the original simple algorithm I used. For each function, we also include a wrapper function that a closure call invokes before the full function is called.
+Code Generation is the process of generating WebAssembly code from the IR. My code generator produces WebAssembly Text Format (.wast) files that can then be converted by the WebAssembly Binary Toolkit to WebAssembly Binary Format (.wasm) files. There is some functionality required by all programs, for instance memory allocation. Thus a skeleton file is used which contains this runtime, which can then be filled in with the specific details of this program.
+\\\\
+IR instructions operate on variables, while WebAssembly instructions operate on the stack. The naive code-generation approach to solve this is thus to load the required variables before the WebAssembly instruction, and save the result to a variable afterwards. For instance the instructions \textinline{z = x + y} might be transformed to \textinline{load x; load y; add; save z}. If we have a sequence of IR instructions, this can lead to wasteful use of variables when it would be possible to make better use of the stack. For instance in the above example, if the next IR instruction needed to use z, it would load it from the variable, but a better approach to reduce the number of instructions would be to avoid the saving and loading of z on the stack.
+\\\\
+Thus I use a custom algorithm to transform the variable-based IR into stack-based WebAssembly code, which can mostly alleviate the above problem, reducing variable usage and thus reducing the size of the resulting WebAssembly programs. I refer to this algorithm as the `stack code generator' due to the generated code's use of the stack to pass variables between instructions.
 
 \subsection{WebAssembly Text Format}
 A WebAssembly Text Format file contains the definition of a WebAssembly module as an S-expression. S-expressions are a representation of nested lists as either an atom, such as \wainline{global} or \wainline{i32}, or a list of S-expressions, such as \wainline{(big (sub sexpr) sexpr)}, which is a list containing the atom `big', the list \wainline{(sub sexpr)} and the atom `sexpr'. A module is a list with the atom \wainline{module} followed by definitions, of which there are several useful types:
@@ -470,20 +480,18 @@ Instructions themselves are a list of atoms, which can be included within a func
 \end{itemize}
 
 \subsection{Runtime System}
-My compiler inserts a small runtime at the start of the WebAssembly module, which contains a function \wainline{$malloc} to allocate a memory region of a fixed size and return the address of its start, and two global variables \wainline{$mem_idx} and \wainline{$mem_max} which keep track of the next unallocated index in memory and the current size of memory respectively. If the memory becomes full, \wainline{$malloc} will call a special WebAssembly function to grow the memory.
-\\\\
-In addition, I include a function \wainline{$call_closure}, which is not used by the WebAssembly code, but allows calling of a WebAssembly closure from the JavaScript environment.
+My compiler inserts a small runtime at the start of the WebAssembly module, which contains a function \wainline{$malloc} for memory allocation, and two global variables \wainline{$mem_idx} and \wainline{$mem_max} to keep track of the next free index in memory and current size of the memory respectively. If the memory becomes full, \wainline{$malloc} will call a special WebAssembly function \wainline{memory.grow} to grow the memory.
 
 \subsection{Code Generation of Functions}
 For each function in the IR, three things are added to the WebAssembly module:
 \begin{itemize}
-\item A wrapper function, which is invoked by closure calls to that function. The type of this function is always \wainline{(param i32) (param i32) (result i32)}, where the first argument is the closure and the second is the (potentially boxed) argument. We load the closure variables onto the stack, unbox the argument if necessary, and then invoke the actual function, boxing the result of this function if required.
+\item A wrapper function, which is invoked by closure calls to that function. The type of this function is always \wainline{(param i32) (param i32) (result i32)}, where the first argument is the closure and the second is the (potentially boxed) argument. We load the closure variables onto the stack, unbox the argument if necessary, and then invoke , boxing the result of this function if required.
 \\\\
 These wrapper functions are needed for every function because we need to know the exact type of the function when we invoke it indirectly, and functions can have variable numbers of closure variable arguments, so it is not possible to write a single function that can invoke any closure without these wrapper functions.
 \\\\
-The alternative would be to inline a function's code inside the wrapper function, which would be undesirable is it would prohibit direct calls.
+The alternative would be to inline a function's code inside the wrapper function, which would be undesirable as it would prohibit direct calls.
 \item The wrapper function is added to the funcref table, which allows indirect calls to it.
-\item The actual function itself. This can have a varying number of arguments of either integer or float type, and may return either an integer or a float. I use a stack-based algorithm to optimise the code of the function, significantly reducing its size.
+\item The `actual' function, containing the code for the function's body. This function has an argument for each closure variable and the function argument in its unboxed type. My `Stack Code Generator' operates on the code which is put in these functions.
 \end{itemize}
 
 \subsection{The Stack Code Generator}
@@ -502,35 +510,50 @@ The alternative would be to inline a function's code inside the wrapper function
 %    \item Explain how we find a stack variable, and no-bypass, and tee-ing
 %    \end{itemize}
 %}
-
-The stack-based code generation algorithm operates on each basic block of the function's IR. We iterate through the code inside the basic block, working with a stack of \camlinline{gen_block}, or `generated blocks' (GB) to produce the final WebAssembly code. These GB are used to determine how to best load the variables that an instruction needs by making use of the stack and thus minimising use of \wainline{local.get} and \wainline{local.set} instructions.
+The stack code generation algorithm operates on the intermediate representation of a function. It produces WebAssembly code that makes use of the stack to pass variables between instructions. The algorithm itself employs a stack of generated blocks of code to do this --- the basic idea is that a `generated block' (GB) contains the code to assign a variable, for instance \textinline{z = 3 + 4} might have as a GB \camlinline{{code: "const 3; const 4; add", var: z}}. The next time that variable z is used, we can look through our stack of GBs to determine if we have one that can provide the value of z. If so, we substitute it in instead of loading the variable z. The instruction \textinline{w = 1 + z} would thus insert z's GB at the appropriate point, giving us \camlinline{{code: "const 1; const 3; const 4; add; add", var: w}} as another GB to use. Some of these GB eventually become the code generated for the function.
 \\\\
-The definition of a \camlinline{gen_block} is shown in figure \ref{fig:genblock}. The \camlinline{code} is the WebAssembly code of the block, \camlinline{out_stack} is the optional variable who's value is left on top of the stack after the GB is executed, and \camlinline{assigned} is the set of all variables that are assigned during the block, including the variable that is output onto the stack if it exists.
+The algorithm transforms each basic block separately --- if there are multiple possible entry routes to a basic block, we cannot substitute code from any one of them to produce the value of a variable. 
+\\\\
+The implementation of generated blocks is shown in figure \ref{fig:genblock}. Note that \camlinline{out_stack} is optional --- a gen block need not output anything to the stack. In fact in some cases as we see later we modify GBs so that they save this variable instead of outputting to the stack, and thus set this optional value to None. \camlinline{assigned} is the set of all variables that are assigned during the block, including the variable that is output onto the stack if it exists. This is needed because in some cases going up the GB stack, passing an assignment to certain variables would make the generated code incorrect.
+
 \begin{figure}[h]
 \begin{minted}[linenos]{Ocaml}
 type gen_block = {
-start_line: int; (* Start line in the IR code *)
-code: string; (* WebAssembly code *)
-out_stack: ivariable option; (* Output to stack *)
-assigned: ivariable Set.t; (* Variables that are assigned *)
-teed: bool; (* Is the stack variable teed *)
+  start_line: int; (* Start line in the IR code *)
+  code: string; (* WebAssembly code *)
+  out_stack: ivariable option; (* Output to stack *)
+  assigned: ivariable Set.t; (* Variables that are assigned *)
+  teed: bool; (* Is the stack variable teed *)
 }
 \end{minted}
 \caption{The definition of a gen\_block}
 \label{fig:genblock}
 \end{figure}
-\\\\
-The code generation for each instruction is split into three parts:
+
+The code generation for each instruction is split into three parts. Let us consider \textinline{tup = (x, y)} as a sample instruction:
 \begin{enumerate}
 \item \textbf{The instruction produces a `load variable order'}, where it specifies which variables it needs, and for each variable whether it wants it on the stack or just to be available (meaning \wainline{local.get} for that variable will produce the most up to date value, rather than that value being on the stack)
+\\\\
+For the example, this would be \camlinline{[Stack(x), Stack(y)]} because we want all three variables to be on the stack.
 
 \item \textbf{Code to execute the instruction}, e.g. perform the arithmetic operation. The function to generate this code is provided with a list of code blocks corresponding to the `load variable order', which is interspersed with the instructions code.
 \\\\
-As an example, consider generating code for the instruction to create a new tuple. Each tuple argument must be saved to memory, but the WebAssembly memory store instruction \wainline{i32.store offset=n} requires the data to be on top of the stack, with the base address below that. As WebAssembly has no `swap' instruction to swap the top two items on the stack, we must ensure that we put the base address on the stack before the data, thus when the code is generated, we insert the code corresponding to the variable we want from the lvo in between code to put the base address on the stack, and the store instruction.
+For our tuple example, the resulting WebAssembly code is approximately as follows:
+\begin{minted}{LISP}
+call malloc (8)
+local.tee tup  ; Shorthand for local.set local.get
+(substitute code to load x)
+i32.store offset=0
+local.get tup
+(substitute code to load y)
+i32.store offset=4
+\end{minted}
 
 \item \textbf{Each instruction can have one of three results}: either it does no assignment (e.g. a branch instruction), it `assigns' to a variable and the result is put on top of the stack (meaning the value stored in the actual variable is the old value), or it assigns to a variable and saves it directly in that variable.
+\\\\
+Our tuple example assigns to a variable and saves it directly in that variable.
 \end{enumerate}
-After we have generated code for an instruction, the resulting code is packaged into a GB. The tricky part of the algorithm then becomes satisfying instructions' `load variable orders':
+After we have generated code for an instruction, the resulting code is packaged into a GB. The tricky part of the algorithm then becomes satisfying instructions' `load variable orders', and doing so in a correct manner.
 \begin{itemize}
 \item \textbf{When a variable is wanted on the stack}, and we have a GB that puts that variable on the stack, we go up the GB stack, changing those GB in-between so that they no longer put their variables on the stack but save them instead. Thus, the variable we want is now on the top of the stack, and that GB and all following blocks are popped from the GB stack and included in the code to load the variable.
 \\\\
@@ -541,9 +564,6 @@ Load variable orders are processed backwards, so the last variable the instructi
 This algorithm has several additional edge cases, for instance some control instructions require the stack to be emptied.
 \\\\
 At the end of this, we modify all resulting GBs to save their variables instead of writing to the stack (we assume the values will be needed in another basic block), and concatenate their code together to produce the final code of the function.
-\note{Needs to be explained better. What's the problem and what is being solved. Mention the huge line count and obvious fixes from non-SCG code.}
-
-
 
 \section{Summary}
 To summarise the components of the compiler:

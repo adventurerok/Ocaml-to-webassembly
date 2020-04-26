@@ -1,11 +1,14 @@
 \chapter{IR and WebAssembly Output of GCD}
+\label{chapter:gcd}
+
 \note{Tobias' proposal that I have an example program and show it at each step of the compilation. Could be a good idea but the code is massive, so this would easily extend to about 10+ pages. Also might require renaming some of the temporaries to make the code easier to read}
 \note{Probably a bit much coming to think of it, so maybe just GCD sample, (untyped-AST?), IR and WebAssembly only to save from having to apply to the chairman of examiners for a longer appendix. I would rename temp variables to make the code easier to understand}
 
 \section{OCaml}
 The recursive GCD function as it is defined in the GCD sample.
 
-\begin{minted}{OCaml}
+\begin{figure}[h!]
+\begin{minted}[linenos]{OCaml}
 let rec gcd a b =
   match (a, b) with
   | (0, y) -> y
@@ -16,6 +19,8 @@ let rec gcd a b =
       else
         gcd (b - a) a
 \end{minted}
+\label{fig:gcd_ocaml}
+\end{figure}
 
 \section{In IR Post-Optimisations}
 
@@ -24,7 +29,7 @@ The inner `gcd-app' function produced by compiling the above to the IR and then 
 \makeatletter
 \expandafter\def\csname PYGdefault@tok@err\endcsname{\def\PYGdefault@bc##1{##1}}
 \makeatother
-\begin{minted}{Perl}
+\begin{minted}[linenos]{Perl}
 Function $$f_gcd-app:
 -args:
 $b_in (int)
@@ -85,7 +90,7 @@ return int local.$result
 \section{WebAssembly}
 The above IR code translated into WebAssembly.
 
-\begin{minted}{LISP}
+\begin{minted}[linenos]{LISP}
 (func $$f_gcd-app (export "gcd")
   (param $a_in i32)
   (param $b_in i32)
