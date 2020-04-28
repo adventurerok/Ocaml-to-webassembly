@@ -29,8 +29,8 @@ let imp_gcd a b =
 let iv_3 = imp_gcd 15 27
 
 let benchmark () =
-  let one = gcd 83643 27 in
-  one = 1
+  let three = gcd 83643 27 in
+  three = 3
 
 let loop_benchmark () =
   for i = 1 to 1000 do
