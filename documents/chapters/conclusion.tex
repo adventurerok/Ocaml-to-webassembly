@@ -14,7 +14,7 @@
 % TODO WHAT LESSONS DID I LEARN
 % TODO WHAT WORK COULD YOU DO IN THE FUTURE
 \section{Outcome of the Project}
-The project met and exceeded the success criteria: a subset of OCaml larger than the minimum sample specified in the proposal can be successfully compiled to WebAssembly, and several optimisations were implemented leading to a reduction in execution time varying from 22\% on the primes benchmark to 97\% on the GCD benchmark, consistently outperforming Js\_of\_OCaml as an option for running OCaml on the web.
+The project met and exceeded the success criteria: a subset of OCaml larger than the minimum sample specified in the proposal can be successfully compiled to WebAssembly. In addition, I successfully implemented several optimisations as an extension. In my benchmarks, these consistently reduced execution time and heap memory usage. In the best case, the GCD sample executed 35x faster with the optimisations enabled, while the primes sample only executed 1.3x faster. In all four benchmarks I outperformed Js\_of\_OCaml as a method of executing OCaml on the web.
 
 \section{Lessons Learned}
 Potentially the biggest lesson I learned was about the design of the intermediate representation (IR). Initially I implemented a stack-based, structured IR to make code generation simpler, but I later learned about the difficulties of optimising such an IR, hence switching to an unstructured, variable based IR, which set the project back by about a week at the end of January.

@@ -5,6 +5,33 @@
 
 \documentclass[12pt,notitlepage]{report}
 
+\usepackage{titlesec}
+\makeatletter
+\renewcommand{\@makeschapterhead}[1]{%
+    %  \vspace*{50\p@}%
+    \vspace*{20\p@}%
+    {\parindent \z@ \raggedright
+        \normalfont
+        \interlinepenalty\@M
+        \Huge \bfseries  #1\par\nobreak
+        %    \vskip 40\p@
+        \vskip 20\p@
+}}
+\makeatother
+
+\makeatletter
+\renewcommand{\@makechapterhead}[1]{%
+    %  \vspace*{50\p@}%
+    \vspace*{35\p@}%
+    {\parindent \z@ \raggedright
+        \normalfont
+        \interlinepenalty\@M
+        \Huge \bfseries  #1\par\nobreak
+        %    \vskip 40\p@
+        \vskip 20\p@
+}}
+\makeatother
+
 \usepackage{a4}
 \usepackage{verbatim}
 
@@ -32,8 +59,8 @@
 	{\color{#1}%
 		\fbox{\color{currentcolor}#2}}%
 }
-\newcommand\note[1]{\noindent\cfbox{blue}{\parbox{\textwidth}{\textcolor{blue}{#1}}}}
-%\newcommand\note[1]{}
+%\newcommand\note[1]{\noindent\cfbox{blue}{\parbox{\textwidth}{\textcolor{blue}{#1}}}}
+\newcommand\note[1]{}
 
 %\input{epsf}                            % to allow postscript inclusions
 % On thor and CUS read top of file:
@@ -48,8 +75,9 @@
 \clubpenalty1000%
 \widowpenalty1000%
 
-\addtolength{\oddsidemargin}{6mm}       % adjust margins
-\addtolength{\evensidemargin}{-8mm}
+%\addtolength{\oddsidemargin}{6mm}       % adjust margins
+%\addtolength{\evensidemargin}{-8mm}
+\usepackage[margin=3cm]{geometry}
 
 \renewcommand{\baselinestretch}{1.1}    % adjust line spacing to make
                                         % more readable
@@ -89,22 +117,27 @@ May 2020  % today's date
 \section*{Declaration}
 
 I, Paul Durbaba of Robinson College, being a candidate for Part II of the Computer
+%I, Matteo G. Pozzi of Emmanuel College, being a candidate for Part II of the Computer
 Science Tripos, hereby declare
 that this dissertation and the work described in it are my own work,
 unaided except as may be specified below, and that the dissertation
 does not contain material that has already been used to any substantial
 extent for a comparable purpose.
+\\\\
+I, Paul Durbaba of Robinson College, am content for my dissertation to be made available to the students and staff of the University.
 
 \bigskip
 \leftline{Signed Paul Durbaba}
 
 \medskip
-\leftline{Date [date]}
+\leftline{Date 28/04/2020}
 
 \section*{Acknowledgements}
 
+I would like to thank Tobias Kohn for all the help he provided in supervising me during this project. In addition I would like to thank Alan Mycroft for his help in reading over drafts of this dissertation.
+
 % TODO List the people that check the diss
-\note{LIST THE PEOPLE THAT CHECK THE DISS}
+%\note{LIST THE PEOPLE THAT CHECK THE DISS}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Proforma, table of contents and list of figures
@@ -117,34 +150,39 @@ extent for a comparable purpose.
 
 {\large
 	\begin{tabular}{ll}
-		Name:               & \bf Paul Durbaba                       \\
-		College:            & \bf Robinson College                     \\
+		%Name:               & \bf Paul Durbaba                       \\
+		%College:            & \bf Robinson College                     \\
+        Candidate Number:   & \bf 2376D \\
 		Project Title:      & \bf Compiling OCaml to WebAssembly \\
 		Examination:        & \bf Part II Computer Science, May 2020        \\
-		Word Count:         & \bf FILL IN LATER, CURRENTLY 13K  \\
+		Word Count:         & \bf 11502 \footnote{WC}  \\
+        Lines of Code:      & \bf 5883 \footnote{LOC}              \\
 		Project Originator: & Timothy M. Jones                \\
 		Supervisor:         & Tobias Kohn            \\ 
 	\end{tabular}
 }
-%\footnotetext[1]{This word count was computed
-%	by {\tt detex diss.tex | tr -cd '0-9A-Za-z $\tt\backslash$n' | wc -w}
-%}
+\footnotetext[1]{Computed for each chapter
+	by \textinline{sed -e 's/\$\+\([a-z_]\{3,\}\)/\1/g' chapters/chapter.tex | detex -l | tr -cd "0-9A-Za-z \n" | wc -w}. The sed is required because detex interprets dollar symbols in inline code blocks as the start of math environments.
+}
+\footnotetext[2]{Computed using cloc (http://cloc.sourceforge.net/)}
 %\stepcounter{footnote}
 
 
 \section*{Original Aims of the Project}
 
-\note{At most 100 words describing the original aims of the project.}
+% \note{At most 100 words describing the original aims of the project.}
+The original aim was to write a compiler from a subset of OCaml to WebAssembly. I would performing type-inference, transform the typed AST through a series of intermediate representations, and generate a WebAssembly module which could be loaded in a browser such as Firefox. Possible extensions included expanding the OCaml subset, and implementing optimisations.
 
 
 \section*{Work Completed}
+%\note{At most 100 words summarising the work completed.}
+I implemented a compiler consisting of type-inference, lambda-lifting, translation to an intermediate representation and WebAssembly code generation. I exceeded the success criteria by covering a larger subset of OCaml and by implementing a variety of optimisations. I implemented an end-to-end tester to automatically compile and test samples, and evaluated my compiler both in terms of the improvements made by optimisations and against other methods of executing OCaml.
 
-\note{At most 100 words summarising the work completed.}
 
 \section*{Special Difficulties}
 
-\note{At most 100 words describing any special difficulties that you faced.
-(In most cases the special difficulties entry will say “None”.) }
+% \note{At most 100 words describing any special difficulties that you faced.
+%(In most cases the special difficulties entry will say “None”.) }
 None.
 
 \tableofcontents
@@ -188,22 +226,221 @@ None.
 \appendix
 % Assessors like to see some sample code or example circuit diagrams, and appendices are the sensible places to include such items. Accordingly, software and hardware projects should incorporate appropriate appendices. Note that the 12,000 word limit does not include material in the appendices, but only in extremely unusual circumstances may appendices exceed 10-15 pages - if you feel that such unusual circumstances might apply to you you should ask your Director of Studies and Supervisor to apply to the Chairman of Examiners. It is quite in order to have no appendices. Appendices should appear between the bibliography and the project proposal. 
 
-\chapter{The Proposed Code Sample Appendix}
+\makeatletter
+\renewcommand{\@makechapterhead}[1]{%
+    %  \vspace*{50\p@}%
+    \vspace*{0\p@}%
+    {\parindent \z@ \raggedright
+        \normalfont
+        \interlinepenalty\@M
+        \Huge \bfseries  #1\par\nobreak
+        %    \vskip 40\p@
+        \vskip 15\p@
+}}
+\makeatother
 
-Things in appendix A / Code Samples? Examiners like to see some code samples, so maybe some of the following?
-\begin{itemize}
-	\item Mutually recursive value-binding type-checking routine (complex but commented nicely)
-	\item Mutual recursion translation to IR
-	\item Pattern matching IR implementation
-	\item Reaching definitions implementation
-	\item stack codegen is probably too complicated for examiners to understand the code easily? I wrote it and I have a hard time reading it
-\end{itemize}
+\chapter{Selected Code Samples}
+\thispagestyle{headings}
+This Appendix contains a few code samples for illustration: type inference and IR transformation of match blocks, and reaching definitions analysis.
 
+\section{Type Inference of Match Blocks}
+\label{sample:typematch}
+This function is called by \textinline{infer_expr} when it encounters a match expression. A match expression consists of an expression (\textinline{expr}) and a list of cases (\textinline{cases}). The result of the expression is matched against each case's pattern --- so a constraint is generated to unify these types. In addition, the result of the whole match can only have one type. Thus we introduce a fresh type variable for this, and generate constraints that each case's expression must unify with this type.
+
+\begin{minted}[linenos]{OCaml}
+and infer_match state ctx expr cases =
+  (* In general, variables names ending in 'cs' are constraint sets,
+     and variable names ending in '_ast' are typed-AST elements *)
+  let (ecs, e_ast) = infer_expr state ctx expr in
+  let etyp = e_ast.texp_type in
+  (* case list -> result type -> (constraints * tcase list) *)
+  let rec handle_cases caselst rtyp =
+    match caselst with
+    | [] -> ([], [])  (* Run out of cases to consider *)
+    | (case :: caselst') ->
+        (* Infer the type of the case's pattern *)
+        let (p_ast) = infer_pattern state ctx case.pc_lhs in
+        let ptyp = p_ast.tpat_type in
+        let vars = p_ast.tpat_vars in
+        (* Create new context with the vars added by this pattern *)
+        let ctx' = List.fold vars ~init:ctx ~f:(fun cx (v,t) ->
+          Context.add_var cx v (Forall(Set.Poly.empty, t))
+        ) in
+        (* Use this context to check the case's expression *)
+        let (ccs, c_ast) = infer_expr state ctx' case.pc_rhs in
+        let ctyp = c_ast.texp_type in
+        let (ccs', tc_lst) = handle_cases caselst' ctyp in
+        let tcase = {
+          tc_lhs = p_ast;
+          tc_rhs = c_ast
+        } in
+        (* Add constraints case pattern's type = expression's type, and 
+           case expression's type = incoming result type variable *)
+        ((mk_uni(ptyp, etyp, expr.pexp_loc, "matchpat"))
+          :: (mk_uni(rtyp, ctyp, expr.pexp_loc, "matchexpr")) :: (ccs @ ccs'),
+          tcase :: tc_lst
+        )
+        (* Note constraints given names to ease with debugging *)
+  in
+  let restyp_var = fresh state in
+  let restyp = (T_var(restyp_var)) in
+  let (ccs, tc_lst) = handle_cases cases restyp in
+  (* Merge expression and case constraints, emit result type and typed-AST *)
+  (ecs @ ccs, restyp, Texp_match(e_ast, tc_lst))
+\end{minted}
+
+\section{Transformation of Match Blocks}
+\label{sample:transformmatch}
+This function is called by \textinline{transform_expr} when a match expression is encountered. As before, a match consists of an expression and cases, now in typed-AST form. \textinline{st_res_type} is the typed-AST result type of the match statement.
+\\\\
+First of all, we need to create the temporary variables and match block name. Then for each case, generate code for the pattern and expression, and code to copy the result of the case's expression to the result variable of the match statement. Each case is wrapped in a block to allow easy jumping to the end of the block (start of next case's block) if the case does not match.
+\\\\
+Instead of replacing the fail instruction in the pattern's code, the \textinline{transform_pat} function takes as an optional argument which instruction sequence to use on a fail --- in our case we pass in an instruction to jump out of the case block.
+
+\begin{minted}[linenos]{OCaml}
+and transform_match state st_res_typ expr cases =
+  let (expr_var, expr_code) = transform_expr state expr in
+  let result_type = stoitype st_res_typ in  (* Scheme type to intermediate type *)
+  let result_var = update_vars state (Vars.add_temp_var state.vars result_type) in
+  let match_block = update_vars state (Vars.add_block state.vars) in
+  let inner_code = transform_list cases ~f:(fun case ->
+    let case_block = update_vars state (Vars.add_block state.vars) in
+    (* These instructions check and destructure the pattern *)
+    let pat_code = transform_pat ~check:true ~escape:([Iins_exitblock(case_block)])
+                                            state case.tc_lhs expr_var
+    in
+    (* Case expression, possibly using variables from the pattern *)
+    let (matched_var, matched_code) = transform_expr state case.tc_rhs in
+    let inside_block = pat_code @ matched_code @
+                       [Iins_copyvar(result_type, result_var, matched_var);
+                       Iins_exitblock(match_block)]
+    in
+      [Iins_startblock(case_block)]
+    @ inside_block
+    @ [Iins_endblock(case_block)]
+  )
+  in
+  (result_var,
+    expr_code
+    @ [Iins_startblock(match_block)]
+    @ inner_code
+    @ [Iins_fail; (* No cases matching means no result, so we must fail *)
+       Iins_endblock(match_block)]
+  )
+
+\end{minted}
+
+
+\section{Reaching Definitions}
+\label{sample:reach}
+A data-flow analysis such as reaching definitions can be specified by a set of data-flow equations. For reaching definitions, these are as follows: (modified from \cite{Reaching_defs} )
+\begin{align*}
+\text{REACH}_{\text{in}} (i) \ = &\ \bigcup_{p \in \text{pred}(i)} \text{REACH}_\text{out} (p) \\
+\text{REACH}_{\text{out}} (i) \ = &\ \big( \text{REACH}_\text{in} (i) - \text{kill}(i) \big) \cup \text{gen}(i) 
+\end{align*}
+For each instruction/line (there is one instruction per line), we have two sets. $\text{REACH}_\text{in}$ is the definitions which reach that instruction, while $\text{REACH}_\text{out}$ are these definitions modified by what occurs in that instruction. $\text{pred}(i)$ is the set of all instructions that can execute immediately before the instruction $i$. If an instruction (re)defines the variable $v$, then $\text{gen}(i)$ is the pair $(v,i)$ signifying that $v$ is defined at line $i$, and $\text{kill}(i)$ is the set of all previous definitions of $v$.
+\\\\
+My implementation implements these data flow equations with some modifications. Initially, all REACH sets are initialized to empty. I then loop over basic blocks, and then the instructions inside them, applying these equations. This prevents having to compute a union for every instruction: instead, just the first instruction in each basic block needs to execute a set union. REACH sets such as \camlinline{in_defs} and \camlinline{out_defs} are mutable Hashtables: they map line numbers to immutable Maps, which in turn map variables to the set of lines where they could be defined. The variable $\rightarrow$ definition lines map is mutable because when we modify a map, both the old and new versions are useful.
+\\\\
+$\text{gen}(i)$ and $\text{kill}(i)$ are implemented simply by remapping the variable to a singleton set containing the new definition line only.
+\\\\
+My implementation is shown below:
+\begin{minted}[linenos]{OCaml}
+let reaching_definitions fa =
+  (* Each argument var has a -1 definition corresponding to "from an argument" *)
+  (* Map of arg var -> {-1} *)
+  let start_func_defs = ... (* compute_start_func_defs fa *)
+  in
+  (* Hashtbl of line no. to Map of ivariable -> Set of definition lines *)
+  let in_defs = Hashtbl.create (module Int) in
+  let out_defs = Hashtbl.create (module Int) in
+  let modified = ref true in (* Full iteration with no changes => complete *)
+  while !modified do
+    modified := false;
+    (* Iterate through basic blocks *)
+    Map.iter fa.fa_basic_blocks ~f:(fun bb ->
+      (* List of predecessor Maps for this basic block *)
+      let pred_defs = List.filter_map bb.bb_pred ~f:(fun pred_line ->
+        let pred_bb = Map.find_exn fa.fa_basic_blocks pred_line in
+        Hashtbl.find out_defs pred_bb.bb_end_line)
+      in
+      (* A map so we always have 1 predecessor map.
+       * For the first basic block this is set to the start of func definitons *)
+      let base_map =
+        if bb.bb_start_line = 0 then
+          start_func_defs
+        else
+          (Map.empty (module IVariable))
+      in
+      (* Union of predecessors *)
+      let merged = List.reduce_exn (base_map :: pred_defs) ~f:(fun a b ->
+        Map.merge_skewed a b ~combine:(fun ~key:_ s1 s2 -> Set.union s1 s2))
+      in
+      (* This is REACH_in for first line of the basic block, did it change? *)
+      let old_defs_opt = Hashtbl.find in_defs bb.bb_start_line in
+      let changed =
+        match old_defs_opt with
+        | Some(old_defs) -> not (Map.equal Set.equal old_defs merged)
+        | None -> true
+      in
+      if changed then
+        modified := true;
+        (* Iterate over lines in the block *)
+        Hashtbl.set in_defs ~key:bb.bb_start_line ~data:merged;
+        for index = 0 to (Array.length bb.bb_code) - 1 do
+          let line = bb.bb_start_line + index in
+          let start_def = Hashtbl.find_exn in_defs line in
+          (* Find the (optional) variable we assign to *)
+          let assign_opt, _ = instr_vars (Array.get bb.bb_code index) in
+          let end_def =
+            match assign_opt with
+            | Some(assign) ->
+                (* Remap assign to the singleton set containing this line *)
+                Map.set start_def ~key:assign ~data:(Int.Set.singleton line)
+            | None ->
+                start_def
+          in
+          Hashtbl.set out_defs ~key:line ~data:end_def;
+          (* Set next line's REACH_in if it is still in this block *)
+          (if index < Array.length bb.bb_code - 1 then
+            Hashtbl.set in_defs ~key:(line + 1) ~data:end_def)
+
+        done
+    )
+  done;
+  in_defs
+\end{minted}
 
 \clearpage
+
+\makeatletter
+\renewcommand{\@makechapterhead}[1]{%
+    %  \vspace*{50\p@}%
+    \vspace*{-30\p@}%
+    {\parindent \z@ \raggedright
+        \normalfont
+        \interlinepenalty\@M
+        \Huge \bfseries  #1\par\nobreak
+        %    \vskip 40\p@
+        \vskip 15\p@
+}}
+\makeatother
 
 \include{chapters/appendix_ir}
 \clearpage
+
+\makeatletter
+\renewcommand{\@makechapterhead}[1]{%
+    %  \vspace*{50\p@}%
+    \vspace*{0\p@}%
+    {\parindent \z@ \raggedright
+        \normalfont
+        \interlinepenalty\@M
+        \Huge \bfseries  #1\par\nobreak
+        %    \vskip 40\p@
+        \vskip 15\p@
+}}
+\makeatother
 
 \include{chapters/appendix_gcd}
 \clearpage
