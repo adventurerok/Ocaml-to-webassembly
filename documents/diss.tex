@@ -59,6 +59,9 @@
 	{\color{#1}%
 		\fbox{\color{currentcolor}#2}}%
 }
+
+\usepackage{xcolor}
+
 %\newcommand\note[1]{\noindent\cfbox{blue}{\parbox{\textwidth}{\textcolor{blue}{#1}}}}
 \newcommand\note[1]{}
 
@@ -77,7 +80,7 @@
 
 %\addtolength{\oddsidemargin}{6mm}       % adjust margins
 %\addtolength{\evensidemargin}{-8mm}
-\usepackage[margin=3cm]{geometry}
+\usepackage[margin=2.9cm]{geometry}
 
 \renewcommand{\baselinestretch}{1.1}    % adjust line spacing to make
                                         % more readable
@@ -155,7 +158,7 @@ I would like to thank Tobias Kohn for all the help he provided in supervising me
         Candidate Number:   & \bf 2376D \\
 		Project Title:      & \bf Compiling OCaml to WebAssembly \\
 		Examination:        & \bf Part II Computer Science, May 2020        \\
-		Word Count:         & \bf 11502 \footnote{WC}  \\
+		Word Count:         & \bf 11992 \footnote{WC}  \\
         Lines of Code:      & \bf 5883 \footnote{LOC}              \\
 		Project Originator: & Timothy M. Jones                \\
 		Supervisor:         & Tobias Kohn            \\ 
@@ -171,7 +174,7 @@ I would like to thank Tobias Kohn for all the help he provided in supervising me
 \section*{Original Aims of the Project}
 
 % \note{At most 100 words describing the original aims of the project.}
-The original aim was to write a compiler from a subset of OCaml to WebAssembly. I would performing type-inference, transform the typed AST through a series of intermediate representations, and generate a WebAssembly module which could be loaded in a browser such as Firefox. Possible extensions included expanding the OCaml subset, and implementing optimisations.
+The original aim was to write a compiler from a subset of OCaml to WebAssembly. I would perform type-inference, transform the typed AST through a series of intermediate representations, and generate a WebAssembly module which could be loaded in a browser such as Firefox. Possible extensions included expanding the OCaml subset, and implementing optimisations.
 
 
 \section*{Work Completed}
@@ -338,9 +341,9 @@ A data-flow analysis such as reaching definitions can be specified by a set of d
 \text{REACH}_{\text{in}} (i) \ = &\ \bigcup_{p \in \text{pred}(i)} \text{REACH}_\text{out} (p) \\
 \text{REACH}_{\text{out}} (i) \ = &\ \big( \text{REACH}_\text{in} (i) - \text{kill}(i) \big) \cup \text{gen}(i) 
 \end{align*}
-For each instruction/line (there is one instruction per line), we have two sets. $\text{REACH}_\text{in}$ is the definitions which reach that instruction, while $\text{REACH}_\text{out}$ are these definitions modified by what occurs in that instruction. $\text{pred}(i)$ is the set of all instructions that can execute immediately before the instruction $i$. If an instruction (re)defines the variable $v$, then $\text{gen}(i)$ is the pair $(v,i)$ signifying that $v$ is defined at line $i$, and $\text{kill}(i)$ is the set of all previous definitions of $v$.
+For each instruction/line (there is one instruction per line), we have two sets. $\text{REACH}_\text{in}$ is the definitions which reach that instruction, while $\text{REACH}_\text{out}$ are these definitions modified by what occurs in that instruction. $\text{pred}(i)$ is the set of all instructions that can execute immediately before the instruction $i$. If an instruction (re)defines the variable $v$, then $\text{gen}(i)$ is the set containing only the pair $(v,i)$ signifying that $v$ is defined at line $i$, and $\text{kill}(i)$ is the set of all previous definitions of $v$.
 \\\\
-My implementation implements these data flow equations with some modifications. Initially, all REACH sets are initialized to empty. I then loop over basic blocks, and then the instructions inside them, applying these equations. This prevents having to compute a union for every instruction: instead, just the first instruction in each basic block needs to execute a set union. REACH sets such as \camlinline{in_defs} and \camlinline{out_defs} are mutable Hashtables: they map line numbers to immutable Maps, which in turn map variables to the set of lines where they could be defined. The variable $\rightarrow$ definition lines map is mutable because when we modify a map, both the old and new versions are useful.
+My implementation implements these data flow equations with some modifications. Initially, all REACH sets are initialized to empty. I then loop over basic blocks, and then the instructions inside them, applying these equations. This prevents having to compute a union for every instruction: instead, just the first instruction in each basic block needs to execute a set union. REACH sets such as \camlinline{in_defs} and \camlinline{out_defs} are mutable Hashtables: they map line numbers to immutable Maps, which in turn map variables to the set of lines where they could be defined. Mutable maps are useful where it is useful to have both old and new versions of the map, since all operations create a copy automatically.
 \\\\
 $\text{gen}(i)$ and $\text{kill}(i)$ are implemented simply by remapping the variable to a singleton set containing the new definition line only.
 \\\\

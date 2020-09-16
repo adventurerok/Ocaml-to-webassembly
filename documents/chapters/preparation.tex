@@ -3,12 +3,14 @@
 
 %\note{It is essential to declare the Starting Point (see Section 7). This states any existing codebase or materials that your project builds on. The text here can commonly be identical to the text in your proposal, but it may enlarge on it or report variations. For instance, the true starting point may have turned out to be different from that declared in the proposal and such discrepancies must be explained. }
 
+This chapter gives an overview of the preparation I did for the project. In section 2.1 I detail the requirements. Sections 2.2-2.3 provide an overview of WebAssembly and the different stages of the compiler. In sections 2.4-2.6, I explain how my development environment was set up and which libraries and software development methodologies I used. Finally, in section 2.7 I detail the starting point of the project.
+
 \section{Requirements}
-The success criteria in the project proposal presented a clearly defined subset of OCaml to implement. This subset was designed to be large enough so that useful OCaml programs could be written in it, while small enough that it was feasible to implement by Christmas.
+The success criteria in the project proposal presented a clearly defined subset of OCaml to implement. This subset was designed to be large enough so that useful OCaml programs could be written in it, while small enough that it was feasible to largely implement by Christmas in the absence of the anticipated delays expected in large project.
 \\\\
 In addition, a set of code samples was needed to test the compiler. I decided to build up this set of samples over the course of the implementation, as I could better consider where the edge cases might lie after I had developed an implementation to test.
 \\\\
-The proposal also suggested that I construct some kind of browser framework to test these samples, but I later decided that a NodeJS environment would be a more practical and easier automated solution to testing.
+The proposal also suggested that I construct a browser framework to test these samples, but I later decided that a NodeJS environment would be a more practical and easier automated solution to testing.
 
 % TODO STARTING POINT
 
@@ -18,7 +20,7 @@ The proposal also suggested that I construct some kind of browser framework to t
 
 \section{WebAssembly}
 %\note{TODO Move WebAssembly stuff from introduction to here, give overview of features e.g. limited stack manipulation, variables, verified}
-The current MVP (minimum viable product) version of WebAssembly is designed for compiled languages like C and C++ that do not use garbage collection and can make do without exceptions. There are extensions currently being developed to add support for these features, but progress on these is slow as they often depend on other extensions, for instance the garbage collection extension depends on extensions for reference types and typed function references, which seek to expand the WebAssembly type system so for instance a garbage collector would understand the shape of data in memory\cite{Wgce}.
+The current `MVP' (minimum viable product) version of WebAssembly is designed for compiled languages like C and C++ that do not use garbage collection and can make do without exceptions. There are extensions currently being developed to add support for these features, but progress on these is slow as they often depend on other extensions, for instance the garbage collection extension depends on extensions for reference types and typed function references, which seek to expand the WebAssembly type system so for instance a garbage collector would understand the shape of data in memory~\cite{Wgce}.
 \\\\
 There are a few interesting features of WebAssembly which are worth drawing attention to:
 \begin{itemize}
@@ -66,10 +68,10 @@ Code Generation is the process of generating target language code from the final
 
 \section{Libraries Used}
 \subsection{OCaml Compiler Libs}
-I used the official OCaml compiler \cite{OCaml} libraries to perform lexing and parsing, which provide the same frontend as used by the official OCaml compiler. As the frontend of the official OCaml compiler is liable to change between releases, I stuck to version 4.08, which was the most recent version when I started the project but has now been succeeded by 4.09.
+I used the official OCaml compiler~\cite{OCaml} libraries to perform lexing and parsing, which provide the same frontend as used by the official OCaml compiler. As the frontend of the official OCaml compiler is liable to change between releases, I stuck to version 4.08, which was the most recent version when I started the project but has now been succeeded by 4.09.
 
 \subsection{WebAssembly Binary Toolkit}
-The WebAssembly Binary Toolkit \cite{Wabt} (WABT)  is a separate tool which can compile WebAssembly Text Form (.wast files) outputted by my compiler to the WebAssembly Binary Format (.wasm files) that can be loaded by NodeJS and browsers.
+The WebAssembly Binary Toolkit~\cite{Wabt} (WABT)  is a separate tool which can compile WebAssembly Text Form (.wast files) outputted by my compiler to the WebAssembly Binary Format (.wasm files) that can be loaded by NodeJS and browsers.
 
 
 \section{Working Environment and Tools Setup}
@@ -78,15 +80,20 @@ Since I have both a laptop and desktop, I decided the best way to work on both w
 In addition, I used Git in order to keep a record of my work, to allow me to access previous versions of files, and to backup to GitHub
 
 \subsection{Dune}
-I chose to use the Dune \cite{Dune} build system for OCaml as it is the most widely-used build system for OCaml, and supports multi-module projects and dependencies installed via OPAM, the OCaml Package Manager.
+I chose to use the Dune~\cite{Dune} build system for OCaml as it is the most widely-used build system for OCaml, and supports multi-module projects and dependencies installed via OPAM, the OCaml Package Manager.
 
 \subsection{Using The Compiler}
-To use the compiler, the OCaml Package Manager opam \cite{Opam} must be installed. The file \textinline{tested-packages.txt} provides a list of all OPAM packages I had installed when testing the compiler. With those packages installed, the script \textinline{build.sh} can be used to build the compiler. This outputs the native executable to \textinline{_build/default/toplevel.exe}.
+To use the compiler, the OCaml Package Manager opam~\cite{Opam} must be installed. The file \textinline{tested-packages.txt} provides a list of all OPAM packages I had installed when testing the compiler. With those packages installed, the script \textinline{build.sh} can be used to build the compiler. This outputs the native executable to \textinline{_build/default/toplevel.exe}.
 \\\\
-Invoking this executable with the path to an OCaml file ending in \textinline{.ml} will output the corresponding WebAssembly Text Format file to the same path ending in \textinline{.wast}, which can then be compiled using the WebAssembly Binary Toolkit with the command \textinline{wat2wasm}. The outputted WebAssembly Binary Format file will end in \textinline{.wasm}, which can then be loaded and executed in a JavaScript environment. Further details on running WebAssembly modules is available at \cite{Load_wasm}.
+Invoking this executable with the path to an OCaml file ending in \textinline{.ml} will output the corresponding WebAssembly Text Format file to the same path ending in \textinline{.wast}, which can then be compiled using the WebAssembly Binary Toolkit with the command \textinline{wat2wasm}. The outputted WebAssembly Binary Format file will end in \textinline{.wasm}, which can then be loaded and executed in a JavaScript environment. Further details on running WebAssembly modules is available at~\cite{Load_wasm}.
 
+\section{Software Development Methodology}
+The majority of the project was implemented using the waterfall approach: I developed each component in turn before moving on to the next.
+\\\\
+This approach was broken on the development of the IR and code generator, where development was more akin to the spiral model as I reworked both of those components when I modified the IR to be variable-based instead of stack-based.
+The approach was also broken when I expanded the subset of OCaml which I supported, as each component had to be modified at once to support the additional features.
 
 \section{Starting Point}
-I had very little OCaml experience prior to this project, and experience of writing compilers. In addition, I had no experience of using WebAssembly, but I have plenty of experience writing JavaScript.
+I had very little OCaml experience prior to this project, and no experience of writing compilers. In addition, I had no experience of using WebAssembly, but I have plenty of experience writing JavaScript.
 \\\\
 I attempted to deal with some of these issues prior to starting the project by coming up with some OCaml samples for the compiler to compile in the future, and by setting up an OCaml workspace where I successfully figured out how to import the OCaml Compiler libraries, and learned to navigate the AST they use by writing a simple example that adds one to integer constants. I also read through the WebAssembly documentation to get a sense of which features would be a challenge to compile to WebAssembly.

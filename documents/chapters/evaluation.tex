@@ -7,25 +7,25 @@
 
 %\note{Assessors are well aware that large programs will very likely include some residual bugs. It should always be possible to demonstrate that a program works in simple cases and it is instructive to demonstrate how close it is to working in a really ambitious case.}
 
-In my evaluation I explain the testing procedures I used to ensure that the compiler can correctly compile the OCaml subset, and compare the performance of my compiler with and without optimisations enabled to other compilers. In my proposal I stated that I would use Unit tests, with the possibility of an automated end to end tester depending on how complex it be to create. Thanks to NodeJS, I found that implementing an end to end tester was much simpler, and hence the end to end tester is the main system I used to both test my project and, with added benchmarking capabilities, evaluate it.
+In my evaluation I explain the testing procedures I used to ensure that the compiler can correctly compile the OCaml subset, and compare the performance of my compiler with and without optimisations enabled to other compilers. In my proposal I stated that I would use Unit tests, with the possibility of an automated end-to-end tester depending on how complex it would be to create. Thanks to NodeJS, I found that implementing an end-to-end tester was simpler than I expected, and hence the end-to-end tester is the main system I used to both test my project and, with added benchmarking capabilities, evaluate it. This end-to-end tester is described in section 4.1, and benchmarking methodology and results are given in sections 4.2-4.3.
 \\\\
-In addition to using NodeJS I performed a manual check to ensure that both Chrome and Firefox could load WebAssembly modules compiled using the compiler.
+In addition to using NodeJS I performed a manual check to ensure that both Chrome and Firefox could load and execute WebAssembly modules compiled using the compiler.
 
-\section{End To End Tester}
+\section{End-to-End Tester}
 %\note{Could do with a -all mode to test all combinations of disabled / enabled optimisations. Or really just write a script to do that, will the examiners really be sitting there thinking `but did he test with every possible optimisation enable/disabled settings there could be'}
 
-The end to end tester is the main method I have used to test the compiler. It can compile and execute a collection of 26 sample OCaml programs, testing their outputs against known correct values and running benchmarks against four benchmark samples --- comparing the performance of the WebAssembly against four other methods of executing the OCaml programs.
+The end-to-end tester is the main method I have used to test the compiler. It can compile and execute a collection of 26 sample OCaml programs, testing their outputs against known correct values and running benchmarks against four benchmark samples --- comparing the performance of the WebAssembly against four other methods of executing the OCaml programs.
 \\\\
-It is a really useful tool because when new samples throw up problems with the compiler, they remain in the samples repository after the problem is fixed, thus acting as regression tests and preventing the same problem from occurring again undetected. As the end to end tester is quite fast to execute, it can be invoked after every code change to ensure that nothing has been broken, and it reduces the need for unit tests: as most bugs are detected by new code samples, there is no need to introduce a unit tests for the broken component because the end to end tester, having detected the bug, can attest to the bug not being there if the sample then compiles and tests correctly later.
+It is a really useful tool because when new samples throw up problems with the compiler, they remain in the samples repository after the problem is fixed, thus acting as regression tests and preventing the same problem from occurring again undetected. As the end-to-end tester is quite fast to execute, it can be invoked after every code change to ensure that nothing has been broken, and it reduces the need for unit tests --- as most bugs are detected by new code samples, there is no need to introduce a unit tests for the broken component because the end-to-end tester, having detected the bug, can attest to the bug not being there if the sample then compiles and tests correctly later.
 \\\\
-The End To End tester operates in several phases, each of which can detect problems: (Figure \ref{fig:sample} shows a sample and its corresponding JSON file)
+The End-To-End tester operates in several phases, each of which can detect problems: (Figure \ref{fig:sample} shows a sample and its corresponding JSON file)
 \begin{enumerate}
 	\item Compiling the OCaml program to WebAssembly Text Format using the compiler. If this compilation fails, an error is reported.
 	\item Compiling WebAssembly Text Format to WebAssembly Binary Format using \textinline{wat2wasm}. This tool also verifies the WebAssembly programs, reporting issues such as a float value being stored into an integer variable.
 	\item Loading and instantiating the WebAssembly program in Node.js. This runs the init function --- top-level code from the OCaml file which initializes global variables and can itself be arbitrarily complex. This could fail for instance if there is a problem executing this top-level code.
-	\item Testing of global variable values against expected values. Most OCaml samples are accompanied by a JSON file which specifies these. For example, see figure \ref{fig:sample}.
+	\item Testing of global variable values against expected values. Most OCaml samples are accompanied by a JSON file which specifies these.
 	\item Execution of test functions: the JSON file can also specify functions with arguments and an expected result to execute, for instance \textinline{"gcd(15,25)": 5}.
-	\item Execution of benchmarks: The JSON specifies a list of functions of type \camlinline{unit -> unit}, together with the number of iterations to perform on each function. These are then executed inside the WebAssembly environment and by compiling and executing for four other environments: the OCaml REPL interpreter, OCaml bytecode, optimised OCaml native code, and Js\_of\_OCaml.
+	\item Execution of benchmarks: the JSON specifies a list of functions of type \camlinline{unit -> unit}, together with the number of iterations to perform on each function. These are then executed inside the WebAssembly environment and by compiling and executing for four other environments: the OCaml REPL interpreter, OCaml bytecode, optimised OCaml native code, and Js\_of\_OCaml.
 \end{enumerate}
 \begin{figure}[h]
 	\begin{minipage}[t]{0.5\linewidth}
@@ -58,7 +58,7 @@ let eight = add4 4
 	\caption{\textinline{closure_basic.ml} sample and the corresponding JSON file}
 	\label{fig:sample}
 \end{figure}
-In addition, command line arguments can be passed to the end to end tester to disable certain optimisations, which can be used both to test that the compiler still works with optimisations disabled, and to benchmark these optimisations.
+In addition, command line arguments can be passed to the end-to-end tester to disable certain optimisations, which can be used both to test that the compiler still works with optimisations disabled, and to benchmark these optimisations.
 \\\\
 The samples cover all features that my compiler supports. Some samples are small, for testing that a particular feature works as intended such as the \textinline{tailrec.ml} sample which contains two tail-recursive functions: one with integer arguments and result, and the other with floating point arguments and result. Other samples are large and intend to show that lots of features can work together, for instance \textinline{core-subset.ml} intends to ensure that all features in the `core subset' that I defined as being the features I needed to support to meet the success criteria work.
 
@@ -91,17 +91,18 @@ I also chose different configurations of my compiler. (Abbreviations for my comp
 	\item NDC (No direct calls) additionally disables direct call optimisation
 	\item NSC (No stack codegen) additionally disables the stack code generator, using a linear algorithm instead.
 \end{itemize}
-Time benchmarks were performed for WebAssembly by using JavaScript to time in-between calls and returns from the WebAssembly function being benchmarked. For the other platforms, OCaml standard library code was injected into the benchmark code to time the benchmark function and output to standard output, however my compiler does not support compiling standard library functions, hence the JavaScript approach. The results of time benchmarks are shown in the top two plots of figures \ref{fig:timebenchgcdprime} and \ref{fig:timebenchfibquick}.
+Time benchmarks were performed for WebAssembly by using JavaScript to time a loop of a certain number of calls to the benchmark function --- to increase the precision of time results gained. For the other platforms, OCaml standard library code was injected into the benchmark code to time a certain number of iterations of benchmark function and output to standard output, however my compiler does not support compiling standard library functions, hence the JavaScript approach. Each benchmark was repeated 50 times to produce a spread of results from which the mean, minimum/maximum, and one standard deviation either side were computed. The results of time benchmarks are shown in the top two plots of figures \ref{fig:timebenchgcdprime} and \ref{fig:timebenchfibquick}.
 \\\\
-Additionally, WebAssembly memory use was benchmarked, by comparing the \wainline{$mem_idx} global variable, indicating the address of the next free memory, before and after benchmarks were executed. Finally, by using the \textinline{wc} command line counts of the sample directory were also obtained. Memory results are shown at the bottom of figure \ref{fig:timebenchgcdprime} and code-length results are shown at the bottom of figure \ref{fig:timebenchfibquick}.
-
-\begin{figure}[h]
+Additionally, WebAssembly `heap' memory use was benchmarked, by comparing the \wainline{$mem_idx} global variable, indicating the address of the next free memory, before and after benchmarks were executed. Finally, by using the \textinline{wc} command line counts of the sample directory were also obtained. Memory results are shown at the bottom of figure \ref{fig:timebenchgcdprime} and code-length results are shown at the bottom of figure \ref{fig:timebenchfibquick}. Note that `heap' memory usage is deterministic due to the lack of garbage collection --- repetitions of the benchmarks give the same result.
+\\\\
+All of these benchmarks were completed on the same machine running Arch Linux with a hyper-threaded Intel Xeon 4-core/8-thread CPU running at 3.3 GHz.
+\begin{figure}[p]
 	\begin{tikzpicture}
 	\begin{axis}
 	[
 	width=\linewidth,
-	height=0.55\linewidth,
-	title=GCD Sample Benchmark Results,
+	height=0.53\linewidth,
+	xlabel=GCD Sample Time Benchmark Results (Above),
 	ylabel=Time (ms),
 	boxplot/draw direction=y,
 	xtick={1,2,3,4,5,6,7,8,9,10},
@@ -126,8 +127,8 @@ Additionally, WebAssembly memory use was benchmarked, by comparing the \wainline
 	\begin{axis}
 	[
 	width=\linewidth,
-	height=0.55\linewidth,
-	title=Primes Sample Benchmark Results,
+	height=0.53\linewidth,
+	xlabel=Primes Sample Time Benchmark Results (Above),
 	ylabel=Time (ms),
 	boxplot/draw direction=y,
 	xtick={1,2,3,4,5,6,7,8,9,10},
@@ -153,7 +154,7 @@ Additionally, WebAssembly memory use was benchmarked, by comparing the \wainline
 [
 width=\linewidth,
 height=0.3\linewidth,
-title=Relative Memory Usage (WebAssembly `Heap' Memory Area),
+xlabel=Relative Memory Usage (WebAssembly `Heap' Memory Area),
 ylabel=Relative Memory \%,
 xtick={1,2,3,4,5},
 xticklabels={AOE, NRE, NTC, NIRO, NDC=NSC},
@@ -179,16 +180,16 @@ legend columns=4
 
 \end{axis}
 \end{tikzpicture}
-	\caption{Time Benchmark Results for GCD and Primes, and Memory Benchmark Results}
+	\caption{Time Benchmark Results for GCD and Primes, and Memory Benchmark Results. Box plots show the mean (middle line), one standard deviation either side (the box) and the minimum and maximum (whiskers).}
 	\label{fig:timebenchgcdprime}
 \end{figure}
-\begin{figure}[h]
+\begin{figure}[p]
 	\begin{tikzpicture}
 	\begin{axis}
 	[
 	width=\linewidth,
-	height=0.55\linewidth,
-	title=Fibonacci Sample Benchmark Results,
+	height=0.53\linewidth,
+	xlabel=Fibonacci Sample Time Benchmark Results (Above),
 	ylabel=Time (ms),
 	boxplot/draw direction=y,
 	xtick={1,2,3,4,5,6,7,8,9,10},
@@ -213,8 +214,8 @@ legend columns=4
 	\begin{axis}
 	[
 	width=\linewidth,
-	height=0.55\linewidth,
-	title=Quicksort Sample Benchmark Results,
+	height=0.53\linewidth,
+	xlabel=Quicksort Sample Time Benchmark Results (Above),
 	ylabel=Time (ms),
 	boxplot/draw direction=y,
 	xtick={1,2,3,4,5,6,7,8,9,10},
@@ -240,7 +241,7 @@ legend columns=4
 [
 width=\linewidth,
 height=0.3\linewidth,
-title=Total Length of Sample WebAssembly,
+xlabel=Total Length of Sample WebAssembly,
 ylabel=Lines of WAST,
 xtick={1,2,3,4,5,6},
 xticklabels={AOE, NRE, NTC, NIRO, NDC, NSC},
@@ -261,23 +262,23 @@ bar width = 0.8cm,
 
 \end{axis}
 \end{tikzpicture}
-	\caption{Time Benchmark Results for GCD and Primes, and Code Length Benchmark Results}
+	\caption{Time Benchmark Results for GCD and Primes, and Code Length Benchmark Results. Box plots show the mean (middle line), one standard deviation either side (the box) and the minimum and maximum (whiskers).}
 	\label{fig:timebenchfibquick}
 \end{figure}
-
+\pagebreak
 \section{Benchmark Results}
 The results are promising: my compiler's WebAssembly is executed faster than the OCaml bytecode and Js\_of\_OCaml for all four benchmarks, and is hence a viable method for executing OCaml code on the web. There are however significant drawbacks: my code does not have to expend time performing garbage collection, and the lack of garbage collection means it is unlikely to be a good choice for executing high-memory-usage OCaml programs. Additionally, OCaml developers in practice use a standard library and split their code across multiple files, both features unsupported by my compiler and hence making it a more difficult to use tool for compiling OCaml for the web.
 \\\\
 Overall, the optimisations lead to significant speed-ups on all samples, with GCD's average execution time going from 86.4ms to 2.4ms, a reduction of 97\%. Primes' average execution time was reduced from 540.3ms to 419.9ms (22\% improvement), however with tail-call optimisation disabled this improves to 358.9ms (34\% improvement). There are many interesting observations to be made from the results for various optimisations:
 
 \subsubsection{Stack Code Generation}
-This optimisation clearly shows a significant line-of-code reduction of 3209 lines across all samples, although without a notable improvement in execution time. This is likely due to additional optimisations and compilation that WebAssembly goes under before it is executed: it must be compiled to register-based machine code, in practice removing the difference between accessing values on the stack and values stored in WebAssembly variables, both of which will likely become register accesses. In the case of GCD, we see execution time is slightly worsened with this optimisation, potentially a by-product of the stack code generator's ability to store a value on the stack for a long time until it is needed instead of storing it in a variable.
+This optimisation clearly shows a significant line-of-code reduction of 28\% (measured from the original value) across all samples, although without a notable improvement in execution time. This is likely due to additional optimisations and compilation that WebAssembly goes under before it is executed: it must be compiled to register-based machine code, in practice removing the difference between accessing values on the stack and values stored in WebAssembly variables, both of which will likely become register accesses. In the case of GCD, we see execution time is slightly worsened with this optimisation, potentially a by-product of the stack code generator's ability to store a value on the stack for a long time until it is needed instead of storing it in a variable.
 
 \subsubsection{Direct Calls}
 Enabling this leads to a drastic improvement in execution time in all cases. GCD for instance executes in 26.5ms as opposed to 88ms. Memory usage also sees a great improvement due to the reduced need to construct closures as partial applications are replaced with full applications where possible. Finally, we also see a slight improvement in line-count, due to some memory operations for constructing closures being eliminated.
 
 \subsubsection{IR Optimisations}
-These only really effect the GCD sample, where dead-code elimination combined with tuple-load elimination leads to tuple-creation for the match statement being eliminated, thus reducing execution time and completely eliminating GCD's heap memory usage. In the other samples, optimisations alias-elimination can remove some variables and thus we see a reduction in the lines-of-code, but no improvement in execution time likely due to the WebAssembly environment's own optimisations when the WebAssembly is compiled to machine code.
+These only really effect the GCD sample, where dead-code elimination combined with tuple-load elimination leads to tuple-creation for the match statement being eliminated, thus reducing execution time and completely eliminating GCD's heap memory usage. In the other samples, alias-elimination can remove some variables and thus we see a reduction in the lines-of-code, but no improvement in execution time likely due to the WebAssembly environment's own optimisations when the WebAssembly is compiled to machine code.
 
 \subsubsection{Tail Call Optimisation and Ref Elimination}
 Enabling this optimisation cuts in half GCD's execution time compared to with just the previously discussed optimisations. However, for the other samples the result is either no improvement or an increase in execution time! A possible explanation for this is that GCD calls a tail-recursive function once that then loops many times, while other samples make many calls to tail-recursive functions that may loop only a few times, thus incurring the overhead of the loop and the `references' (eliminated with ref-elimination) without the gain if the loop is only used a few times. Primes for instance has mutually recursive functions that are tail-call optimised, but make frequent calls to each other.
